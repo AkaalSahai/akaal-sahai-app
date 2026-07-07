@@ -62,26 +62,26 @@ export default function AdminApplications() {
   async function approveTeacher(app, groupId) {
     setBusy(app.id)
     try {
-      // Create Supabase auth user then users row
-      // Note: admin creates user via supabase admin API — for now, insert placeholder
-      const tempPw = Math.random().toString(36).slice(-8) + 'A1!'
-      const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-        email: app.email,
-        password: tempPw,
-        email_confirm: true,
-      })
-      if (authErr) throw authErr
-      const { error: dbErr } = await supabase.from('users').insert({
-        id: authData.user.id,
-        name: app.full_name,
-        email: app.email,
-        role: 'teacher',
-        group_id: groupId || null,
-        phone: app.phone,
-      })
-      if (dbErr) throw dbErr
-      await supabase.from('teacher_applications').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', app.id)
-      alert('Teacher approved!\n\nEmail: ' + app.email + '\nTemp password: ' + tempPw + '\n\nAsk them to log in and change their password immediately.')
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-teacher`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            email: app.email,
+            name: app.full_name,
+            group_id: groupId || null,
+            application_id: app.id,
+          }),
+        }
+      )
+      const result = await res.json()
+      if (result.error) throw new Error(result.error)
+      alert('Teacher approved!\n\nEmail: ' + app.email + '\nTemp password: ' + result.tempPw + '\n\nShare these with the teacher — ask them to log in and change their password immediately.')
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
