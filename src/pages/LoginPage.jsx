@@ -7,13 +7,14 @@ export default function LoginPage() {
   const { login, requestPasswordReset } = useAuth()
   const navigate = useNavigate()
 
+  const [screen, setScreen] = useState('landing') // 'landing' | 'login' | 'reset' | 'magic'
+
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
   const [error, setError]       = useState('')
   const [busy, setBusy]         = useState(false)
 
-  const [screen, setScreen] = useState('login') // 'login' | 'reset' | 'magic'
   const [resetEmail, setResetEmail] = useState('')
   const [resetMsg, setResetMsg]     = useState('')
 
@@ -48,21 +49,40 @@ export default function LoginPage() {
         options: { emailRedirectTo: window.location.origin + '/' },
       })
       if (error) throw error
-      setResetMsg('Magic link sent! Click the link in your email to sign in instantly.')
+      setResetMsg('Sign-in link sent! Click the link in your email.')
     } catch (err) {
-      setResetMsg(err.message || 'Could not send magic link. Try again in a few minutes.')
+      setResetMsg(err.message || 'Could not send sign-in link. Try again in a few minutes.')
     } finally { setBusy(false) }
   }
 
   return (
     <div className="login-screen">
       <div className="login-card">
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <img src="/logo.png" alt="Akaal Sahai" style={{ height: 80, marginBottom: 10 }} />
-          <h1 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary)' }}>Akaal Sahai Southall</h1>
-          <p style={{ fontSize: '.83rem', color: 'var(--muted)', marginTop: 2 }}>Punjabi Classes Management</p>
+
+        {/* Logo + title — always visible */}
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <img src="/logo.png" alt="Akaal Sahai" style={{ height: 90, marginBottom: 12 }} />
+          <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>Akaal Sahai Southall</h1>
+          <p style={{ fontSize: '.84rem', color: 'var(--muted)', marginTop: 4 }}>Punjabi Classes Management</p>
         </div>
 
+        {/* ── LANDING ── */}
+        {screen === 'landing' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Link to="/register/student" className="btn btn-primary btn-block" style={{ fontSize: '1rem', padding: '14px' }}>
+              Student Registration
+            </Link>
+            <Link to="/register/teacher" className="btn btn-outline btn-block" style={{ fontSize: '1rem', padding: '14px' }}>
+              Teacher Registration
+            </Link>
+            <button className="btn btn-block" onClick={() => setScreen('login')}
+              style={{ fontSize: '1rem', padding: '14px', background: 'var(--primary)', color: 'white', opacity: 0.85 }}>
+              Teacher / Staff Login
+            </button>
+          </div>
+        )}
+
+        {/* ── LOGIN ── */}
         {screen === 'login' && (
           <>
             <form onSubmit={handleLogin}>
@@ -88,6 +108,7 @@ export default function LoginPage() {
                 {busy ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
+
             <div style={{ textAlign: 'center', marginTop: 12, fontSize: '.83rem', display: 'flex', justifyContent: 'center', gap: 16 }}>
               <button type="button" onClick={() => { setScreen('reset'); setResetEmail(email) }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}>
@@ -99,19 +120,17 @@ export default function LoginPage() {
                 Email me a sign-in link
               </button>
             </div>
-            <hr style={{ margin: '18px 0', border: 'none', borderTop: '1px solid var(--border)' }} />
-            <div style={{ textAlign: 'center', fontSize: '.82rem', color: 'var(--muted)' }}>
-              <Link to="/register/student" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
-                Register your child
-              </Link>
-              {'  ·  '}
-              <Link to="/register/teacher" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}>
-                Teacher Sevadaar Registration
-              </Link>
+
+            <div style={{ textAlign: 'center', marginTop: 14 }}>
+              <button type="button" onClick={() => setScreen('landing')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '.82rem' }}>
+                ← Back
+              </button>
             </div>
           </>
         )}
 
+        {/* ── FORGOT PASSWORD ── */}
         {screen === 'reset' && (
           <>
             <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 14 }}>Reset Password</h2>
@@ -132,13 +151,14 @@ export default function LoginPage() {
             </form>
             <div style={{ textAlign: 'center', marginTop: 12 }}>
               <button type="button" onClick={() => setScreen('login')}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600, fontSize: '.83rem' }}>
-                Back to Sign In
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '.82rem' }}>
+                ← Back to Sign In
               </button>
             </div>
           </>
         )}
 
+        {/* ── MAGIC LINK ── */}
         {screen === 'magic' && (
           <>
             <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 6 }}>Sign In by Email Link</h2>
@@ -162,12 +182,13 @@ export default function LoginPage() {
             </form>
             <div style={{ textAlign: 'center', marginTop: 12 }}>
               <button type="button" onClick={() => setScreen('login')}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600, fontSize: '.83rem' }}>
-                Back to Sign In
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '.82rem' }}>
+                ← Back to Sign In
               </button>
             </div>
           </>
         )}
+
       </div>
     </div>
   )
