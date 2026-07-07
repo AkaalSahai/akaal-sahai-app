@@ -19,6 +19,7 @@ export default function TeacherRegister() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted]   = useState(false)
   const [existingRecord, setExisting] = useState(null)
+  const [pendingUpdates, setPendingUpdates] = useState({})
   const [history, setHistory]       = useState(false)
   const [historyData, setHistoryData] = useState([])
 
@@ -50,16 +51,38 @@ export default function TeacherRegister() {
       const map = {}
       ;(data.records || []).forEach(r => { map[r.student_id] = r.status })
       setAttendance(map)
+      setPendingUpdates({})
     } else {
       setExisting(null)
       setSubmitted(false)
       setAttendance({})
+      setPendingUpdates({})
     }
   }
 
   function mark(studentId, status) {
-    if (submitted) return
     setAttendance(prev => ({ ...prev, [studentId]: status }))
+    if (submitted) {
+      setPendingUpdates(prev => ({ ...prev, [studentId]: status }))
+    }
+  }
+
+  async function saveUpdates() {
+    if (Object.keys(pendingUpdates).length === 0) return
+    setSubmitting(true)
+    try {
+      await Promise.all(
+        Object.entries(pendingUpdates).map(([studentId, status]) =>
+          supabase.from('attendance_records')
+            .update({ status })
+            .eq('session_id', existingRecord.id)
+            .eq('student_id', studentId)
+        )
+      )
+      setPendingUpdates({})
+    } catch (err) {
+      alert('Error saving changes: ' + err.message)
+    } finally { setSubmitting(false) }
   }
 
   async function submitRegister() {
@@ -173,8 +196,7 @@ export default function TeacherRegister() {
                     {['present','late','absent'].map(st => (
                       <button key={st}
                         className={`att-btn att-${st}${status === st ? ' active' : ''}`}
-                        onClick={() => mark(s.id, st)}
-                        disabled={submitted}>
+                        onClick={() => mark(s.id, st)}>
                         {st.charAt(0).toUpperCase() + st.slice(1)}
                       </button>
                     ))}
@@ -189,6 +211,12 @@ export default function TeacherRegister() {
           <button className="btn btn-success btn-block" style={{ marginTop: 16 }}
             onClick={submitRegister} disabled={submitting}>
             {submitting ? 'Submitting…' : 'Submit Register'}
+          </button>
+        )}
+        {submitted && Object.keys(pendingUpdates).length > 0 && (
+          <button className="btn btn-primary btn-block" style={{ marginTop: 16 }}
+            onClick={saveUpdates} disabled={submitting}>
+            {submitting ? 'Saving…' : `Save ${Object.keys(pendingUpdates).length} Change${Object.keys(pendingUpdates).length > 1 ? 's' : ''}`}
           </button>
         )}
       </div>
