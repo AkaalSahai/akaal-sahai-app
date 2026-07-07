@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import PhoneInput from '../../components/PhoneInput'
-import { supabase } from '../../lib/supabase'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 export default function TeacherRegistration() {
   const [form, setForm] = useState({
     full_name: '', email: '', preferred_group: '', dbs_number: '', experience: '',
-    gdpr_consent: false,
+    password: '', confirm_password: '', gdpr_consent: false,
   })
-  const [phone, setPhone] = useState('')
-  const [errors, setErrors] = useState({})
-  const [busy, setBusy]   = useState(false)
-  const [done, setDone]   = useState(false)
+  const [phone, setPhone]       = useState('')
+  const [showPw, setShowPw]     = useState(false)
+  const [showCpw, setShowCpw]   = useState(false)
+  const [errors, setErrors]     = useState({})
+  const [busy, setBusy]         = useState(false)
+  const [done, setDone]         = useState(false)
 
   function set(k) { return e => setForm(f => ({ ...f, [k]: e.target.value })) }
   function setCheck(k) { return e => setForm(f => ({ ...f, [k]: e.target.checked })) }
@@ -21,6 +24,8 @@ export default function TeacherRegistration() {
     if (!form.full_name) e.full_name = 'Required'
     if (!form.email || !/\S+@\S+\.\S+/.test(form.email)) e.email = 'Valid email required'
     if (!phone || phone.length !== 10) e.phone = 'Enter a valid 10-digit UK number (after +44)'
+    if (!form.password || form.password.length < 8) e.password = 'Minimum 8 characters'
+    if (form.password !== form.confirm_password) e.confirm_password = 'Passwords do not match'
     if (!form.gdpr_consent) e.gdpr_consent = 'You must acknowledge this to proceed'
     return e
   }
@@ -31,16 +36,21 @@ export default function TeacherRegistration() {
     if (Object.keys(errs).length) { setErrors(errs); return }
     setBusy(true)
     try {
-      const { error } = await supabase.from('teacher_applications').insert({
-        full_name: form.full_name.trim(),
-        email: form.email.trim().toLowerCase(),
-        phone: '+44' + phone,
-        preferred_group: form.preferred_group.trim() || null,
-        dbs_number: form.dbs_number.trim() || null,
-        experience: form.experience.trim() || null,
-        status: 'pending',
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/register-teacher`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: form.full_name.trim(),
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          phone: '+44' + phone,
+          preferred_group: form.preferred_group.trim() || null,
+          dbs_number: form.dbs_number.trim() || null,
+          experience: form.experience.trim() || null,
+        }),
       })
-      if (error) throw error
+      const result = await res.json()
+      if (result.error) throw new Error(result.error)
       setDone(true)
     } catch (err) {
       alert('Submission failed: ' + err.message)
@@ -52,8 +62,11 @@ export default function TeacherRegistration() {
       <div className="public-card" style={{ textAlign: 'center' }}>
         <img src="/logo.png" alt="Akaal Sahai" style={{ height: 80, marginBottom: 16 }} />
         <h2 style={{ color: 'var(--success)', fontSize: '1.2rem', fontWeight: 800, marginBottom: 8 }}>Application Submitted!</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '.9rem', marginBottom: 8 }}>
+          Thank you for your application. The admin team will review it shortly.
+        </p>
         <p style={{ color: 'var(--muted)', fontSize: '.9rem', marginBottom: 20 }}>
-          Thank you for your application. The admin team will review it and contact you by email.
+          You will receive an email once your application has been approved, with details of your assigned group.
         </p>
         <Link to="/login" className="btn btn-primary">Back to Login</Link>
       </div>
@@ -88,6 +101,33 @@ export default function TeacherRegistration() {
             <label>Phone Number *</label>
             <PhoneInput value={phone} onChange={setPhone} />
             {errors.phone && <div className="field-error">{errors.phone}</div>}
+          </div>
+
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Password *</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showPw ? 'text' : 'password'} value={form.password} onChange={set('password')}
+                  placeholder="Min. 8 characters" style={{ paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowPw(v => !v)}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '1rem' }}>
+                  {showPw ? '🙈' : '👁'}
+                </button>
+              </div>
+              {errors.password && <div className="field-error">{errors.password}</div>}
+            </div>
+            <div className="form-group">
+              <label>Confirm Password *</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showCpw ? 'text' : 'password'} value={form.confirm_password} onChange={set('confirm_password')}
+                  placeholder="Repeat password" style={{ paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowCpw(v => !v)}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '1rem' }}>
+                  {showCpw ? '🙈' : '👁'}
+                </button>
+              </div>
+              {errors.confirm_password && <div className="field-error">{errors.confirm_password}</div>}
+            </div>
           </div>
 
           <div className="form-group">

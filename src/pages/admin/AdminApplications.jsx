@@ -76,12 +76,14 @@ export default function AdminApplications() {
             name: app.full_name,
             group_id: groupId || null,
             application_id: app.id,
+            auth_user_id: app.auth_user_id || null,
           }),
         }
       )
       const result = await res.json()
       if (result.error) throw new Error(result.error)
-      alert('Teacher approved!\n\nEmail: ' + app.email + '\nTemp password: ' + result.tempPw + '\n\nShare these with the teacher — ask them to log in and change their password immediately.')
+      const grpMsg = result.groupName ? '\nGroup: ' + result.groupName : '\nNo group assigned yet.'
+      alert('Teacher approved!\n\nAn email has been sent to ' + app.email + ' notifying them.' + grpMsg + '\n\nThey can now log in using the password they set during registration.')
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }

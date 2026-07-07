@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { email, name, group_id, application_id } = await req.json()
+    const { email, name, group_id, application_id, auth_user_id } = await req.json()
 
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return new Response('Unauthorized', { status: 401, headers: corsHeaders })
@@ -28,26 +28,49 @@ Deno.serve(async (req) => {
       return new Response('Forbidden', { status: 403, headers: corsHeaders })
     }
 
-    // Generate temp password
-    const tempPw = Math.random().toString(36).slice(-8) + 'Aa1!'
+    // Fetch group name if assigned
+    let groupName = null
+    if (group_id) {
+      const { data: grp } = await supabaseAdmin.from('groups').select('name').eq('id', group_id).single()
+      groupName = grp?.name || null
+    }
 
-    // Create auth user
-    const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: tempPw,
-      email_confirm: true,
-    })
-    if (authErr) return new Response(JSON.stringify({ error: authErr.message }), { status: 400, headers: corsHeaders })
+    // Determine the auth user ID
+    let userId = auth_user_id
+    if (!userId) {
+      // Fallback: look up by email
+      const { data: existingUser } = await supabaseAdmin.auth.admin.getUserByEmail(email)
+      userId = existingUser?.user?.id
+    }
 
-    // Insert profile row
-    const { error: dbErr } = await supabaseAdmin.from('users').insert({
-      id: authData.user.id,
-      name,
-      email,
-      role: 'teacher',
-      group_id: group_id || null,
-    })
-    if (dbErr) return new Response(JSON.stringify({ error: dbErr.message }), { status: 400, headers: corsHeaders })
+    if (userId) {
+      // Teacher registered themselves — just create the profile row
+      const { error: dbErr } = await supabaseAdmin.from('users').insert({
+        id: userId,
+        name,
+        email,
+        role: 'teacher',
+        group_id: group_id || null,
+      })
+      if (dbErr && !dbErr.message.includes('duplicate')) {
+        return new Response(JSON.stringify({ error: dbErr.message }), { status: 400, headers: corsHeaders })
+      }
+    } else {
+      // No prior registration — invite them so they can set a password
+      const { data: inviteData, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: 'https://akaalsahai.vercel.app/reset-password',
+      })
+      if (inviteErr) return new Response(JSON.stringify({ error: inviteErr.message }), { status: 400, headers: corsHeaders })
+
+      const { error: dbErr } = await supabaseAdmin.from('users').insert({
+        id: inviteData.user.id,
+        name,
+        email,
+        role: 'teacher',
+        group_id: group_id || null,
+      })
+      if (dbErr) return new Response(JSON.stringify({ error: dbErr.message }), { status: 400, headers: corsHeaders })
+    }
 
     // Mark application approved
     if (application_id) {
@@ -56,7 +79,7 @@ Deno.serve(async (req) => {
         .eq('id', application_id)
     }
 
-    return new Response(JSON.stringify({ tempPw }), {
+    return new Response(JSON.stringify({ success: true, groupName }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
