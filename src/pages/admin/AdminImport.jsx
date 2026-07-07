@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
-const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes'
-const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,2015-04-12,'
+const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
+const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,2015-04-12,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
 
 export default function AdminImport() {
   const [csv, setCsv]     = useState(null)
@@ -79,6 +79,16 @@ export default function AdminImport() {
         last_name: r.last_name.trim(),
         date_of_birth: r.date_of_birth?.trim() || null,
         medical_notes: r.medical_notes?.trim() || null,
+        house_no: r.house_no?.trim() || null,
+        street_name: r.street_name?.trim() || null,
+        town: r.town?.trim() || null,
+        postcode: r.postcode?.trim() || null,
+        parent_name: r.parent_name?.trim() || null,
+        relationship: r.relationship?.trim() || null,
+        phone: r.phone?.trim() || null,
+        secondary_phone: r.secondary_phone?.trim() || null,
+        email: r.email?.trim() || null,
+        photo_consent: ['yes','true','1'].includes(r.photo_consent?.trim().toLowerCase()),
         date_joined: new Date().toISOString().split('T')[0],
         active: true,
       }))
@@ -127,7 +137,7 @@ export default function AdminImport() {
           <div className="table-wrap" style={{ maxHeight: 280, overflowY: 'auto', marginBottom: 12 }}>
             <table>
               <thead>
-                <tr><th>Group</th><th>Name</th><th>DOB</th><th>Medical</th></tr>
+                <tr><th>Group</th><th>Name</th><th>DOB</th><th>Parent</th><th>Phone</th><th>Address</th><th>Medical</th></tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
@@ -135,6 +145,9 @@ export default function AdminImport() {
                     <td>{r.group_name}</td>
                     <td>{[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')}</td>
                     <td>{r.date_of_birth || '—'}</td>
+                    <td>{r.parent_name || '—'}</td>
+                    <td>{r.phone || '—'}</td>
+                    <td>{[r.house_no, r.street_name, r.town, r.postcode].filter(Boolean).join(', ') || '—'}</td>
                     <td>{r.medical_notes || '—'}</td>
                   </tr>
                 ))}
