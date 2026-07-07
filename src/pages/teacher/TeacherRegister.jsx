@@ -1,35 +1,34 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
 
-function todayISO() {
-  const d = new Date()
-  return d.toISOString().split('T')[0]
-}
+function todayISO() { return new Date().toISOString().split('T')[0] }
 
 export default function TeacherRegister() {
-  const { profile } = useAuth()
-  const [students, setStudents]     = useState([])
-  const [attendance, setAttendance] = useState({})  // { studentId: 'present'|'absent'|'late' }
-  const [date, setDate]             = useState(todayISO())
-  const [loading, setLoading]       = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted]   = useState(false)
-  const [existingRecord, setExisting] = useState(null)
-  const [pendingUpdates, setPendingUpdates] = useState({})
-  const [history, setHistory]       = useState(false)
+  const { profile }              = useAuth()
+  const [students, setStudents]  = useState([])
+  const [attendance, setAttendance] = useState({})
+  const [date, setDate]          = useState(todayISO())
+  const [loading, setLoading]    = useState(true)
+  const [sessionId, setSessionId] = useState(null)
+  const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
+  const [history, setHistory]    = useState(false)
   const [historyData, setHistoryData] = useState([])
+  const savingRef = useRef(null)
+
+  const isReadOnly = date < todayISO()
+  const isToday    = date === todayISO()
 
   useEffect(() => { if (profile?.group_id) loadStudents() }, [profile])
-  useEffect(() => { if (profile?.group_id) checkSubmitted() }, [date, profile])
+  useEffect(() => { if (profile?.group_id) loadSession() }, [date, profile])
 
   async function loadStudents() {
     const { data } = await supabase
       .from('students')
-      .select('id, first_name, middle_name, last_name, date_of_birth, medical_notes')
+      .select('id, first_name, middle_name, last_name, medical_notes')
       .eq('group_id', profile.group_id)
       .eq('active', true)
       .order('last_name')
@@ -37,92 +36,66 @@ export default function TeacherRegister() {
     setLoading(false)
   }
 
-  async function checkSubmitted() {
+  async function loadSession() {
     if (!profile?.group_id) return
     const { data } = await supabase
       .from('attendance_sessions')
-      .select('id, submitted_at, records:attendance_records(*)')
+      .select('id, records:attendance_records(student_id, status)')
       .eq('group_id', profile.group_id)
       .eq('session_date', date)
       .maybeSingle()
     if (data) {
-      setExisting(data)
-      setSubmitted(true)
+      setSessionId(data.id)
       const map = {}
       ;(data.records || []).forEach(r => { map[r.student_id] = r.status })
       setAttendance(map)
-      setPendingUpdates({})
     } else {
-      setExisting(null)
-      setSubmitted(false)
+      setSessionId(null)
       setAttendance({})
-      setPendingUpdates({})
     }
+    setSaveState('idle')
   }
 
-  function mark(studentId, status) {
+  async function ensureSession() {
+    if (sessionId) return sessionId
+    const { data, error } = await supabase
+      .from('attendance_sessions')
+      .insert({ group_id: profile.group_id, session_date: date, teacher_id: profile.id })
+      .select('id')
+      .single()
+    if (error) throw error
+    setSessionId(data.id)
+    return data.id
+  }
+
+  async function mark(studentId, status) {
+    if (isReadOnly) return
     setAttendance(prev => ({ ...prev, [studentId]: status }))
-    if (submitted) {
-      setPendingUpdates(prev => ({ ...prev, [studentId]: status }))
-    }
-  }
-
-  async function saveUpdates() {
-    if (Object.keys(pendingUpdates).length === 0) return
-    setSubmitting(true)
+    setSaveState('saving')
+    clearTimeout(savingRef.current)
     try {
-      await Promise.all(
-        Object.entries(pendingUpdates).map(([studentId, status]) =>
-          supabase.from('attendance_records')
-            .update({ status })
-            .eq('session_id', existingRecord.id)
-            .eq('student_id', studentId)
-        )
-      )
-      setPendingUpdates({})
-    } catch (err) {
-      alert('Error saving changes: ' + err.message)
-    } finally { setSubmitting(false) }
-  }
-
-  async function submitRegister() {
-    const unmarked = students.filter(s => !attendance[s.id])
-    if (unmarked.length > 0) {
-      alert(`Please mark all students before submitting.\n\nUnmarked: ${unmarked.map(s => s.first_name + ' ' + s.last_name).join(', ')}`)
-      return
-    }
-    setSubmitting(true)
-    try {
-      // Create session
-      const { data: session, error: sErr } = await supabase
-        .from('attendance_sessions')
-        .insert({ group_id: profile.group_id, session_date: date, teacher_id: profile.id })
-        .select()
-        .single()
-      if (sErr) throw sErr
-
-      // Insert records
-      const records = students.map(s => ({
-        session_id: session.id,
-        student_id: s.id,
+      const sid = await ensureSession()
+      const { error } = await supabase.from('attendance_records').upsert({
+        session_id: sid,
+        student_id: studentId,
         group_id: profile.group_id,
         session_date: date,
-        status: attendance[s.id],
-      }))
-      const { error: rErr } = await supabase.from('attendance_records').insert(records)
-      if (rErr) throw rErr
-      setSubmitted(true)
-      setExisting(session)
+        status,
+      }, { onConflict: 'session_id,student_id' })
+      if (error) throw error
+      setSaveState('saved')
+      savingRef.current = setTimeout(() => setSaveState('idle'), 2000)
     } catch (err) {
-      alert('Error submitting register: ' + err.message)
-    } finally { setSubmitting(false) }
+      setSaveState('error')
+      alert('Could not save: ' + err.message)
+    }
   }
 
   async function loadHistory() {
     setHistory(true)
     const { data } = await supabase
       .from('attendance_sessions')
-      .select('id, session_date, submitted_at, records:attendance_records(student_id, status)')
+      .select('id, session_date, records:attendance_records(student_id, status)')
       .eq('group_id', profile.group_id)
       .order('session_date', { ascending: false })
       .limit(20)
@@ -131,7 +104,7 @@ export default function TeacherRegister() {
 
   if (!profile?.group_id) return (
     <div className="card">
-      <div className="alert alert-warning">You have not been assigned to a group yet. Please contact the admin or registrar.</div>
+      <div className="alert alert-warning">You have not been assigned to a group yet. Please contact the admin.</div>
     </div>
   )
 
@@ -141,21 +114,37 @@ export default function TeacherRegister() {
   const late    = Object.values(attendance).filter(v => v === 'late').length
   const absent  = Object.values(attendance).filter(v => v === 'absent').length
 
+  const saveLabel = saveState === 'saving' ? '⏳ Saving…'
+                  : saveState === 'saved'   ? '✓ Saved'
+                  : saveState === 'error'   ? '⚠ Error'
+                  : ''
+
   return (
     <>
       <div className="card">
         <div className="card-title">
           <span>Daily Register</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            {saveLabel && (
+              <span style={{ fontSize: '.78rem', color: saveState === 'error' ? 'var(--danger)' : 'var(--success)', fontWeight: 600 }}>
+                {saveLabel}
+              </span>
+            )}
+            <input type="date" value={date} max={todayISO()} onChange={e => setDate(e.target.value)}
               style={{ width: 'auto', padding: '7px 10px', fontSize: '.85rem' }} />
             <button className="btn btn-outline btn-sm" onClick={loadHistory}>History</button>
           </div>
         </div>
 
-        {submitted && (
+        {isReadOnly && (
+          <div className="alert" style={{ background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' }}>
+            Past register — read only. Showing record for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+          </div>
+        )}
+
+        {isToday && sessionId && (
           <div className="alert alert-success">
-            Register submitted for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            Register in progress for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} — changes save automatically.
           </div>
         )}
 
@@ -196,7 +185,8 @@ export default function TeacherRegister() {
                     {['present','late','absent'].map(st => (
                       <button key={st}
                         className={`att-btn att-${st}${status === st ? ' active' : ''}`}
-                        onClick={() => mark(s.id, st)}>
+                        onClick={() => mark(s.id, st)}
+                        disabled={isReadOnly}>
                         {st.charAt(0).toUpperCase() + st.slice(1)}
                       </button>
                     ))}
@@ -207,17 +197,10 @@ export default function TeacherRegister() {
           })}
         </ul>
 
-        {!submitted && (
-          <button className="btn btn-success btn-block" style={{ marginTop: 16 }}
-            onClick={submitRegister} disabled={submitting}>
-            {submitting ? 'Submitting…' : 'Submit Register'}
-          </button>
-        )}
-        {submitted && Object.keys(pendingUpdates).length > 0 && (
-          <button className="btn btn-primary btn-block" style={{ marginTop: 16 }}
-            onClick={saveUpdates} disabled={submitting}>
-            {submitting ? 'Saving…' : `Save ${Object.keys(pendingUpdates).length} Change${Object.keys(pendingUpdates).length > 1 ? 's' : ''}`}
-          </button>
+        {isToday && students.length > 0 && (
+          <div style={{ marginTop: 12, padding: '10px 12px', background: '#f8fafc', borderRadius: 8, fontSize: '.78rem', color: 'var(--muted)', textAlign: 'center' }}>
+            {present + late + absent} of {students.length} marked · Any unmarked students will be auto-marked absent at end of day
+          </div>
         )}
       </div>
 
