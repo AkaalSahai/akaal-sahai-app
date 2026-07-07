@@ -25,12 +25,13 @@ export default function AdminUsers() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase
-      .from('users')
-      .select('id, name, email, role, last_login, group_id, groups(name)')
-      .order('role')
-      .order('name')
-    setUsers(data || [])
+    const [{ data: userData }, { data: groupData }] = await Promise.all([
+      supabase.from('users').select('id, name, email, role, last_login, group_id').order('role').order('name'),
+      supabase.from('groups').select('id, name'),
+    ])
+    const groupMap = {}
+    ;(groupData || []).forEach(g => { groupMap[g.id] = g.name })
+    setUsers((userData || []).map(u => ({ ...u, groupName: u.group_id ? groupMap[u.group_id] : null })))
     setLoading(false)
   }
 
@@ -96,7 +97,7 @@ export default function AdminUsers() {
   return (
     <div className="card">
       <div className="card-title">
-        Users ({users.length})
+        Teachers & Staff ({users.length})
         <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(s => !s)}>
           {showCreate ? 'Cancel' : '+ New User'}
         </button>
@@ -161,7 +162,7 @@ export default function AdminUsers() {
                     </span>
                   )}
                 </td>
-                <td>{u.groups?.name || '—'}</td>
+                <td>{u.groupName || '—'}</td>
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)' }}>
                   {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : 'Never'}
                 </td>

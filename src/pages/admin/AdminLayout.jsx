@@ -12,7 +12,7 @@ const TABS = [
   { id: 'applications',  label: 'Applications' },
   { id: 'students',      label: 'Students' },
   { id: 'groups',        label: 'Groups' },
-  { id: 'users',         label: 'Users' },
+  { id: 'users',         label: 'Teachers' },
   { id: 'import',        label: 'Import Data' },
 ]
 
