@@ -30,7 +30,7 @@ export default function AdminLayout() {
         ))}
       </div>
       <div className="content">
-        {tab === 'dashboard'    && <AdminDashboard />}
+        {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
         {tab === 'applications' && <AdminApplications />}
         {tab === 'students'     && <AdminStudents />}
         {tab === 'groups'       && <AdminGroups />}
