@@ -17,6 +17,8 @@ export default function TeacherRegister() {
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const [history, setHistory]    = useState(false)
   const [historyData, setHistoryData] = useState([])
+  const [transferOpen, setTransferOpen] = useState({})  // { studentId: reason }
+  const [transferBusy, setTransferBusy] = useState(null)
   const savingRef = useRef(null)
 
   const isReadOnly = date < todayISO()
@@ -89,6 +91,37 @@ export default function TeacherRegister() {
       setSaveState('error')
       alert('Could not save: ' + err.message)
     }
+  }
+
+  function toggleTransfer(studentId) {
+    setTransferOpen(prev => {
+      const next = { ...prev }
+      if (next[studentId] !== undefined) { delete next[studentId] }
+      else { next[studentId] = '' }
+      return next
+    })
+  }
+
+  async function submitTransfer(student) {
+    const reason = transferOpen[student.id]?.trim()
+    if (!reason) { alert('Please explain why this student needs to be transferred.'); return }
+    setTransferBusy(student.id)
+    try {
+      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
+      const { error } = await supabase.from('transfer_requests').insert({
+        student_id: student.id,
+        student_name: fullName,
+        from_group_id: profile.group_id,
+        from_group_name: profile.group_name || null,
+        requested_by: profile.id,
+        reason,
+        status: 'pending',
+      })
+      if (error) throw error
+      alert(`Transfer request submitted for ${fullName}.\n\nThe admin or registrar will review and move the student.`)
+      setTransferOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setTransferBusy(null) }
   }
 
   async function loadHistory() {
@@ -181,7 +214,7 @@ export default function TeacherRegister() {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     {['present','late','absent'].map(st => (
                       <button key={st}
                         className={`att-btn att-${st}${status === st ? ' active' : ''}`}
@@ -190,8 +223,39 @@ export default function TeacherRegister() {
                         {st.charAt(0).toUpperCase() + st.slice(1)}
                       </button>
                     ))}
+                    <button
+                      onClick={() => toggleTransfer(s.id)}
+                      title="Request group transfer"
+                      style={{ padding: '5px 10px', fontSize: '.75rem', borderRadius: 20, border: '1px solid #94a3b8',
+                        background: transferOpen[s.id] !== undefined ? '#e0e7ff' : 'white',
+                        color: '#475569', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      ↔ Transfer
+                    </button>
                   </div>
                 </div>
+
+                {transferOpen[s.id] !== undefined && (
+                  <div style={{ marginTop: 10, padding: '12px', background: '#f8fafc', borderRadius: 8,
+                    border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
+                      Transfer request for {[s.first_name, s.last_name].join(' ')}
+                    </div>
+                    <textarea
+                      value={transferOpen[s.id]}
+                      onChange={e => setTransferOpen(prev => ({ ...prev, [s.id]: e.target.value }))}
+                      placeholder="Explain why this student needs to be moved to a different group…"
+                      rows={2}
+                      style={{ width: '100%', fontSize: '.83rem', resize: 'vertical', marginBottom: 8, boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-primary btn-sm" disabled={transferBusy === s.id}
+                        onClick={() => submitTransfer(s)}>
+                        {transferBusy === s.id ? 'Submitting…' : 'Submit Request'}
+                      </button>
+                      <button className="btn btn-outline btn-sm" onClick={() => toggleTransfer(s.id)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
               </li>
             )
           })}

@@ -6,22 +6,31 @@ import AdminStudents from './AdminStudents'
 import AdminUsers from './AdminUsers'
 import AdminGroups from './AdminGroups'
 import AdminImport from './AdminImport'
+import { useAuth } from '../../hooks/useAuth'
 
 const TABS = [
-  { id: 'dashboard',     label: 'Dashboard' },
-  { id: 'applications',  label: 'Applications' },
-  { id: 'students',      label: 'Students' },
-  { id: 'groups',        label: 'Groups' },
-  { id: 'users',         label: 'Teachers' },
-  { id: 'import',        label: 'Import Data' },
+  { id: 'dashboard',    label: 'Dashboard'    },
+  { id: 'applications', label: 'Applications' },
+  { id: 'students',     label: 'Students'     },
+  { id: 'groups',       label: 'Groups'       },
+  { id: 'users',        label: 'Teachers'     },
+  { id: 'import',       label: 'Import Data'  },
 ]
 
 export default function AdminLayout() {
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab]   = useState('dashboard')
+  const { profile }     = useAuth()
+  const readOnly        = profile?.role === 'adminView'
 
   return (
     <div>
       <Topbar title="Admin — Akaal Sahai Southall" />
+      {readOnly && (
+        <div style={{ background: '#fef3c7', borderBottom: '2px solid #f59e0b', padding: '6px 20px',
+          fontSize: '.8rem', fontWeight: 600, color: '#92400e', textAlign: 'center' }}>
+          View Only — you can see all data but cannot make changes
+        </div>
+      )}
       <div className="nav-tabs">
         {TABS.map(t => (
           <button key={t.id} className={`nav-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
@@ -31,11 +40,11 @@ export default function AdminLayout() {
       </div>
       <div className="content">
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
-        {tab === 'applications' && <AdminApplications />}
-        {tab === 'students'     && <AdminStudents />}
-        {tab === 'groups'       && <AdminGroups />}
-        {tab === 'users'        && <AdminUsers />}
-        {tab === 'import'       && <AdminImport />}
+        {tab === 'applications' && <AdminApplications readOnly={readOnly} />}
+        {tab === 'students'     && <AdminStudents readOnly={readOnly} />}
+        {tab === 'groups'       && <AdminGroups readOnly={readOnly} />}
+        {tab === 'users'        && <AdminUsers readOnly={readOnly} />}
+        {tab === 'import'       && <AdminImport readOnly={readOnly} />}
       </div>
     </div>
   )

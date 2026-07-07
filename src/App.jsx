@@ -26,6 +26,7 @@ function RootRedirect() {
   if (loading) return <div className="spinner" style={{ marginTop: 100 }} />
   if (!user || !profile) return <Navigate to="/login" replace />
   if (profile.role === 'admin')     return <Navigate to="/admin" replace />
+  if (profile.role === 'adminView') return <Navigate to="/admin" replace />
   if (profile.role === 'registrar') return <Navigate to="/registrar" replace />
   if (profile.role === 'teacher')   return <Navigate to="/teacher" replace />
   return <Navigate to="/login" replace />
@@ -40,7 +41,7 @@ function AppRoutes() {
       <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route path="/admin/*" element={
-        <RequireAuth role="admin"><AdminLayout /></RequireAuth>
+        <RequireAuth role={['admin','adminView']}><AdminLayout /></RequireAuth>
       } />
       <Route path="/registrar/*" element={
         <RequireAuth role="registrar"><RegistrarLayout /></RequireAuth>

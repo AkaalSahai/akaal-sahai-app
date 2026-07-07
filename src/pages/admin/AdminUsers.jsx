@@ -14,7 +14,9 @@ async function callAdminAction(payload, token) {
   return data
 }
 
-export default function AdminUsers() {
+const ROLES = ['admin','registrar','teacher','adminView']
+
+export default function AdminUsers({ readOnly }) {
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -87,7 +89,18 @@ export default function AdminUsers() {
     finally { setBusy(null) }
   }
 
-  const roleOrder = ['admin', 'registrar', 'teacher']
+  async function changeRole(userId, newRole) {
+    if (!confirm(`Change this user's role to "${newRole}"?`)) return
+    setBusy(userId)
+    try {
+      const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId)
+      if (error) throw error
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setBusy(null) }
+  }
+
+  const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
   const sorted = [...users].sort((a, b) =>
     roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || a.name.localeCompare(b.name)
   )
@@ -98,12 +111,14 @@ export default function AdminUsers() {
     <div className="card">
       <div className="card-title">
         Teachers & Staff ({users.length})
-        <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(s => !s)}>
-          {showCreate ? 'Cancel' : '+ New User'}
-        </button>
+        {!readOnly && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(s => !s)}>
+            {showCreate ? 'Cancel' : '+ New User'}
+          </button>
+        )}
       </div>
 
-      {showCreate && (
+      {showCreate && !readOnly && (
         <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16, marginBottom: 16 }}>
           <div className="form-grid">
             <div className="form-group">
@@ -120,6 +135,7 @@ export default function AdminUsers() {
                 <option value="admin">Admin</option>
                 <option value="registrar">Registrar</option>
                 <option value="teacher">Teacher</option>
+                <option value="adminView">Admin View (read-only)</option>
               </select>
             </div>
           </div>
@@ -145,9 +161,19 @@ export default function AdminUsers() {
             {sorted.map(u => (
               <tr key={u.id}>
                 <td style={{ fontWeight: 600 }}>{u.name}</td>
-                <td><span className={`tag tag-${u.role}`}>{u.role}</span></td>
                 <td>
-                  {editEmail[u.id] !== undefined ? (
+                  {!readOnly ? (
+                    <select value={u.role} disabled={busy === u.id}
+                      onChange={e => changeRole(u.id, e.target.value)}
+                      style={{ padding: '3px 6px', fontSize: '.78rem', borderRadius: 6, border: '1px solid var(--border)', fontWeight: 600 }}>
+                      {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  ) : (
+                    <span className={`tag tag-${u.role}`}>{u.role}</span>
+                  )}
+                </td>
+                <td>
+                  {!readOnly && editEmail[u.id] !== undefined ? (
                     <div style={{ display: 'flex', gap: 4 }}>
                       <input type="email" value={editEmail[u.id]}
                         onChange={e => setEditEmail(prev => ({ ...prev, [u.id]: e.target.value }))}
@@ -156,9 +182,9 @@ export default function AdminUsers() {
                       <button className="btn btn-outline btn-xs" onClick={() => setEditEmail(prev => { const n = { ...prev }; delete n[u.id]; return n })}>✕</button>
                     </div>
                   ) : (
-                    <span style={{ fontSize: '.83rem', cursor: 'pointer' }} title="Click to edit email"
-                      onClick={() => setEditEmail(prev => ({ ...prev, [u.id]: u.email }))}>
-                      {u.email} ✎
+                    <span style={{ fontSize: '.83rem', cursor: !readOnly ? 'pointer' : 'default' }} title={!readOnly ? 'Click to edit email' : ''}
+                      onClick={() => !readOnly && setEditEmail(prev => ({ ...prev, [u.id]: u.email }))}>
+                      {u.email} {!readOnly && '✎'}
                     </span>
                   )}
                 </td>
@@ -167,14 +193,16 @@ export default function AdminUsers() {
                   {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : 'Never'}
                 </td>
                 <td>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn btn-warning btn-xs" disabled={busy === u.id} onClick={() => resetUserPassword(u.id, u.email)}>
-                      {busy === u.id ? '…' : 'Reset PW'}
-                    </button>
-                    <button className="btn btn-danger btn-xs" disabled={busy === u.id} onClick={() => deleteUser(u.id, u.name)}>
-                      {busy === u.id ? '…' : 'Delete'}
-                    </button>
-                  </div>
+                  {!readOnly && (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button className="btn btn-warning btn-xs" disabled={busy === u.id} onClick={() => resetUserPassword(u.id, u.email)}>
+                        {busy === u.id ? '…' : 'Reset PW'}
+                      </button>
+                      <button className="btn btn-danger btn-xs" disabled={busy === u.id} onClick={() => deleteUser(u.id, u.name)}>
+                        {busy === u.id ? '…' : 'Delete'}
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
