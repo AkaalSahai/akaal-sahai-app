@@ -8,6 +8,7 @@ export default function LoginPage() {
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
+  const [showPw, setShowPw]     = useState(false)
   const [error, setError]       = useState('')
   const [busy, setBusy]         = useState(false)
   const [showReset, setShowReset]   = useState(false)
@@ -58,8 +59,14 @@ export default function LoginPage() {
               </div>
               <div className="form-group">
                 <label>Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••" required autoComplete="current-password" />
+                <div style={{ position: 'relative' }}>
+                  <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••" required autoComplete="current-password" style={{ paddingRight: 44 }} />
+                  <button type="button" onClick={() => setShowPw(v => !v)}
+                    style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '1rem' }}>
+                    {showPw ? '🙈' : '👁'}
+                  </button>
+                </div>
               </div>
               <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
                 {busy ? 'Signing in…' : 'Sign In'}
