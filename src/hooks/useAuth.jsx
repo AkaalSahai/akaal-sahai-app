@@ -66,8 +66,13 @@ export function AuthProvider({ children }) {
     if (error) throw error
   }
 
+  function hasRole(r) {
+    if (!profile) return false
+    return profile.role === r || (profile.extra_roles || []).includes(r)
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, changePassword, requestPasswordReset }}>
+    <AuthContext.Provider value={{ user, profile, loading, login, logout, changePassword, requestPasswordReset, hasRole }}>
       {children}
     </AuthContext.Provider>
   )

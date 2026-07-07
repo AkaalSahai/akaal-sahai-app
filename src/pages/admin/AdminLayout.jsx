@@ -6,21 +6,26 @@ import AdminStudents from './AdminStudents'
 import AdminUsers from './AdminUsers'
 import AdminGroups from './AdminGroups'
 import AdminImport from './AdminImport'
+import TeacherRegister from '../teacher/TeacherRegister'
+import TeacherReports from '../teacher/TeacherReports'
 import { useAuth } from '../../hooks/useAuth'
-
-const TABS = [
-  { id: 'dashboard',    label: 'Dashboard'    },
-  { id: 'applications', label: 'Applications' },
-  { id: 'students',     label: 'Students'     },
-  { id: 'groups',       label: 'Groups'       },
-  { id: 'users',        label: 'Teachers'     },
-  { id: 'import',       label: 'Import Data'  },
-]
 
 export default function AdminLayout() {
   const [tab, setTab]   = useState('dashboard')
-  const { profile }     = useAuth()
+  const { profile, hasRole } = useAuth()
   const readOnly        = profile?.role === 'adminView'
+  const isTeacher       = hasRole('teacher')
+
+  const TABS = [
+    { id: 'dashboard',    label: 'Dashboard'    },
+    { id: 'applications', label: 'Applications' },
+    { id: 'students',     label: 'Students'     },
+    { id: 'groups',       label: 'Groups'       },
+    { id: 'users',        label: 'Teachers'     },
+    ...(isTeacher ? [{ id: 'register', label: 'My Register' }] : []),
+    ...(isTeacher ? [{ id: 'myreports', label: 'My Reports' }] : []),
+    ...(!readOnly ? [{ id: 'import', label: 'Import Data' }] : []),
+  ]
 
   return (
     <div>
@@ -45,6 +50,8 @@ export default function AdminLayout() {
         {tab === 'groups'       && <AdminGroups readOnly={readOnly} />}
         {tab === 'users'        && <AdminUsers readOnly={readOnly} />}
         {tab === 'import'       && <AdminImport readOnly={readOnly} />}
+        {tab === 'register'     && <TeacherRegister />}
+        {tab === 'myreports'    && <TeacherReports />}
       </div>
     </div>
   )

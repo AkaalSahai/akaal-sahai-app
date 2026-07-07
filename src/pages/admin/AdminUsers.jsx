@@ -28,7 +28,7 @@ export default function AdminUsers({ readOnly }) {
 
   async function load() {
     const [{ data: userData }, { data: groupData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, role, last_login, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, role, extra_roles, last_login, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name'),
     ])
     const groupMap = {}
@@ -90,7 +90,7 @@ export default function AdminUsers({ readOnly }) {
   }
 
   async function changeRole(userId, newRole) {
-    if (!confirm(`Change this user's role to "${newRole}"?`)) return
+    if (!confirm(`Change this user's primary role to "${newRole}"?`)) return
     setBusy(userId)
     try {
       const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId)
@@ -98,6 +98,18 @@ export default function AdminUsers({ readOnly }) {
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
+  }
+
+  async function toggleExtraRole(userId, currentExtras, roleToToggle) {
+    const current = currentExtras || []
+    const updated = current.includes(roleToToggle)
+      ? current.filter(r => r !== roleToToggle)
+      : [...current, roleToToggle]
+    try {
+      const { error } = await supabase.from('users').update({ extra_roles: updated }).eq('id', userId)
+      if (error) throw error
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, extra_roles: updated } : u))
+    } catch (err) { alert('Error: ' + err.message) }
   }
 
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
@@ -163,13 +175,31 @@ export default function AdminUsers({ readOnly }) {
                 <td style={{ fontWeight: 600 }}>{u.name}</td>
                 <td>
                   {!readOnly ? (
-                    <select value={u.role} disabled={busy === u.id}
-                      onChange={e => changeRole(u.id, e.target.value)}
-                      style={{ padding: '3px 6px', fontSize: '.78rem', borderRadius: 6, border: '1px solid var(--border)', fontWeight: 600 }}>
-                      {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                    <div>
+                      <select value={u.role} disabled={busy === u.id}
+                        onChange={e => changeRole(u.id, e.target.value)}
+                        style={{ padding: '3px 6px', fontSize: '.78rem', borderRadius: 6, border: '1px solid var(--border)', fontWeight: 600, marginBottom: 4, display: 'block' }}>
+                        {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {ROLES.filter(r => r !== u.role).map(r => {
+                          const active = (u.extra_roles || []).includes(r)
+                          return (
+                            <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: '.7rem',
+                              cursor: 'pointer', color: active ? 'var(--primary)' : 'var(--muted)', fontWeight: active ? 700 : 400 }}>
+                              <input type="checkbox" checked={active} style={{ width: 'auto', margin: 0 }}
+                                onChange={() => toggleExtraRole(u.id, u.extra_roles, r)} />
+                              {r}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
                   ) : (
-                    <span className={`tag tag-${u.role}`}>{u.role}</span>
+                    <div>
+                      <span className={`tag tag-${u.role}`}>{u.role}</span>
+                      {(u.extra_roles || []).map(r => <span key={r} className={`tag tag-${r}`} style={{ marginLeft: 3 }}>{r}</span>)}
+                    </div>
                   )}
                 </td>
                 <td>
