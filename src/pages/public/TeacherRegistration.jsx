@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase'
 
 export default function TeacherRegistration() {
   const [form, setForm] = useState({
-    full_name: '', email: '', preferred_group: '', experience: '',
+    full_name: '', email: '', preferred_group: '', dbs_number: '', experience: '',
     gdpr_consent: false,
   })
   const [phone, setPhone] = useState('')
@@ -36,6 +36,7 @@ export default function TeacherRegistration() {
         email: form.email.trim().toLowerCase(),
         phone: '+44' + phone,
         preferred_group: form.preferred_group.trim() || null,
+        dbs_number: form.dbs_number.trim() || null,
         experience: form.experience.trim() || null,
         status: 'pending',
       })
@@ -90,8 +91,13 @@ export default function TeacherRegistration() {
           </div>
 
           <div className="form-group">
-            <label>Punjabi Class Group Name</label>
+            <label>Punjabi Class Group</label>
             <input type="text" value={form.preferred_group} onChange={set('preferred_group')} placeholder="Name of group you'd like to teach (if known)" />
+          </div>
+
+          <div className="form-group">
+            <label>DBS Certificate Number</label>
+            <input type="text" value={form.dbs_number} onChange={set('dbs_number')} placeholder="e.g. 001234567890" />
           </div>
 
           <div className="form-group">

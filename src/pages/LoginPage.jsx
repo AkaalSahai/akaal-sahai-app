@@ -63,7 +63,6 @@ export default function LoginPage() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <img src="/logo.png" alt="Akaal Sahai" style={{ height: 90, marginBottom: 12 }} />
           <h1 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--primary)' }}>Akaal Sahai Southall</h1>
-          <p style={{ fontSize: '.84rem', color: 'var(--muted)', marginTop: 4 }}>Punjabi Classes Management</p>
         </div>
 
         {/* ── LANDING ── */}
