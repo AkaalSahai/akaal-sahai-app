@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
-const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,2015-04-12,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
+const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
 
 export default function AdminImport() {
   const [csv, setCsv]     = useState(null)
@@ -46,8 +46,8 @@ export default function AdminImport() {
       if (!row.group_name) errs.push(`Row ${i + 2}: missing group_name`)
       if (!row.first_name) errs.push(`Row ${i + 2}: missing first_name`)
       if (!row.last_name)  errs.push(`Row ${i + 2}: missing last_name`)
-      if (row.date_of_birth && !/^\d{4}-\d{2}-\d{2}$/.test(row.date_of_birth))
-        errs.push(`Row ${i + 2}: date_of_birth must be YYYY-MM-DD`)
+      if (row.date_of_birth && !/^\d{2}\/\d{2}\/\d{4}$/.test(row.date_of_birth))
+        errs.push(`Row ${i + 2}: date_of_birth must be DD/MM/YYYY (e.g. 12/04/2015)`)
       parsed.push(row)
     })
     setRows(parsed); setErrors(errs); setResult(null)
@@ -77,7 +77,9 @@ export default function AdminImport() {
         first_name: r.first_name.trim(),
         middle_name: r.middle_name?.trim() || null,
         last_name: r.last_name.trim(),
-        date_of_birth: r.date_of_birth?.trim() || null,
+        date_of_birth: r.date_of_birth?.trim()
+          ? (() => { const [d,m,y] = r.date_of_birth.trim().split('/'); return `${y}-${m}-${d}` })()
+          : null,
         medical_notes: r.medical_notes?.trim() || null,
         house_no: r.house_no?.trim() || null,
         street_name: r.street_name?.trim() || null,
