@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { supabase } from '../lib/supabase'
 
 export default function LoginPage() {
-  const { login, requestPasswordReset, profile } = useAuth()
+  const { login, requestPasswordReset } = useAuth()
   const navigate = useNavigate()
 
   const [email, setEmail]       = useState('')
@@ -11,7 +12,8 @@ export default function LoginPage() {
   const [showPw, setShowPw]     = useState(false)
   const [error, setError]       = useState('')
   const [busy, setBusy]         = useState(false)
-  const [showReset, setShowReset]   = useState(false)
+
+  const [screen, setScreen] = useState('login') // 'login' | 'reset' | 'magic'
   const [resetEmail, setResetEmail] = useState('')
   const [resetMsg, setResetMsg]     = useState('')
 
@@ -19,12 +21,10 @@ export default function LoginPage() {
     e.preventDefault()
     setBusy(true); setError('')
     try {
-      const { data } = await login(email.trim(), password)
-      const role = data.user ? null : null // profile fetched in context
-      // navigate after profile loads — RootRedirect handles it
+      await login(email.trim(), password)
       navigate('/', { replace: true })
     } catch (err) {
-      setError('Incorrect email or password. Please try again.')
+      setError(err.message || 'Incorrect email or password. Please try again.')
     } finally { setBusy(false) }
   }
 
@@ -33,9 +33,24 @@ export default function LoginPage() {
     setBusy(true); setResetMsg('')
     try {
       await requestPasswordReset(resetEmail.trim())
-      setResetMsg('Password reset email sent. Check your inbox.')
+      setResetMsg('Reset link sent! Check your inbox (and spam folder).')
     } catch (err) {
-      setResetMsg('Could not send reset email. Check the address and try again.')
+      setResetMsg(err.message || 'Could not send reset email. Try again in a few minutes.')
+    } finally { setBusy(false) }
+  }
+
+  async function handleMagicLink(e) {
+    e.preventDefault()
+    setBusy(true); setResetMsg('')
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: resetEmail.trim(),
+        options: { emailRedirectTo: window.location.origin + '/' },
+      })
+      if (error) throw error
+      setResetMsg('Magic link sent! Click the link in your email to sign in instantly.')
+    } catch (err) {
+      setResetMsg(err.message || 'Could not send magic link. Try again in a few minutes.')
     } finally { setBusy(false) }
   }
 
@@ -48,7 +63,7 @@ export default function LoginPage() {
           <p style={{ fontSize: '.83rem', color: 'var(--muted)', marginTop: 2 }}>Punjabi Classes Management</p>
         </div>
 
-        {!showReset ? (
+        {screen === 'login' && (
           <>
             <form onSubmit={handleLogin}>
               {error && <div className="alert alert-danger">{error}</div>}
@@ -60,7 +75,8 @@ export default function LoginPage() {
               <div className="form-group">
                 <label>Password</label>
                 <div style={{ position: 'relative' }}>
-                  <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                  <input type={showPw ? 'text' : 'password'} value={password}
+                    onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••" required autoComplete="current-password" style={{ paddingRight: 44 }} />
                   <button type="button" onClick={() => setShowPw(v => !v)}
                     style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '1rem' }}>
@@ -72,10 +88,15 @@ export default function LoginPage() {
                 {busy ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
-            <div style={{ textAlign: 'center', marginTop: 14, fontSize: '.83rem', color: 'var(--muted)' }}>
-              <button type="button" onClick={() => setShowReset(true)}
+            <div style={{ textAlign: 'center', marginTop: 12, fontSize: '.83rem', display: 'flex', justifyContent: 'center', gap: 16 }}>
+              <button type="button" onClick={() => { setScreen('reset'); setResetEmail(email) }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}>
                 Forgot password?
+              </button>
+              <span style={{ color: 'var(--border)' }}>|</span>
+              <button type="button" onClick={() => { setScreen('magic'); setResetEmail(email) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}>
+                Email me a sign-in link
               </button>
             </div>
             <hr style={{ margin: '18px 0', border: 'none', borderTop: '1px solid var(--border)' }} />
@@ -89,7 +110,9 @@ export default function LoginPage() {
               </Link>
             </div>
           </>
-        ) : (
+        )}
+
+        {screen === 'reset' && (
           <>
             <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 14 }}>Reset Password</h2>
             <form onSubmit={handleReset}>
@@ -108,7 +131,37 @@ export default function LoginPage() {
               </button>
             </form>
             <div style={{ textAlign: 'center', marginTop: 12 }}>
-              <button type="button" onClick={() => setShowReset(false)}
+              <button type="button" onClick={() => setScreen('login')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600, fontSize: '.83rem' }}>
+                Back to Sign In
+              </button>
+            </div>
+          </>
+        )}
+
+        {screen === 'magic' && (
+          <>
+            <h2 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 6 }}>Sign In by Email Link</h2>
+            <p style={{ fontSize: '.83rem', color: 'var(--muted)', marginBottom: 14 }}>
+              We'll email you a one-click link — no password needed.
+            </p>
+            <form onSubmit={handleMagicLink}>
+              {resetMsg && (
+                <div className={`alert ${resetMsg.includes('sent') ? 'alert-success' : 'alert-danger'}`}>
+                  {resetMsg}
+                </div>
+              )}
+              <div className="form-group">
+                <label>Email Address</label>
+                <input type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)}
+                  placeholder="your@email.com" required />
+              </div>
+              <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+                {busy ? 'Sending…' : 'Send Sign-In Link'}
+              </button>
+            </form>
+            <div style={{ textAlign: 'center', marginTop: 12 }}>
+              <button type="button" onClick={() => setScreen('login')}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontWeight: 600, fontSize: '.83rem' }}>
                 Back to Sign In
               </button>
