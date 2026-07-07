@@ -4,6 +4,16 @@ import { supabase } from '../../lib/supabase'
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
 
+const PROGRESS = {
+  excellent:           { label: 'Excellent Progress',  color: '#16a34a' },
+  good:                { label: 'Good Progress',        color: '#2563eb' },
+  progressing:         { label: 'Progressing Well',     color: '#0d9488' },
+  needs_support:       { label: 'Needs Support',        color: '#d97706' },
+  behaviour_issues:    { label: 'Behaviour Issues',     color: '#dc2626' },
+  low_attendance:      { label: 'Low Attendance',       color: '#ea580c' },
+  awaiting_assessment: { label: 'Awaiting Assessment',  color: '#6b7280' },
+}
+
 export default function AdminStudents() {
   const [students, setStudents] = useState([])
   const [groups, setGroups]     = useState([])
@@ -16,11 +26,14 @@ export default function AdminStudents() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }] = await Promise.all([
       supabase.from('students').select('*, groups(id, name)').eq('active', true).order('last_name'),
       supabase.from('groups').select('id, name').order('name'),
+      supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
     ])
-    setStudents(s || [])
+    const noteMap = {}
+    ;(n || []).forEach(note => { noteMap[note.student_id] = note })
+    setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
     setGroups(g || [])
     setLoading(false)
   }
@@ -85,6 +98,13 @@ export default function AdminStudents() {
                         </div>
                         <div>
                           <div className="student-name">{fullName}</div>
+                          {s.note?.progress_level && PROGRESS[s.note.progress_level] && (
+                            <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'white',
+                              background: PROGRESS[s.note.progress_level].color,
+                              borderRadius: 5, padding: '1px 6px', marginTop: 2, display: 'inline-block' }}>
+                              {PROGRESS[s.note.progress_level].label}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -113,6 +133,15 @@ export default function AdminStudents() {
                           <Detail label="Address" value={[s.house_no, s.street_name, s.town, s.postcode].filter(Boolean).join(', ')} />
                           {s.medical_notes && <Detail label="Medical Notes" value={s.medical_notes} />}
                           <Detail label="Photo Consent" value={s.photo_consent ? 'Yes' : 'No'} />
+                          {s.note?.progress_level && (
+                            <Detail label="Teacher Assessment"
+                              value={PROGRESS[s.note.progress_level]?.label || s.note.progress_level} />
+                          )}
+                          {s.note?.comments && <Detail label="Teacher Comments" value={s.note.comments} />}
+                          {s.note?.updated_at && (
+                            <Detail label="Notes Last Updated"
+                              value={new Date(s.note.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} />
+                          )}
                         </div>
                         <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
                           <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Move to group:</label>
