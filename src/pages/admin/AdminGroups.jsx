@@ -13,7 +13,7 @@ export default function AdminGroups() {
   async function load() {
     const [{ data: g }, { data: t }] = await Promise.all([
       supabase.from('groups')
-        .select('id, name, teacher_id, users!groups_teacher_id_fkey(id, name), students(count)')
+        .select('id, name, teacher_id, students(count)')
         .order('name'),
       supabase.from('users').select('id, name').eq('role', 'teacher').order('name'),
     ])
@@ -75,7 +75,7 @@ export default function AdminGroups() {
               <tr key={g.id}>
                 <td style={{ fontWeight: 600 }}>{g.name}</td>
                 <td>
-                  <select defaultValue={g.teacher_id || ''}
+                  <select value={g.teacher_id || ''}
                     onChange={e => assignTeacher(g.id, e.target.value)}
                     style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: '.83rem', width: 180 }}>
                     <option value="">No teacher assigned</option>
