@@ -308,7 +308,7 @@ export default function TeacherStudents() {
                     </div>
                   </td>
                   <td style={{ fontSize: '.85rem', fontWeight: 600 }}>{calcAge(s.date_of_birth) ?? '—'}</td>
-                  <td style={{ fontSize: '.85rem' }}>{fmtDate(s.date_of_birth)}</td>
+                  <td className="date" style={{ fontSize: '.85rem' }}>{fmtDate(s.date_of_birth)}</td>
                   <td style={{ fontSize: '.85rem' }}>
                     {s.parent_name ? `${s.parent_name}${s.relationship ? ` (${s.relationship})` : ''}` : '—'}
                   </td>

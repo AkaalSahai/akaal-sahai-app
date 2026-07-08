@@ -242,10 +242,10 @@ export default function AdminStudents({ readOnly }) {
                       </div>
                     </td>
                     <td style={{ fontWeight: 600 }}>{calcAge(s.date_of_birth) ?? '—'}</td>
-                    <td>{fmtDate(s.date_of_birth)}</td>
+                    <td className="date">{fmtDate(s.date_of_birth)}</td>
                     <td>{s.groups?.name || <span style={{ color: 'var(--muted)' }}>No group</span>}</td>
                     <td>{s.phone || '—'}</td>
-                    <td>{fmtDate(s.date_joined)}</td>
+                    <td className="date">{fmtDate(s.date_joined)}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button className="btn btn-outline btn-xs"
@@ -338,8 +338,7 @@ export default function AdminStudents({ readOnly }) {
                                   return (
                                     <tr key={r.session_id} style={{ borderTop: '1px solid #bae6fd', opacity: isBusy ? 0.5 : 1 }}>
                                       <td style={{ padding: '7px 12px', fontWeight: 600 }}>
-                                        {fmtDate(r.session_date)}
-                                      </td>
+                                        {fmtDate(r.session_date)}</td>
                                       <td style={{ padding: '7px 12px', color: 'var(--muted)' }}>
                                         {d.toLocaleDateString('en-GB', { weekday: 'long' })}
                                       </td>

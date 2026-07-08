@@ -88,8 +88,9 @@ textarea { resize: vertical; min-height: 75px; }
 /* ── TABLES ── */
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .84rem; }
-th { background: var(--bg); font-weight: 700; padding: 10px 12px; text-align: left; font-size: .76rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 2px solid var(--border); }
+th { background: var(--bg); font-weight: 700; padding: 10px 12px; text-align: left; font-size: .76rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 2px solid var(--border); white-space: nowrap; }
 td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+td.date { white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
 
 /* ── PHONE INPUT ── */

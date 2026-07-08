@@ -326,7 +326,7 @@ export default function AdminUsers({ readOnly }) {
                     <span style={{ fontSize: '.75rem', color: '#cbd5e1' }}>—</span>
                   )}
                 </td>
-                <td style={{ fontSize: '.8rem', color: 'var(--muted)' }}>
+                <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
                 <td>

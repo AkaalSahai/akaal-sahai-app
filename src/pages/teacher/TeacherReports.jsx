@@ -250,10 +250,10 @@ export default function TeacherReports() {
                               const statusColor = r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : '#dc2626'
                               return (
                                 <tr key={idx} style={{ borderTop: '1px solid var(--border)' }}>
-                                  <td style={{ padding: '7px 12px', fontWeight: 600 }}>
+                                  <td style={{ padding: '7px 12px', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                     {fmtDate(r.session_date)}
                                   </td>
-                                  <td style={{ padding: '7px 12px', color: 'var(--muted)' }}>
+                                  <td style={{ padding: '7px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                                     {d.toLocaleDateString('en-GB', { weekday: 'long' })}
                                   </td>
                                   <td style={{ padding: '7px 12px' }}>
