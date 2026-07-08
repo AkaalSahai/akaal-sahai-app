@@ -24,8 +24,10 @@ export default function TeacherRegister() {
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)   // prevents duplicate session creation on rapid taps
 
-  const isReadOnly = date < todayISO()
-  const isToday    = date === todayISO()
+  const isReadOnly  = date < todayISO()
+  const isToday     = date === todayISO()
+  const dayOfWeek   = new Date(date + 'T12:00:00').getDay() // 5=Fri, 6=Sat
+  const isClassDay  = dayOfWeek === 5 || dayOfWeek === 6
 
   useEffect(() => { if (profile?.group_id) loadStudents() }, [profile])
   useEffect(() => { if (profile?.group_id) loadSession() }, [date, profile])
@@ -185,6 +187,12 @@ export default function TeacherRegister() {
         {isReadOnly && (
           <div className="alert" style={{ background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' }}>
             Past register — read only. Showing record for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+          </div>
+        )}
+
+        {isToday && !isClassDay && (
+          <div className="alert" style={{ background: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
+            No class scheduled today — Punjabi classes are on Fridays and Saturdays, 6:30pm – 8:30pm.
           </div>
         )}
 
