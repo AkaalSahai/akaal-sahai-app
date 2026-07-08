@@ -40,15 +40,18 @@ export default function AdminActivity() {
   const [capped, setCapped]         = useState(false)
 
   const LIMIT = 500
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase
+    setLoadError(null)
+    const { data, error } = await supabase
       .from('audit_logs')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(LIMIT + 1)
+    if (error) { setLoadError(error.message); setLoading(false); return }
     const rows = data || []
     setCapped(rows.length > LIMIT)
     setLogs(rows.slice(0, LIMIT))
@@ -72,6 +75,14 @@ export default function AdminActivity() {
   const hasFilter = userFilter || actionFilter || search
 
   if (loading) return <div className="spinner" />
+
+  if (loadError) return (
+    <div className="card">
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 16px', color: '#991b1b', fontSize: '.85rem' }}>
+        <strong>Could not load activity log:</strong> {loadError}
+      </div>
+    </div>
+  )
 
   return (
     <div className="card">
