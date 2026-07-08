@@ -15,20 +15,34 @@ export default function TeacherLayout() {
 
   const isAdmin     = hasRole('admin')
   const isRegistrar = hasRole('registrar') || isAdmin
+  const isAdminView = hasRole('adminView')
+
+  // readOnly for each section: full role overrides adminView
+  const adminReadOnly = isAdminView && !isRegistrar
+  const usersReadOnly = isAdminView && !isAdmin
+
+  const showAdminTabs = isRegistrar || isAdminView
+  const showUserTab   = isAdmin || isAdminView
 
   const tabs = [
     { id: 'register',    label: 'Daily Register' },
     { id: 'reports',     label: 'Reports'        },
     { id: 'mystudents',  label: 'My Students'    },
-    ...(isRegistrar ? [{ id: 'applications', label: 'Applications' }] : []),
-    ...(isRegistrar ? [{ id: 'students',     label: 'All Students' }] : []),
-    ...(isRegistrar ? [{ id: 'groups',       label: 'Groups'       }] : []),
-    ...(isAdmin     ? [{ id: 'users',        label: 'Teachers'     }] : []),
+    ...(showAdminTabs ? [{ id: 'applications', label: 'Applications' }] : []),
+    ...(showAdminTabs ? [{ id: 'students',     label: 'All Students' }] : []),
+    ...(showAdminTabs ? [{ id: 'groups',       label: 'Groups'       }] : []),
+    ...(showUserTab   ? [{ id: 'users',        label: 'Teachers'     }] : []),
   ]
 
   return (
     <div>
       <Topbar title="Akaal Sahai Southall" />
+      {isAdminView && !isAdmin && !isRegistrar && (
+        <div style={{ background: '#fef3c7', borderBottom: '2px solid #f59e0b', padding: '6px 20px',
+          fontSize: '.8rem', fontWeight: 600, color: '#92400e', textAlign: 'center' }}>
+          View Only — you can see all data but cannot make changes
+        </div>
+      )}
       <div className="nav-tabs">
         {tabs.map(t => (
           <button key={t.id} className={`nav-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
@@ -37,13 +51,13 @@ export default function TeacherLayout() {
         ))}
       </div>
       <div className="content">
-        {tab === 'register'    && <TeacherRegister />}
-        {tab === 'reports'     && <TeacherReports />}
-        {tab === 'mystudents'  && <TeacherStudents />}
-        {tab === 'applications'&& <AdminApplications />}
-        {tab === 'students'    && <AdminStudents />}
-        {tab === 'groups'      && <AdminGroups />}
-        {tab === 'users'       && <AdminUsers />}
+        {tab === 'register'     && <TeacherRegister />}
+        {tab === 'reports'      && <TeacherReports />}
+        {tab === 'mystudents'   && <TeacherStudents />}
+        {tab === 'applications' && <AdminApplications readOnly={adminReadOnly} />}
+        {tab === 'students'     && <AdminStudents readOnly={adminReadOnly} />}
+        {tab === 'groups'       && <AdminGroups readOnly={adminReadOnly} />}
+        {tab === 'users'        && <AdminUsers readOnly={usersReadOnly} />}
       </div>
     </div>
   )
