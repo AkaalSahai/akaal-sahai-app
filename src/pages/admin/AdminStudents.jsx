@@ -17,6 +17,8 @@ const PROGRESS = {
   awaiting_assessment: { label: 'Awaiting Assessment',  color: '#6b7280' },
 }
 
+const STATUS_COLOR = { present: '#16a34a', late: '#d97706', absent: '#dc2626' }
+
 export default function AdminStudents({ readOnly }) {
   const { profile } = useAuth()
   const [students, setStudents] = useState([])
@@ -25,6 +27,9 @@ export default function AdminStudents({ readOnly }) {
   const [search, setSearch]     = useState('')
   const [groupFilter, setGroupFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
+  const [attendOpen, setAttendOpen]   = useState({})
+  const [attendLoading, setAttendLoading] = useState({})
+  const [editBusy, setEditBusy] = useState(null)
 
   useEffect(() => { load() }, [])
 
@@ -39,6 +44,70 @@ export default function AdminStudents({ readOnly }) {
     setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
     setGroups(g || [])
     setLoading(false)
+  }
+
+  async function loadAttendHistory(studentId) {
+    setAttendLoading(prev => ({ ...prev, [studentId]: true }))
+    const { data } = await supabase
+      .from('attendance_records')
+      .select('session_id, session_date, status, group_id')
+      .eq('student_id', studentId)
+      .order('session_date', { ascending: false })
+    setAttendOpen(prev => ({ ...prev, [studentId]: data || [] }))
+    setAttendLoading(prev => ({ ...prev, [studentId]: false }))
+  }
+
+  function toggleAttend(studentId) {
+    if (attendOpen[studentId] !== undefined) {
+      setAttendOpen(prev => { const n = { ...prev }; delete n[studentId]; return n })
+    } else {
+      loadAttendHistory(studentId)
+    }
+  }
+
+  async function editRecord(studentId, record, newStatus) {
+    if (editBusy) return
+    const s    = students.find(x => x.id === studentId)
+    const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
+    const key  = record.session_id + studentId
+
+    if (record.status === newStatus) {
+      // Tap active status → clear the record
+      setEditBusy(key)
+      try {
+        const { error } = await supabase.from('attendance_records')
+          .delete()
+          .eq('session_id', record.session_id)
+          .eq('student_id', studentId)
+        if (error) throw error
+        setAttendOpen(prev => ({
+          ...prev,
+          [studentId]: prev[studentId].filter(r => r.session_id !== record.session_id),
+        }))
+        await logAction(profile, 'Edited attendance record',
+          `Cleared ${name} on ${record.session_date}`)
+      } catch (err) { alert('Error: ' + err.message) }
+      finally { setEditBusy(null) }
+      return
+    }
+
+    setEditBusy(key)
+    try {
+      const { error } = await supabase.from('attendance_records')
+        .update({ status: newStatus })
+        .eq('session_id', record.session_id)
+        .eq('student_id', studentId)
+      if (error) throw error
+      setAttendOpen(prev => ({
+        ...prev,
+        [studentId]: prev[studentId].map(r =>
+          r.session_id === record.session_id ? { ...r, status: newStatus } : r
+        ),
+      }))
+      await logAction(profile, 'Edited attendance record',
+        `Set ${name} to ${newStatus} on ${record.session_date}`)
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setEditBusy(null) }
   }
 
   async function moveGroup(studentId, newGroupId) {
@@ -100,6 +169,7 @@ export default function AdminStudents({ readOnly }) {
           <tbody>
             {filtered.map((s, i) => {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
+              const records  = attendOpen[s.id]
               return (
                 <Fragment key={s.id}>
                   <tr>
@@ -128,16 +198,26 @@ export default function AdminStudents({ readOnly }) {
                     <td>{s.phone || '—'}</td>
                     <td>{s.date_joined || '—'}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-outline btn-xs" onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button className="btn btn-outline btn-xs"
+                          onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
                           {expanded === s.id ? 'Less' : 'Details'}
                         </button>
+                        {!readOnly && (
+                          <button className="btn btn-outline btn-xs"
+                            style={{ color: records !== undefined ? 'var(--primary)' : undefined,
+                              borderColor: records !== undefined ? 'var(--primary)' : undefined }}
+                            onClick={() => toggleAttend(s.id)}>
+                            {records !== undefined ? 'Hide Att.' : 'Attendance'}
+                          </button>
+                        )}
                         {!readOnly && (
                           <button className="btn btn-danger btn-xs" onClick={() => deactivate(s.id)}>Remove</button>
                         )}
                       </div>
                     </td>
                   </tr>
+
                   {expanded === s.id && (
                     <tr key={s.id + '-exp'}>
                       <td colSpan={6} style={{ background: '#f8fafc', padding: '12px 16px' }}>
@@ -168,6 +248,75 @@ export default function AdminStudents({ readOnly }) {
                               <option value="">— select —</option>
                               {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                             </select>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+
+                  {records !== undefined && (
+                    <tr key={s.id + '-att'}>
+                      <td colSpan={6} style={{ background: '#f0f9ff', padding: '12px 16px', borderTop: '2px solid #bae6fd' }}>
+                        <div style={{ fontWeight: 700, fontSize: '.82rem', color: '#0369a1', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                          <span>
+                            Attendance History — {fullName}
+                            {records.length > 0 && (
+                              <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>
+                                {records.length} session{records.length !== 1 ? 's' : ''} · tap active status to clear, tap another to change
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        {attendLoading[s.id] ? (
+                          <div className="spinner" style={{ width: 24, height: 24 }} />
+                        ) : records.length === 0 ? (
+                          <div style={{ fontSize: '.83rem', color: 'var(--muted)' }}>No attendance records found for this student.</div>
+                        ) : (
+                          <div style={{ maxHeight: 300, overflowY: 'auto', borderRadius: 8, border: '1px solid #bae6fd' }}>
+                            <table style={{ width: '100%', fontSize: '.82rem', borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr style={{ background: '#e0f2fe', position: 'sticky', top: 0 }}>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#0369a1', fontSize: '.72rem' }}>Date</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#0369a1', fontSize: '.72rem' }}>Day</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#0369a1', fontSize: '.72rem' }}>Status</th>
+                                  <th style={{ padding: '6px 12px', textAlign: 'left', fontWeight: 600, color: '#0369a1', fontSize: '.72rem' }}>Edit</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {records.map(r => {
+                                  const d     = new Date(r.session_date + 'T12:00:00')
+                                  const isBusy = editBusy === r.session_id + s.id
+                                  return (
+                                    <tr key={r.session_id} style={{ borderTop: '1px solid #bae6fd', opacity: isBusy ? 0.5 : 1 }}>
+                                      <td style={{ padding: '7px 12px', fontWeight: 600 }}>
+                                        {d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                      </td>
+                                      <td style={{ padding: '7px 12px', color: 'var(--muted)' }}>
+                                        {d.toLocaleDateString('en-GB', { weekday: 'long' })}
+                                      </td>
+                                      <td style={{ padding: '7px 12px' }}>
+                                        <span style={{ fontWeight: 700, color: STATUS_COLOR[r.status] || '#475569', textTransform: 'capitalize' }}>
+                                          {r.status}
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: '7px 12px' }}>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                          {['present', 'late', 'absent'].map(st => (
+                                            <button key={st}
+                                              className={`att-btn att-${st}${r.status === st ? ' active' : ''}`}
+                                              style={{ fontSize: '.7rem', padding: '3px 8px' }}
+                                              disabled={isBusy}
+                                              onClick={() => editRecord(s.id, r, st)}>
+                                              {st.charAt(0).toUpperCase() + st.slice(1)}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         )}
                       </td>
