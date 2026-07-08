@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import PhoneInput from '../../components/PhoneInput'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export default function TeacherRegistration() {
   const [form, setForm] = useState({
@@ -38,7 +39,11 @@ export default function TeacherRegistration() {
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/register-teacher`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON}`,
+          'apikey': SUPABASE_ANON,
+        },
         body: JSON.stringify({
           full_name: form.full_name.trim(),
           email: form.email.trim().toLowerCase(),
@@ -50,7 +55,7 @@ export default function TeacherRegistration() {
         }),
       })
       const result = await res.json()
-      if (result.error) throw new Error(result.error)
+      if (!res.ok || result.error || result.code) throw new Error(result.error || result.message || 'Registration failed')
       setDone(true)
     } catch (err) {
       alert('Submission failed: ' + err.message)
