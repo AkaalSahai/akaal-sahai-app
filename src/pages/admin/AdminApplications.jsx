@@ -97,6 +97,15 @@ export default function AdminApplications({ readOnly }) {
     finally { setBusy(null) }
   }
 
+  async function clearApp(table, id) {
+    if (!confirm('Permanently delete this application? This cannot be undone.')) return
+    setBusy(id)
+    const { error } = await supabase.from(table).delete().eq('id', id)
+    if (error) alert('Error: ' + error.message)
+    else load()
+    setBusy(null)
+  }
+
   async function rejectTransfer(tr) {
     if (readOnly) return
     setBusy(tr.id)
@@ -148,12 +157,19 @@ export default function AdminApplications({ readOnly }) {
                 {app.medical_notes && <Detail label="Medical Notes" value={app.medical_notes} />}
                 <Detail label="Photo Consent" value={app.photo_consent ? 'Yes' : 'No'} />
               </div>
-              {app.status === 'pending' && !readOnly && (
+              {!readOnly && (
                 <div className="app-actions">
-                  <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => approveStudent(app)}>
-                    {busy === app.id ? '…' : 'Approve & Add Student'}
+                  {app.status === 'pending' && <>
+                    <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => approveStudent(app)}>
+                      {busy === app.id ? '…' : 'Approve & Add Student'}
+                    </button>
+                    <button className="btn btn-danger btn-sm" disabled={busy === app.id} onClick={() => rejectStudent(app)}>Reject</button>
+                  </>}
+                  <button className="btn btn-outline btn-sm" disabled={busy === app.id}
+                    onClick={() => clearApp('parent_applications', app.id)}
+                    style={{ marginLeft: 'auto', color: '#94a3b8', borderColor: '#cbd5e1' }}>
+                    {busy === app.id ? '…' : 'Clear'}
                   </button>
-                  <button className="btn btn-danger btn-sm" disabled={busy === app.id} onClick={() => rejectStudent(app)}>Reject</button>
                 </div>
               )}
             </ApplicationCard>
@@ -180,8 +196,19 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="DBS Number" value={app.dbs_number || '—'} />
                 <Detail label="Experience" value={app.experience || '—'} />
               </div>
-              {app.status === 'pending' && !readOnly && (
-                <TeacherApproveForm app={app} groups={groups} onApprove={approveTeacher} onReject={rejectTeacher} busy={busy} />
+              {!readOnly && (
+                <div>
+                  {app.status === 'pending' && (
+                    <TeacherApproveForm app={app} groups={groups} onApprove={approveTeacher} onReject={rejectTeacher} busy={busy} />
+                  )}
+                  <div style={{ marginTop: app.status === 'pending' ? 8 : 0 }}>
+                    <button className="btn btn-outline btn-sm" disabled={busy === app.id}
+                      onClick={() => clearApp('teacher_applications', app.id)}
+                      style={{ color: '#94a3b8', borderColor: '#cbd5e1' }}>
+                      {busy === app.id ? '…' : 'Clear Application'}
+                    </button>
+                  </div>
+                </div>
               )}
             </ApplicationCard>
           ))}
@@ -206,8 +233,19 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Reason for Transfer" value={tr.reason} />
                 {tr.to_group_id && <Detail label="Moved To" value={groups.find(g => g.id === tr.to_group_id)?.name || '—'} />}
               </div>
-              {tr.status === 'pending' && !readOnly && (
-                <TransferApproveForm tr={tr} groups={groups} onApprove={approveTransfer} onReject={rejectTransfer} busy={busy} />
+              {!readOnly && (
+                <div>
+                  {tr.status === 'pending' && (
+                    <TransferApproveForm tr={tr} groups={groups} onApprove={approveTransfer} onReject={rejectTransfer} busy={busy} />
+                  )}
+                  <div style={{ marginTop: tr.status === 'pending' ? 8 : 0 }}>
+                    <button className="btn btn-outline btn-sm" disabled={busy === tr.id}
+                      onClick={() => clearApp('transfer_requests', tr.id)}
+                      style={{ color: '#94a3b8', borderColor: '#cbd5e1' }}>
+                      {busy === tr.id ? '…' : 'Clear'}
+                    </button>
+                  </div>
+                </div>
               )}
             </ApplicationCard>
           ))}
