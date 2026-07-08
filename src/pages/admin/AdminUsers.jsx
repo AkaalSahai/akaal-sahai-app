@@ -23,6 +23,8 @@ export default function AdminUsers({ readOnly }) {
   const [busy, setBusy]           = useState(null)
   const [form, setForm]           = useState({ name: '', email: '', role: 'registrar' })
   const [editEmail, setEditEmail] = useState({})
+  const [roleDrafts, setRoleDrafts] = useState({})   // { [userId]: extra_roles[] }
+  const [savedMsg, setSavedMsg]     = useState({})   // { [userId]: true }
 
   useEffect(() => { load() }, [])
 
@@ -100,16 +102,31 @@ export default function AdminUsers({ readOnly }) {
     finally { setBusy(null) }
   }
 
-  async function toggleExtraRole(userId, currentExtras, roleToToggle) {
-    const current = currentExtras || []
+  function getDraft(userId, currentExtras) {
+    return roleDrafts[userId] ?? (currentExtras || [])
+  }
+
+  function toggleDraftRole(userId, currentExtras, roleToToggle) {
+    const current = getDraft(userId, currentExtras)
     const updated = current.includes(roleToToggle)
       ? current.filter(r => r !== roleToToggle)
       : [...current, roleToToggle]
+    setRoleDrafts(prev => ({ ...prev, [userId]: updated }))
+    setSavedMsg(prev => ({ ...prev, [userId]: false }))
+  }
+
+  async function saveExtraRoles(userId, currentExtras) {
+    const draft = getDraft(userId, currentExtras)
+    setBusy(userId)
     try {
-      const { error } = await supabase.from('users').update({ extra_roles: updated }).eq('id', userId)
+      const { error } = await supabase.from('users').update({ extra_roles: draft }).eq('id', userId)
       if (error) throw error
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, extra_roles: updated } : u))
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, extra_roles: draft } : u))
+      setRoleDrafts(prev => { const n = { ...prev }; delete n[userId]; return n })
+      setSavedMsg(prev => ({ ...prev, [userId]: true }))
+      setTimeout(() => setSavedMsg(prev => ({ ...prev, [userId]: false })), 2500)
     } catch (err) { alert('Error: ' + err.message) }
+    finally { setBusy(null) }
   }
 
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
@@ -181,18 +198,36 @@ export default function AdminUsers({ readOnly }) {
                         style={{ padding: '3px 6px', fontSize: '.78rem', borderRadius: 6, border: '1px solid var(--border)', fontWeight: 600, marginBottom: 4, display: 'block' }}>
                         {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {ROLES.filter(r => r !== u.role).map(r => {
-                          const active = (u.extra_roles || []).includes(r)
-                          return (
-                            <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: '.7rem',
-                              cursor: 'pointer', color: active ? 'var(--primary)' : 'var(--muted)', fontWeight: active ? 700 : 400 }}>
-                              <input type="checkbox" checked={active} style={{ width: 'auto', margin: 0 }}
-                                onChange={() => toggleExtraRole(u.id, u.extra_roles, r)} />
-                              {r}
-                            </label>
-                          )
-                        })}
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: '10px', color: 'var(--muted)', letterSpacing: '.04em', marginBottom: 4, textTransform: 'uppercase' }}>Extra roles</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                          {ROLES.filter(r => r !== u.role).map(r => {
+                            const draft = getDraft(u.id, u.extra_roles)
+                            const active = draft.includes(r)
+                            return (
+                              <label key={r} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '.75rem',
+                                cursor: 'pointer', userSelect: 'none',
+                                color: active ? 'var(--primary)' : 'var(--muted)',
+                                fontWeight: active ? 700 : 400 }}>
+                                <input type="checkbox" checked={active} style={{ width: 'auto', margin: 0, cursor: 'pointer' }}
+                                  onChange={() => toggleDraftRole(u.id, u.extra_roles, r)} />
+                                {r}
+                              </label>
+                            )
+                          })}
+                        </div>
+                        {roleDrafts[u.id] !== undefined && (
+                          <button
+                            className="btn btn-primary btn-xs"
+                            disabled={busy === u.id}
+                            onClick={() => saveExtraRoles(u.id, u.extra_roles)}
+                            style={{ fontSize: '.72rem', padding: '3px 10px' }}>
+                            {busy === u.id ? 'Saving…' : 'Save Roles'}
+                          </button>
+                        )}
+                        {savedMsg[u.id] && (
+                          <span style={{ fontSize: '.72rem', color: 'var(--success)', fontWeight: 700, marginLeft: 8 }}>✓ Saved</span>
+                        )}
                       </div>
                     </div>
                   ) : (
