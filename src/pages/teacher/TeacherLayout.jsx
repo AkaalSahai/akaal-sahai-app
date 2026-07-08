@@ -46,11 +46,25 @@ export default function TeacherLayout() {
         </div>
       )}
       <div className="nav-tabs">
-        {tabs.map(t => (
-          <button key={t.id} className={`nav-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
+        {tabs.map(t => {
+          const isMessage = t.id === 'message'
+          const isActive  = tab === t.id
+          return (
+            <button key={t.id}
+              className={`nav-tab ${isActive ? 'active' : ''}`}
+              onClick={() => setTab(t.id)}
+              style={isMessage ? {
+                marginLeft: 'auto',
+                color:       isActive ? '#92400e' : '#b45309',
+                background:  isActive ? '#fef3c7' : '#fffbeb',
+                borderBottom: isActive ? '3px solid #f59e0b' : '3px solid transparent',
+                borderRadius: '6px 6px 0 0',
+                padding:     '10px 14px',
+              } : undefined}>
+              {isMessage ? '✉ ' : ''}{t.label}
+            </button>
+          )
+        })}
       </div>
       <div className="content">
         {tab === 'register'     && <TeacherRegister />}
