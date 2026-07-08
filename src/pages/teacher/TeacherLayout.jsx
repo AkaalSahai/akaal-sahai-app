@@ -54,12 +54,13 @@ export default function TeacherLayout() {
               className={`nav-tab ${isActive ? 'active' : ''}`}
               onClick={() => setTab(t.id)}
               style={isMessage ? {
-                marginLeft: 'auto',
-                color:       isActive ? '#92400e' : '#b45309',
-                background:  isActive ? '#fef3c7' : '#fffbeb',
+                marginLeft:   8,
+                borderLeft:   '2px solid #f59e0b',
+                color:        isActive ? '#92400e' : '#b45309',
+                background:   isActive ? '#fef3c7' : '#fffbeb',
                 borderBottom: isActive ? '3px solid #f59e0b' : '3px solid transparent',
-                borderRadius: '6px 6px 0 0',
-                padding:     '10px 14px',
+                borderRadius: '0 6px 0 0',
+                padding:      '10px 14px',
               } : undefined}>
               {isMessage ? '✉ ' : ''}{t.label}
             </button>
