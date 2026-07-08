@@ -1,6 +1,8 @@
 import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
+import { useAuth } from '../../hooks/useAuth'
+import { logAction } from '../../lib/audit'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -16,6 +18,7 @@ const PROGRESS = {
 }
 
 export default function AdminStudents({ readOnly }) {
+  const { profile } = useAuth()
   const [students, setStudents] = useState([])
   const [groups, setGroups]     = useState([])
   const [loading, setLoading]   = useState(true)
@@ -41,13 +44,20 @@ export default function AdminStudents({ readOnly }) {
   async function moveGroup(studentId, newGroupId) {
     if (readOnly) return
     await supabase.from('students').update({ group_id: newGroupId }).eq('id', studentId)
+    const s = students.find(x => x.id === studentId)
+    const g = groups.find(x => x.id === newGroupId)
+    const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
+    logAction(profile, 'Moved student to group', `${name} → ${g?.name || newGroupId}`).catch(() => {})
     load()
   }
 
   async function deactivate(studentId) {
     if (readOnly) return
     if (!confirm('Remove this student from the system? This cannot be undone.')) return
+    const s = students.find(x => x.id === studentId)
+    const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
     await supabase.from('students').update({ active: false }).eq('id', studentId)
+    logAction(profile, 'Removed student', name).catch(() => {})
     load()
   }
 

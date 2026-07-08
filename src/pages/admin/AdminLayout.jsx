@@ -9,12 +9,14 @@ import AdminImport from './AdminImport'
 import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
+import AdminActivity from './AdminActivity'
 import { useAuth } from '../../hooks/useAuth'
 
 export default function AdminLayout() {
   const [tab, setTab]   = useState('dashboard')
   const { profile, hasRole } = useAuth()
   const readOnly        = profile?.role === 'adminView'
+  const isPrimaryAdmin  = profile?.role === 'admin'
   const isTeacher       = hasRole('teacher')
 
   const TABS = [
@@ -26,7 +28,8 @@ export default function AdminLayout() {
     ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
     ...(isTeacher ? [{ id: 'myreports',   label: 'My Reports'   }] : []),
     ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
-    ...(!readOnly ? [{ id: 'import', label: 'Import Data' }] : []),
+    ...(!readOnly       ? [{ id: 'import',   label: 'Import Data' }] : []),
+    ...(isPrimaryAdmin  ? [{ id: 'activity', label: 'Activity'    }] : []),
   ]
 
   return (
@@ -55,6 +58,7 @@ export default function AdminLayout() {
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'myreports'    && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}
+        {tab === 'activity'     && <AdminActivity />}
       </div>
     </div>
   )

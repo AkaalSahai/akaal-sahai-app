@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { logAction } from '../../lib/audit'
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-user-action`
 
@@ -17,6 +19,7 @@ async function callAdminAction(payload, token) {
 const ROLES = ['admin','registrar','teacher','adminView']
 
 export default function AdminUsers({ readOnly }) {
+  const { profile: myProfile } = useAuth()
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -24,8 +27,8 @@ export default function AdminUsers({ readOnly }) {
   const [busy, setBusy]           = useState(null)
   const [form, setForm]           = useState({ name: '', email: '', role: 'registrar' })
   const [editEmail, setEditEmail] = useState({})
-  const [roleDrafts, setRoleDrafts] = useState({})   // { [userId]: extra_roles[] }
-  const [savedMsg, setSavedMsg]     = useState({})   // { [userId]: true }
+  const [roleDrafts, setRoleDrafts] = useState({})
+  const [savedMsg, setSavedMsg]     = useState({})
 
   useEffect(() => { load() }, [])
 
@@ -36,7 +39,6 @@ export default function AdminUsers({ readOnly }) {
       supabase.from('groups').select('id, name'),
     ])
     if (userErr) {
-      // can_edit_students column may not exist yet — fall back without it
       if (userErr.message?.includes('can_edit_students')) {
         const { data: fallback } = await supabase
           .from('users').select('id, name, email, role, extra_roles, last_login, group_id').order('role').order('name')
@@ -68,6 +70,7 @@ export default function AdminUsers({ readOnly }) {
       const token = await getToken()
       const result = await callAdminAction({ action: 'create', name: form.name, email: form.email, role: form.role }, token)
       alert(`User created!\n\nEmail: ${form.email}\nTemp password: ${result.tempPw}\n\nShare these with the user — they should change their password after first login.`)
+      logAction(myProfile, 'Created user', `${form.name} (${form.role})`).catch(() => {})
       setShowCreate(false)
       setForm({ name: '', email: '', role: 'registrar' })
       load()
@@ -80,6 +83,8 @@ export default function AdminUsers({ readOnly }) {
     try {
       const token = await getToken()
       await callAdminAction({ action: 'update-email', userId, newEmail }, token)
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Updated email', `${u?.name} → ${newEmail}`).catch(() => {})
       setEditEmail(prev => { const n = { ...prev }; delete n[userId]; return n })
       load()
     } catch (err) { alert('Error: ' + err.message) }
@@ -92,6 +97,8 @@ export default function AdminUsers({ readOnly }) {
       const token = await getToken()
       const result = await callAdminAction({ action: 'reset-password', userId, email }, token)
       alert(`Password reset!\n\nNew temp password: ${result.tempPw}\n\nShare this with ${email}`)
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Reset password', u?.name || email).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -103,6 +110,7 @@ export default function AdminUsers({ readOnly }) {
     try {
       const token = await getToken()
       await callAdminAction({ action: 'delete', userId }, token)
+      logAction(myProfile, 'Deleted user', name).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -112,8 +120,10 @@ export default function AdminUsers({ readOnly }) {
     if (!confirm(`Change this user's primary role to "${newRole}"?`)) return
     setBusy(userId)
     try {
+      const u = users.find(x => x.id === userId)
       const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId)
       if (error) throw error
+      logAction(myProfile, 'Changed primary role', `${u?.name}: ${u?.role} → ${newRole}`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -138,6 +148,8 @@ export default function AdminUsers({ readOnly }) {
     try {
       const { error } = await supabase.from('users').update({ extra_roles: draft }).eq('id', userId)
       if (error) throw error
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Updated extra roles', `${u?.name}: [${draft.join(', ') || 'none'}]`).catch(() => {})
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, extra_roles: draft } : u))
       setRoleDrafts(prev => { const n = { ...prev }; delete n[userId]; return n })
       setSavedMsg(prev => ({ ...prev, [userId]: true }))
@@ -151,6 +163,8 @@ export default function AdminUsers({ readOnly }) {
     try {
       const { error } = await supabase.from('users').update({ can_edit_students: updated }).eq('id', userId)
       if (error) throw error
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Toggled student edit permission', `${u?.name}: ${updated ? 'enabled' : 'disabled'}`).catch(() => {})
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, can_edit_students: updated } : u))
     } catch (err) { alert('Error: ' + err.message) }
   }
@@ -251,9 +265,7 @@ export default function AdminUsers({ readOnly }) {
                           })}
                         </div>
                         {roleDrafts[u.id] !== undefined && (
-                          <button
-                            className="btn btn-primary btn-xs"
-                            disabled={busy === u.id}
+                          <button className="btn btn-primary btn-xs" disabled={busy === u.id}
                             onClick={() => saveExtraRoles(u.id, u.extra_roles)}
                             style={{ fontSize: '.72rem', padding: '3px 10px' }}>
                             {busy === u.id ? 'Saving…' : 'Save Roles'}
@@ -291,26 +303,16 @@ export default function AdminUsers({ readOnly }) {
                 <td>
                   {(u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) ? (
                     !readOnly ? (
-                      <button
-                        onClick={() => toggleEditStudents(u.id, u.can_edit_students)}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                      <button onClick={() => toggleEditStudents(u.id, u.can_edit_students)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
                           padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
                           border: 'none', cursor: 'pointer', transition: 'all .15s',
                           background: u.can_edit_students ? '#dcfce7' : '#f1f5f9',
-                          color: u.can_edit_students ? '#15803d' : '#94a3b8',
-                        }}>
-                        <span style={{
-                          width: 28, height: 16, borderRadius: 8, position: 'relative', display: 'inline-block',
-                          background: u.can_edit_students ? '#22c55e' : '#cbd5e1', transition: 'background .15s',
-                          flexShrink: 0,
-                        }}>
-                          <span style={{
-                            position: 'absolute', top: 2,
-                            left: u.can_edit_students ? 14 : 2,
-                            width: 12, height: 12, borderRadius: '50%',
-                            background: '#fff', transition: 'left .15s',
-                          }} />
+                          color: u.can_edit_students ? '#15803d' : '#94a3b8' }}>
+                        <span style={{ width: 28, height: 16, borderRadius: 8, position: 'relative', display: 'inline-block',
+                          background: u.can_edit_students ? '#22c55e' : '#cbd5e1', transition: 'background .15s', flexShrink: 0 }}>
+                          <span style={{ position: 'absolute', top: 2, left: u.can_edit_students ? 14 : 2,
+                            width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
                         </span>
                         {u.can_edit_students ? 'Enabled' : 'Disabled'}
                       </button>

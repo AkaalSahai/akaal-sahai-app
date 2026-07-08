@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { logAction } from '../../lib/audit'
 
 export default function AdminApplications({ readOnly }) {
+  const { profile } = useAuth()
   const [tab, setTab]               = useState('students')
   const [studentApps, setStudentApps] = useState([])
   const [teacherApps, setTeacherApps] = useState([])
@@ -40,6 +43,7 @@ export default function AdminApplications({ readOnly }) {
       })
       if (error) throw error
       await supabase.from('parent_applications').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', app.id)
+      logAction(profile, 'Approved student application', [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -49,6 +53,7 @@ export default function AdminApplications({ readOnly }) {
     if (readOnly) return
     setBusy(app.id)
     await supabase.from('parent_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', app.id)
+    logAction(profile, 'Rejected student application', [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')).catch(() => {})
     setBusy(null); load()
   }
 
@@ -69,6 +74,7 @@ export default function AdminApplications({ readOnly }) {
       if (result.error) throw new Error(result.error)
       const grpMsg = result.groupName ? '\nGroup: ' + result.groupName : '\nNo group assigned yet.'
       alert('Teacher approved!\n\nAn email has been sent to ' + app.email + grpMsg + '\n\nThey can now log in using the password they set during registration.')
+      logAction(profile, 'Approved teacher application', result.groupName ? `${app.full_name} → ${result.groupName}` : app.full_name).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -78,6 +84,7 @@ export default function AdminApplications({ readOnly }) {
     if (readOnly) return
     setBusy(app.id)
     await supabase.from('teacher_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', app.id)
+    logAction(profile, 'Rejected teacher application', app.full_name).catch(() => {})
     setBusy(null); load()
   }
 
@@ -92,6 +99,7 @@ export default function AdminApplications({ readOnly }) {
         status: 'approved', to_group_id: toGroupId, reviewed_at: new Date().toISOString(),
       }).eq('id', tr.id)
       alert(`${tr.student_name} has been moved to ${grp?.name || 'the selected group'}.`)
+      logAction(profile, 'Approved transfer request', `${tr.student_name} → ${grp?.name || 'new group'}`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -115,6 +123,15 @@ export default function AdminApplications({ readOnly }) {
       }
       const { error } = await supabase.from(table).delete().eq('id', id)
       if (error) throw error
+      const clearAction = table === 'parent_applications' ? 'Cleared student application'
+        : table === 'teacher_applications' ? 'Cleared teacher application'
+        : 'Cleared transfer request'
+      const clearDetail = table === 'parent_applications'
+        ? [studentApps.find(a => a.id === id)].filter(Boolean).map(a => [a.first_name, a.last_name].filter(Boolean).join(' '))[0]
+        : table === 'teacher_applications'
+        ? teacherApps.find(a => a.id === id)?.full_name
+        : transfers.find(a => a.id === id)?.student_name
+      logAction(profile, clearAction, clearDetail || null).catch(() => {})
       load()
     } catch (err) {
       alert('Error: ' + err.message)

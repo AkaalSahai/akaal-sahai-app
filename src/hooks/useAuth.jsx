@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { logAction } from '../lib/audit'
 
 const AuthContext = createContext(null)
 
@@ -15,6 +16,7 @@ export function AuthProvider({ children }) {
       .eq('id', userId)
       .single()
     setProfile(data)
+    return data
   }
 
   useEffect(() => {
@@ -36,11 +38,13 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
     await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', data.user.id)
-    await fetchProfile(data.user.id)
+    const profileData = await fetchProfile(data.user.id)
+    logAction(profileData, 'Signed in').catch(() => {})
     return data
   }
 
   async function logout() {
+    if (profile) logAction(profile, 'Signed out').catch(() => {})
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)

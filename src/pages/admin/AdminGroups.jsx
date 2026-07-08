@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { logAction } from '../../lib/audit'
 
 export default function AdminGroups({ readOnly }) {
+  const { profile } = useAuth()
   const [groups, setGroups]   = useState([])
   const [teachers, setTeachers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,7 +30,7 @@ export default function AdminGroups({ readOnly }) {
     setBusy(true)
     const { error } = await supabase.from('groups').insert({ name: newGroup.trim() })
     if (error) alert(error.message)
-    else { setNewGroup(''); load() }
+    else { logAction(profile, 'Created group', newGroup.trim()).catch(() => {}); setNewGroup(''); load() }
     setBusy(false)
   }
 
@@ -39,6 +42,8 @@ export default function AdminGroups({ readOnly }) {
     }
     await supabase.from('groups').update({ teacher_id: teacherId || null }).eq('id', groupId)
     if (teacherId) await supabase.from('users').update({ group_id: groupId }).eq('id', teacherId)
+    const teacherName = teachers.find(t => t.id === teacherId)?.name
+    if (teacherName) logAction(profile, 'Assigned teacher to group', `${teacherName} → ${group?.name}`).catch(() => {})
     load()
   }
 
@@ -48,6 +53,7 @@ export default function AdminGroups({ readOnly }) {
     if (count > 0) { alert('Cannot delete a group that has students. Move or remove students first.'); return }
     if (!confirm('Delete group "' + g?.name + '"?')) return
     await supabase.from('groups').delete().eq('id', groupId)
+    logAction(profile, 'Deleted group', g?.name).catch(() => {})
     load()
   }
 
