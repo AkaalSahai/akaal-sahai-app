@@ -37,6 +37,8 @@ export default function TeacherReports() {
   const [expanded, setExpanded]  = useState(null)
   const [loading, setLoading]    = useState(true)
   const [saving, setSaving]      = useState({})
+  const [sortCol, setSortCol]    = useState('name')
+  const [sortDir, setSortDir]    = useState('asc')
   const debounceRef              = useRef({})
   const notesRef                 = useRef({})
 
@@ -129,6 +131,25 @@ export default function TeacherReports() {
     return a
   }
 
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const sorted = [...students].sort((a, b) => {
+    let va, vb
+    if (sortCol === 'name') {
+      va = [a.last_name, a.first_name].filter(Boolean).join(' ').toLowerCase()
+      vb = [b.last_name, b.first_name].filter(Boolean).join(' ').toLowerCase()
+    } else {
+      va = age(a.date_of_birth) ?? -1
+      vb = age(b.date_of_birth) ?? -1
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1
+    if (va > vb) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
   if (!profile?.group_id) return (
     <div className="card">
       <div className="alert alert-warning">You have not been assigned to a group yet.</div>
@@ -138,14 +159,31 @@ export default function TeacherReports() {
 
   return (
     <div className="card">
-      <div className="card-title">Student Reports ({students.length})</div>
+      <div className="card-title">
+        Student Reports ({students.length})
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: '.75rem', color: 'var(--muted)', marginRight: 2 }}>Sort:</span>
+          {[['name', 'Name'], ['age', 'Age']].map(([col, label]) => {
+            const active = sortCol === col
+            return (
+              <button key={col} onClick={() => toggleSort(col)}
+                style={{ padding: '5px 10px', fontSize: '.78rem', fontWeight: 600, borderRadius: 6,
+                  border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                  background: active ? 'var(--primary)' : 'white',
+                  color: active ? 'white' : 'var(--muted)', cursor: 'pointer' }}>
+                {label} {active ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       {students.length === 0 && (
         <div className="empty-state"><div className="icon">📊</div>No students in your group yet</div>
       )}
 
       <ul className="student-list" style={{ padding: 0 }}>
-        {students.map((s, i) => {
+        {sorted.map((s, i) => {
           const st     = stats[s.id] || { present: 0, late: 0, absent: 0, total: 0 }
           const pct    = st.total > 0 ? Math.round(((st.present + st.late) / st.total) * 100) : null
           const pctColor = pct === null ? 'var(--muted)' : pct >= 80 ? '#16a34a' : pct >= 60 ? '#d97706' : '#dc2626'
@@ -165,7 +203,10 @@ export default function TeacherReports() {
                   <div className="student-name">{fullName}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
                     {age(s.date_of_birth) !== null && (
-                      <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>Age {age(s.date_of_birth)}</span>
+                      <span style={{ fontSize: '.72rem', fontWeight: 700, color: '#475569',
+                        background: '#f1f5f9', borderRadius: 5, padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                        Age {age(s.date_of_birth)}
+                      </span>
                     )}
                     {note.progress_level && progressBadge(note.progress_level)}
                     {s.medical_notes && (
