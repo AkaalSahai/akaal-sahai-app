@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import MedicalBadge from '../../components/MedicalBadge'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -97,7 +98,10 @@ export default function AdminStudents() {
                           {s.first_name[0]}{s.last_name[0]}
                         </div>
                         <div>
-                          <div className="student-name">{fullName}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <div className="student-name">{fullName}</div>
+                            <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                          </div>
                           {s.note?.progress_level && PROGRESS[s.note.progress_level] && (
                             <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'white',
                               background: PROGRESS[s.note.progress_level].color,

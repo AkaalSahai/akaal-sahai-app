@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import MedicalBadge from '../../components/MedicalBadge'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -206,13 +207,9 @@ export default function TeacherRegister() {
                   <div className="student-avatar" style={{ background: color(i) }}>
                     {s.first_name[0]}{s.last_name[0]}
                   </div>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div className="student-name">{fullName}</div>
-                    {s.medical_notes && (
-                      <div style={{ fontSize: '.72rem', color: 'var(--danger)', marginTop: 2 }}>
-                        Medical: {s.medical_notes}
-                      </div>
-                    )}
+                    <MedicalBadge notes={s.medical_notes} studentName={fullName} />
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     {['present','late','absent'].map(st => (
