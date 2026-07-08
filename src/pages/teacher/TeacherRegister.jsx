@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
+import { fmtDate } from '../../lib/dates'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -204,7 +205,7 @@ export default function TeacherRegister() {
 
         {isReadOnly && (
           <div className="alert" style={{ background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' }}>
-            Past register — read only. Showing record for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.
+            Past register — read only. Showing record for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' })} {fmtDate(date)}.
           </div>
         )}
 
@@ -216,7 +217,7 @@ export default function TeacherRegister() {
 
         {isToday && sessionId && (
           <div className="alert alert-success">
-            Register in progress for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })} — changes save automatically.
+            Register in progress for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' })} {fmtDate(date)} — changes save automatically.
           </div>
         )}
 
@@ -319,7 +320,7 @@ export default function TeacherRegister() {
             return (
               <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                 <span style={{ fontWeight: 600, fontSize: '.9rem' }}>
-                  {new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                  {new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short' })} {fmtDate(session.session_date)}
                 </span>
                 <div style={{ display: 'flex', gap: 8, fontSize: '.8rem' }}>
                   <span style={{ color: '#16a34a', fontWeight: 700 }}>{p}P</span>

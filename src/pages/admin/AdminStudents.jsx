@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { fmtDate } from '../../lib/dates'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -193,10 +194,10 @@ export default function AdminStudents({ readOnly }) {
                         </div>
                       </div>
                     </td>
-                    <td>{s.date_of_birth || '—'}</td>
+                    <td>{fmtDate(s.date_of_birth)}</td>
                     <td>{s.groups?.name || <span style={{ color: 'var(--muted)' }}>No group</span>}</td>
                     <td>{s.phone || '—'}</td>
-                    <td>{s.date_joined || '—'}</td>
+                    <td>{fmtDate(s.date_joined)}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button className="btn btn-outline btn-xs"
@@ -237,7 +238,7 @@ export default function AdminStudents({ readOnly }) {
                           {s.note?.comments && <Detail label="Teacher Comments" value={s.note.comments} />}
                           {s.note?.updated_at && (
                             <Detail label="Notes Last Updated"
-                              value={new Date(s.note.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} />
+                              value={fmtDate(s.note.updated_at)} />
                           )}
                         </div>
                         {!readOnly && (
@@ -289,7 +290,7 @@ export default function AdminStudents({ readOnly }) {
                                   return (
                                     <tr key={r.session_id} style={{ borderTop: '1px solid #bae6fd', opacity: isBusy ? 0.5 : 1 }}>
                                       <td style={{ padding: '7px 12px', fontWeight: 600 }}>
-                                        {d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        {fmtDate(r.session_date)}
                                       </td>
                                       <td style={{ padding: '7px 12px', color: 'var(--muted)' }}>
                                         {d.toLocaleDateString('en-GB', { weekday: 'long' })}

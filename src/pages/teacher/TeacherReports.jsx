@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import { fmtDate } from '../../lib/dates'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -250,7 +251,7 @@ export default function TeacherReports() {
                               return (
                                 <tr key={idx} style={{ borderTop: '1px solid var(--border)' }}>
                                   <td style={{ padding: '7px 12px', fontWeight: 600 }}>
-                                    {d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    {fmtDate(r.session_date)}
                                   </td>
                                   <td style={{ padding: '7px 12px', color: 'var(--muted)' }}>
                                     {d.toLocaleDateString('en-GB', { weekday: 'long' })}

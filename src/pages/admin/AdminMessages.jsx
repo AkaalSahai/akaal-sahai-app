@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fmtDate } from '../../lib/dates'
 
 export default function AdminMessages({ onRead }) {
   const [messages, setMessages] = useState([])
@@ -73,7 +74,7 @@ export default function AdminMessages({ onRead }) {
                         {msg.subject}
                       </span>
                       <span style={{ fontSize: '.75rem', color: 'var(--muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        {sent.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {fmtDate(msg.created_at)}
                         {', '}
                         {sent.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                       </span>

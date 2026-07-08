@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import MedicalBadge from '../../components/MedicalBadge'
+import { fmtDate } from '../../lib/dates'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -262,7 +263,7 @@ export default function TeacherStudents() {
                       <MedicalBadge notes={s.medical_notes} studentName={fullName} />
                     </div>
                   </td>
-                  <td style={{ fontSize: '.85rem' }}>{s.date_of_birth || '—'}</td>
+                  <td style={{ fontSize: '.85rem' }}>{fmtDate(s.date_of_birth)}</td>
                   <td style={{ fontSize: '.85rem' }}>
                     {s.parent_name ? `${s.parent_name}${s.relationship ? ` (${s.relationship})` : ''}` : '—'}
                   </td>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { fmtDate } from '../../lib/dates'
 
 const ACTION_COLORS = {
   'Signed in':                      '#2563eb',
@@ -149,7 +150,7 @@ export default function AdminActivity() {
                   return (
                     <tr key={l.id}>
                       <td style={{ fontSize: '.78rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                        {d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {fmtDate(l.created_at)}
                         {', '}
                         {d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                       </td>

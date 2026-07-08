@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { fmtDate } from '../../lib/dates'
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-user-action`
 
@@ -326,7 +327,7 @@ export default function AdminUsers({ readOnly }) {
                   )}
                 </td>
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)' }}>
-                  {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : 'Never'}
+                  {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
                 <td>
                   {!readOnly && (

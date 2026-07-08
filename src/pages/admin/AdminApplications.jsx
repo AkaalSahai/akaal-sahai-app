@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { fmtDate } from '../../lib/dates'
 
 export default function AdminApplications({ readOnly }) {
   const { profile } = useAuth()
@@ -177,7 +178,7 @@ export default function AdminApplications({ readOnly }) {
               <div className="app-header">
                 <div>
                   <div className="app-name">{[app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')}</div>
-                  <div className="app-meta">DOB: {app.date_of_birth} · Applied: {new Date(app.created_at).toLocaleDateString('en-GB')}</div>
+                  <div className="app-meta">DOB: {fmtDate(app.date_of_birth)} · Applied: {fmtDate(app.created_at)}</div>
                 </div>
                 <span className={`tag tag-${app.status}`}>{app.status}</span>
               </div>
@@ -219,7 +220,7 @@ export default function AdminApplications({ readOnly }) {
               <div className="app-header">
                 <div>
                   <div className="app-name">{app.full_name}</div>
-                  <div className="app-meta">Applied: {new Date(app.created_at).toLocaleDateString('en-GB')}</div>
+                  <div className="app-meta">Applied: {fmtDate(app.created_at)}</div>
                 </div>
                 <span className={`tag tag-${app.status}`}>{app.status}</span>
               </div>
@@ -258,7 +259,7 @@ export default function AdminApplications({ readOnly }) {
                 <div>
                   <div className="app-name">{tr.student_name}</div>
                   <div className="app-meta">
-                    From: {tr.from_group_name || '—'} · Requested: {new Date(tr.created_at).toLocaleDateString('en-GB')}
+                    From: {tr.from_group_name || '—'} · Requested: {fmtDate(tr.created_at)}
                   </div>
                 </div>
                 <span className={`tag tag-${tr.status}`}>{tr.status}</span>
