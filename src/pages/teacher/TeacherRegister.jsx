@@ -86,20 +86,38 @@ export default function TeacherRegister() {
 
   async function mark(studentId, status) {
     if (isReadOnly) return
-    setAttendance(prev => ({ ...prev, [studentId]: status }))
+    const current    = attendance[studentId]
+    const newStatus  = current === status ? null : status   // tap same button → deselect
+
+    setAttendance(prev => {
+      const next = { ...prev }
+      if (newStatus === null) delete next[studentId]
+      else next[studentId] = newStatus
+      return next
+    })
     setSaveState('saving')
     clearTimeout(savingRef.current)
     try {
-      const sid = await ensureSession()
-      if (!sid) return   // session creation in progress; the state update is already optimistic
-      const { error } = await supabase.from('attendance_records').upsert({
-        session_id: sid,
-        student_id: studentId,
-        group_id: profile.group_id,
-        session_date: date,
-        status,
-      }, { onConflict: 'session_id,student_id' })
-      if (error) throw error
+      if (newStatus === null) {
+        if (sessionId) {
+          const { error } = await supabase.from('attendance_records')
+            .delete()
+            .eq('session_id', sessionId)
+            .eq('student_id', studentId)
+          if (error) throw error
+        }
+      } else {
+        const sid = await ensureSession()
+        if (!sid) return
+        const { error } = await supabase.from('attendance_records').upsert({
+          session_id: sid,
+          student_id: studentId,
+          group_id: profile.group_id,
+          session_date: date,
+          status: newStatus,
+        }, { onConflict: 'session_id,student_id' })
+        if (error) throw error
+      }
       setSaveState('saved')
       savingRef.current = setTimeout(() => setSaveState('idle'), 2000)
     } catch (err) {
