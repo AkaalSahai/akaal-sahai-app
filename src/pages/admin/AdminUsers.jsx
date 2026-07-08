@@ -19,6 +19,7 @@ const ROLES = ['admin','registrar','teacher','adminView']
 export default function AdminUsers({ readOnly }) {
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
   const [busy, setBusy]           = useState(null)
   const [form, setForm]           = useState({ name: '', email: '', role: 'registrar' })
@@ -29,10 +30,26 @@ export default function AdminUsers({ readOnly }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: userData }, { data: groupData }] = await Promise.all([
+    setLoadError(null)
+    const [{ data: userData, error: userErr }, { data: groupData }] = await Promise.all([
       supabase.from('users').select('id, name, email, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name'),
     ])
+    if (userErr) {
+      // can_edit_students column may not exist yet — fall back without it
+      if (userErr.message?.includes('can_edit_students')) {
+        const { data: fallback } = await supabase
+          .from('users').select('id, name, email, role, extra_roles, last_login, group_id').order('role').order('name')
+        const groupMap = {}
+        ;(groupData || []).forEach(g => { groupMap[g.id] = g.name })
+        setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupName: u.group_id ? groupMap[u.group_id] : null })))
+        setLoadError('⚠ Run the teacher-edit-permission.txt SQL to enable the Edit Students toggle.')
+      } else {
+        setLoadError('Error loading users: ' + userErr.message)
+      }
+      setLoading(false)
+      return
+    }
     const groupMap = {}
     ;(groupData || []).forEach(g => { groupMap[g.id] = g.name })
     setUsers((userData || []).map(u => ({ ...u, groupName: u.group_id ? groupMap[u.group_id] : null })))
@@ -155,6 +172,13 @@ export default function AdminUsers({ readOnly }) {
           </button>
         )}
       </div>
+
+      {loadError && (
+        <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 16, fontSize: '.84rem', color: '#92400e' }}>
+          {loadError}
+        </div>
+      )}
 
       {showCreate && !readOnly && (
         <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16, marginBottom: 16 }}>
@@ -317,7 +341,7 @@ export default function AdminUsers({ readOnly }) {
               </tr>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
