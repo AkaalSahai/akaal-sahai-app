@@ -22,7 +22,7 @@ export default function TeacherLayout() {
   const usersReadOnly = isAdminView && !isAdmin
 
   const showAdminTabs = isRegistrar || isAdminView
-  const showUserTab   = isAdmin || isAdminView
+  const showUserTab   = isAdmin
 
   const tabs = [
     { id: 'register',    label: 'Daily Register' },
