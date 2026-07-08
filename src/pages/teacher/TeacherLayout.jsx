@@ -6,6 +6,7 @@ import AdminApplications from '../admin/AdminApplications'
 import AdminStudents from '../admin/AdminStudents'
 import AdminGroups from '../admin/AdminGroups'
 import AdminUsers from '../admin/AdminUsers'
+import TeacherStudents from './TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 
 export default function TeacherLayout() {
@@ -16,10 +17,11 @@ export default function TeacherLayout() {
   const isRegistrar = hasRole('registrar') || isAdmin
 
   const tabs = [
-    { id: 'register',     label: 'Daily Register' },
-    { id: 'reports',      label: 'Reports'        },
+    { id: 'register',    label: 'Daily Register' },
+    { id: 'reports',     label: 'Reports'        },
+    { id: 'mystudents',  label: 'My Students'    },
     ...(isRegistrar ? [{ id: 'applications', label: 'Applications' }] : []),
-    ...(isRegistrar ? [{ id: 'students',     label: 'Students'     }] : []),
+    ...(isRegistrar ? [{ id: 'students',     label: 'All Students' }] : []),
     ...(isRegistrar ? [{ id: 'groups',       label: 'Groups'       }] : []),
     ...(isAdmin     ? [{ id: 'users',        label: 'Teachers'     }] : []),
   ]
@@ -35,12 +37,13 @@ export default function TeacherLayout() {
         ))}
       </div>
       <div className="content">
-        {tab === 'register'     && <TeacherRegister />}
-        {tab === 'reports'      && <TeacherReports />}
-        {tab === 'applications' && <AdminApplications />}
-        {tab === 'students'     && <AdminStudents />}
-        {tab === 'groups'       && <AdminGroups />}
-        {tab === 'users'        && <AdminUsers />}
+        {tab === 'register'    && <TeacherRegister />}
+        {tab === 'reports'     && <TeacherReports />}
+        {tab === 'mystudents'  && <TeacherStudents />}
+        {tab === 'applications'&& <AdminApplications />}
+        {tab === 'students'    && <AdminStudents />}
+        {tab === 'groups'      && <AdminGroups />}
+        {tab === 'users'       && <AdminUsers />}
       </div>
     </div>
   )

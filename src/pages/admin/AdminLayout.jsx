@@ -8,6 +8,7 @@ import AdminGroups from './AdminGroups'
 import AdminImport from './AdminImport'
 import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
+import TeacherStudents from '../teacher/TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 
 export default function AdminLayout() {
@@ -22,8 +23,9 @@ export default function AdminLayout() {
     { id: 'students',     label: 'Students'     },
     { id: 'groups',       label: 'Groups'       },
     { id: 'users',        label: 'Teachers'     },
-    ...(isTeacher ? [{ id: 'register', label: 'My Register' }] : []),
-    ...(isTeacher ? [{ id: 'myreports', label: 'My Reports' }] : []),
+    ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
+    ...(isTeacher ? [{ id: 'myreports',   label: 'My Reports'   }] : []),
+    ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
     ...(!readOnly ? [{ id: 'import', label: 'Import Data' }] : []),
   ]
 
@@ -52,6 +54,7 @@ export default function AdminLayout() {
         {tab === 'import'       && <AdminImport readOnly={readOnly} />}
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'myreports'    && <TeacherReports />}
+        {tab === 'mystudents'   && <TeacherStudents />}
       </div>
     </div>
   )
