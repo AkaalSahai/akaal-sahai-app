@@ -4,6 +4,7 @@ import AdminDashboard from '../admin/AdminDashboard'
 import AdminApplications from '../admin/AdminApplications'
 import AdminStudents from '../admin/AdminStudents'
 import AdminGroups from '../admin/AdminGroups'
+import AdminUsers from '../admin/AdminUsers'
 import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
 import { useAuth } from '../../hooks/useAuth'
@@ -12,14 +13,16 @@ export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
   const { hasRole }   = useAuth()
   const isTeacher     = hasRole('teacher')
+  const isAdmin       = hasRole('admin')
 
   const tabs = [
     { id: 'dashboard',    label: 'Dashboard'    },
     { id: 'applications', label: 'Applications' },
     { id: 'students',     label: 'Students'     },
     { id: 'groups',       label: 'Groups'       },
-    ...(isTeacher ? [{ id: 'register', label: 'My Register' }] : []),
-    ...(isTeacher ? [{ id: 'reports',  label: 'My Reports'  }] : []),
+    ...(isAdmin   ? [{ id: 'users',     label: 'Teachers'    }] : []),
+    ...(isTeacher ? [{ id: 'register',  label: 'My Register' }] : []),
+    ...(isTeacher ? [{ id: 'reports',   label: 'My Reports'  }] : []),
   ]
 
   return (
@@ -37,6 +40,7 @@ export default function RegistrarLayout() {
         {tab === 'applications' && <AdminApplications />}
         {tab === 'students'     && <AdminStudents />}
         {tab === 'groups'       && <AdminGroups />}
+        {tab === 'users'        && <AdminUsers />}
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}
       </div>
