@@ -11,7 +11,8 @@ const EMPTY_FORM = {
 }
 
 export default function TeacherStudents() {
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const canEdit = profile?.can_edit_students === true
   const [students, setStudents] = useState([])
   const [groupId, setGroupId]   = useState(null)
   const [loading, setLoading]   = useState(true)
@@ -123,11 +124,18 @@ export default function TeacherStudents() {
     <div className="card">
       <div className="card-title">
         My Students ({students.length})
-        <button className="btn btn-primary btn-sm" onClick={startNew}>+ Add Student</button>
+        {canEdit && <button className="btn btn-primary btn-sm" onClick={startNew}>+ Add Student</button>}
       </div>
 
+      {!canEdit && (
+        <div style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 16, fontSize: '.84rem', color: '#64748b' }}>
+          Viewing only — your admin has not enabled student editing for your account.
+        </div>
+      )}
+
       {/* Add / Edit form */}
-      {editing && (
+      {editing && canEdit && (
         <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
           <div style={{ fontWeight: 700, fontSize: '.95rem', marginBottom: 16, color: 'var(--primary)' }}>
             {editing === 'new' ? 'Add New Student' : 'Edit Student'}
@@ -260,9 +268,9 @@ export default function TeacherStudents() {
                   </td>
                   <td style={{ fontSize: '.85rem' }}>{s.phone || '—'}</td>
                   <td>
-                    <button className="btn btn-outline btn-xs" onClick={() => startEdit(s)}>
-                      Edit
-                    </button>
+                    {canEdit && (
+                      <button className="btn btn-outline btn-xs" onClick={() => startEdit(s)}>Edit</button>
+                    )}
                   </td>
                 </tr>
               )

@@ -30,7 +30,7 @@ export default function AdminUsers({ readOnly }) {
 
   async function load() {
     const [{ data: userData }, { data: groupData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, role, extra_roles, last_login, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name'),
     ])
     const groupMap = {}
@@ -129,6 +129,15 @@ export default function AdminUsers({ readOnly }) {
     finally { setBusy(null) }
   }
 
+  async function toggleEditStudents(userId, current) {
+    const updated = !current
+    try {
+      const { error } = await supabase.from('users').update({ can_edit_students: updated }).eq('id', userId)
+      if (error) throw error
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, can_edit_students: updated } : u))
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
   const sorted = [...users].sort((a, b) =>
     roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || a.name.localeCompare(b.name)
@@ -182,6 +191,7 @@ export default function AdminUsers({ readOnly }) {
               <th>Role</th>
               <th>Email</th>
               <th>Group</th>
+              <th>Edit Students</th>
               <th>Last Login</th>
               <th>Actions</th>
             </tr>
@@ -254,6 +264,41 @@ export default function AdminUsers({ readOnly }) {
                   )}
                 </td>
                 <td>{u.groupName || '—'}</td>
+                <td>
+                  {(u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) ? (
+                    !readOnly ? (
+                      <button
+                        onClick={() => toggleEditStudents(u.id, u.can_edit_students)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
+                          border: 'none', cursor: 'pointer', transition: 'all .15s',
+                          background: u.can_edit_students ? '#dcfce7' : '#f1f5f9',
+                          color: u.can_edit_students ? '#15803d' : '#94a3b8',
+                        }}>
+                        <span style={{
+                          width: 28, height: 16, borderRadius: 8, position: 'relative', display: 'inline-block',
+                          background: u.can_edit_students ? '#22c55e' : '#cbd5e1', transition: 'background .15s',
+                          flexShrink: 0,
+                        }}>
+                          <span style={{
+                            position: 'absolute', top: 2,
+                            left: u.can_edit_students ? 14 : 2,
+                            width: 12, height: 12, borderRadius: '50%',
+                            background: '#fff', transition: 'left .15s',
+                          }} />
+                        </span>
+                        {u.can_edit_students ? 'Enabled' : 'Disabled'}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '.75rem', color: u.can_edit_students ? '#15803d' : '#94a3b8', fontWeight: 600 }}>
+                        {u.can_edit_students ? 'Enabled' : 'Disabled'}
+                      </span>
+                    )
+                  ) : (
+                    <span style={{ fontSize: '.75rem', color: '#cbd5e1' }}>—</span>
+                  )}
+                </td>
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)' }}>
                   {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : 'Never'}
                 </td>
