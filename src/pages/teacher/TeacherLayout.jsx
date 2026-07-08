@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Topbar from '../../components/Topbar'
 import TeacherRegister from './TeacherRegister'
 import TeacherReports from './TeacherReports'
+import TeacherMessage from './TeacherMessage'
 import AdminApplications from '../admin/AdminApplications'
 import AdminStudents from '../admin/AdminStudents'
 import AdminGroups from '../admin/AdminGroups'
@@ -32,6 +33,7 @@ export default function TeacherLayout() {
     ...(showAdminTabs ? [{ id: 'students',     label: 'All Students' }] : []),
     ...(showAdminTabs ? [{ id: 'groups',       label: 'Groups'       }] : []),
     ...(showUserTab   ? [{ id: 'users',        label: 'Teachers'     }] : []),
+    { id: 'message', label: 'Message Admin' },
   ]
 
   return (
@@ -58,6 +60,7 @@ export default function TeacherLayout() {
         {tab === 'students'     && <AdminStudents readOnly={adminReadOnly} />}
         {tab === 'groups'       && <AdminGroups readOnly={adminReadOnly} />}
         {tab === 'users'        && <AdminUsers readOnly={usersReadOnly} />}
+        {tab === 'message'      && <TeacherMessage />}
       </div>
     </div>
   )

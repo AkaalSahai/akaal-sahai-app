@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Topbar from '../../components/Topbar'
 import AdminDashboard from './AdminDashboard'
 import AdminApplications from './AdminApplications'
@@ -10,7 +10,9 @@ import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
 import AdminActivity from './AdminActivity'
+import AdminMessages from './AdminMessages'
 import { useAuth } from '../../hooks/useAuth'
+import { supabase } from '../../lib/supabase'
 
 export default function AdminLayout() {
   const [tab, setTab]   = useState('dashboard')
@@ -18,6 +20,13 @@ export default function AdminLayout() {
   const readOnly        = profile?.role === 'adminView'
   const isPrimaryAdmin  = profile?.role === 'admin'
   const isTeacher       = hasRole('teacher')
+  const [unread, setUnread] = useState(0)
+
+  useEffect(() => {
+    supabase.from('messages').select('id', { count: 'exact', head: true })
+      .is('read_at', null)
+      .then(({ count }) => setUnread(count || 0))
+  }, [])
 
   const TABS = [
     { id: 'dashboard',    label: 'Dashboard'    },
@@ -30,6 +39,7 @@ export default function AdminLayout() {
     ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
     ...(!readOnly       ? [{ id: 'import',   label: 'Import Data' }] : []),
     ...(isPrimaryAdmin  ? [{ id: 'activity', label: 'Activity'    }] : []),
+    { id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' },
   ]
 
   return (
@@ -59,6 +69,7 @@ export default function AdminLayout() {
         {tab === 'myreports'    && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}
         {tab === 'activity'     && <AdminActivity />}
+        {tab === 'messages'     && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
       </div>
     </div>
   )
