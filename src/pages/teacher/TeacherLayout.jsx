@@ -40,7 +40,7 @@ export default function TeacherLayout() {
       {isAdminView && !isAdmin && !isRegistrar && (
         <div style={{ background: '#fef3c7', borderBottom: '2px solid #f59e0b', padding: '6px 20px',
           fontSize: '.8rem', fontWeight: 600, color: '#92400e', textAlign: 'center' }}>
-          View Only — you can see all data but cannot make changes
+          Admin View
         </div>
       )}
       <div className="nav-tabs">
