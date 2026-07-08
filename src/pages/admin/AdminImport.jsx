@@ -4,6 +4,31 @@ import { supabase } from '../../lib/supabase'
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
 const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
 
+// Accepts DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, YYYY-DD-MM, D/M/YYYY — returns YYYY-MM-DD or null
+function parseDateToISO(raw) {
+  if (!raw?.trim()) return null
+  const s = raw.trim()
+
+  // YYYY-MM-DD or YYYY-DD-MM (dashes, year first)
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(s)) {
+    const [y, a, b] = s.split(/[-/]/).map(p => p.padStart(2, '0'))
+    const aNum = parseInt(a)
+    if (aNum > 12) return `${y}-${b}-${a}` // YYYY-DD-MM → swap
+    return `${y}-${a}-${b}`                // assume YYYY-MM-DD
+  }
+
+  // DD/MM/YYYY or MM/DD/YYYY (day or month first)
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(s)) {
+    const [a, b, y] = s.split(/[-/]/).map(p => p.padStart(2, '0'))
+    const aNum = parseInt(a), bNum = parseInt(b)
+    if (aNum > 12) return `${y}-${b}-${a}` // a is day (>12), b is month
+    if (bNum > 12) return `${y}-${a}-${b}` // b is day (>12), a is month
+    return `${y}-${b}-${a}`                // ambiguous — assume DD/MM/YYYY (UK)
+  }
+
+  return null
+}
+
 export default function AdminImport() {
   const [csv, setCsv]     = useState(null)
   const [rows, setRows]   = useState([])
@@ -46,8 +71,8 @@ export default function AdminImport() {
       if (!row.group_name) errs.push(`Row ${i + 2}: missing group_name`)
       if (!row.first_name) errs.push(`Row ${i + 2}: missing first_name`)
       if (!row.last_name)  errs.push(`Row ${i + 2}: missing last_name`)
-      if (row.date_of_birth && !/^\d{2}\/\d{2}\/\d{4}$/.test(row.date_of_birth))
-        errs.push(`Row ${i + 2}: date_of_birth must be DD/MM/YYYY (e.g. 12/04/2015)`)
+      if (row.date_of_birth && !parseDateToISO(row.date_of_birth))
+        errs.push(`Row ${i + 2}: unrecognised date format "${row.date_of_birth}" — use DD/MM/YYYY`)
       parsed.push(row)
     })
     setRows(parsed); setErrors(errs); setResult(null)
@@ -77,9 +102,7 @@ export default function AdminImport() {
         first_name: r.first_name.trim(),
         middle_name: r.middle_name?.trim() || null,
         last_name: r.last_name.trim(),
-        date_of_birth: r.date_of_birth?.trim()
-          ? (() => { const [d,m,y] = r.date_of_birth.trim().split('/'); return `${y}-${m}-${d}` })()
-          : null,
+        date_of_birth: parseDateToISO(r.date_of_birth) || null,
         medical_notes: r.medical_notes?.trim() || null,
         house_no: r.house_no?.trim() || null,
         street_name: r.street_name?.trim() || null,
