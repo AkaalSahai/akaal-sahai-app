@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 
@@ -15,14 +15,13 @@ const PROGRESS = {
   awaiting_assessment: { label: 'Awaiting Assessment',  color: '#6b7280' },
 }
 
-export default function AdminStudents() {
+export default function AdminStudents({ readOnly }) {
   const [students, setStudents] = useState([])
   const [groups, setGroups]     = useState([])
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
   const [groupFilter, setGroupFilter] = useState('')
   const [expanded, setExpanded] = useState(null)
-  const [editing, setEditing]   = useState(null)
 
   useEffect(() => { load() }, [])
 
@@ -40,11 +39,13 @@ export default function AdminStudents() {
   }
 
   async function moveGroup(studentId, newGroupId) {
+    if (readOnly) return
     await supabase.from('students').update({ group_id: newGroupId }).eq('id', studentId)
     load()
   }
 
   async function deactivate(studentId) {
+    if (readOnly) return
     if (!confirm('Remove this student from the system? This cannot be undone.')) return
     await supabase.from('students').update({ active: false }).eq('id', studentId)
     load()
@@ -90,12 +91,12 @@ export default function AdminStudents() {
             {filtered.map((s, i) => {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
               return (
-                <>
-                  <tr key={s.id}>
+                <Fragment key={s.id}>
+                  <tr>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div className="student-avatar" style={{ background: color(i) }}>
-                          {s.first_name[0]}{s.last_name[0]}
+                          {s.first_name?.[0] ?? '?'}{s.last_name?.[0] ?? '?'}
                         </div>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -121,7 +122,9 @@ export default function AdminStudents() {
                         <button className="btn btn-outline btn-xs" onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
                           {expanded === s.id ? 'Less' : 'Details'}
                         </button>
-                        <button className="btn btn-danger btn-xs" onClick={() => deactivate(s.id)}>Remove</button>
+                        {!readOnly && (
+                          <button className="btn btn-danger btn-xs" onClick={() => deactivate(s.id)}>Remove</button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -147,18 +150,20 @@ export default function AdminStudents() {
                               value={new Date(s.note.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} />
                           )}
                         </div>
-                        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Move to group:</label>
-                          <select defaultValue={s.group_id || ''} onChange={e => e.target.value && moveGroup(s.id, e.target.value)}
-                            style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }}>
-                            <option value="">— select —</option>
-                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                          </select>
-                        </div>
+                        {!readOnly && (
+                          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Move to group:</label>
+                            <select defaultValue={s.group_id || ''} onChange={e => e.target.value && moveGroup(s.id, e.target.value)}
+                              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }}>
+                              <option value="">— select —</option>
+                              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                            </select>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
             {filtered.length === 0 && (

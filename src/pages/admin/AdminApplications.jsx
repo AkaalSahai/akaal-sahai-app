@@ -100,10 +100,27 @@ export default function AdminApplications({ readOnly }) {
   async function clearApp(table, id) {
     if (!confirm('Permanently delete this application? This cannot be undone.')) return
     setBusy(id)
-    const { error } = await supabase.from(table).delete().eq('id', id)
-    if (error) alert('Error: ' + error.message)
-    else load()
-    setBusy(null)
+    try {
+      // For teacher applications, also remove the orphaned auth account so they can re-register
+      if (table === 'teacher_applications') {
+        const app = teacherApps.find(a => a.id === id)
+        if (app?.auth_user_id) {
+          const { data: { session } } = await supabase.auth.getSession()
+          await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-user-action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify({ action: 'delete', userId: app.auth_user_id }),
+          })
+        }
+      }
+      const { error } = await supabase.from(table).delete().eq('id', id)
+      if (error) throw error
+      load()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    } finally {
+      setBusy(null)
+    }
   }
 
   async function rejectTransfer(tr) {

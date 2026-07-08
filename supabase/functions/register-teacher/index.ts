@@ -11,12 +11,17 @@ Deno.serve(async (req) => {
   try {
     const { full_name, email, password, phone, preferred_group, dbs_number, experience } = await req.json()
 
+    // Validate required fields
+    if (!full_name?.trim() || !email?.trim() || !password) {
+      return new Response(JSON.stringify({ error: 'Full name, email and password are required.' }), { status: 400, headers: corsHeaders })
+    }
+
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    // Check if email already registered
+    // Check if application already exists
     const { data: existing } = await supabaseAdmin
       .from('teacher_applications')
       .select('id, status')
@@ -25,7 +30,7 @@ Deno.serve(async (req) => {
 
     if (existing) {
       return new Response(
-        JSON.stringify({ error: 'An application with this email already exists.' }),
+        JSON.stringify({ error: 'An application with this email already exists. Please contact your admin if you need help.' }),
         { status: 400, headers: corsHeaders }
       )
     }
@@ -36,7 +41,12 @@ Deno.serve(async (req) => {
       password,
       email_confirm: true,
     })
-    if (authErr) return new Response(JSON.stringify({ error: authErr.message }), { status: 400, headers: corsHeaders })
+    if (authErr) {
+      const msg = authErr.message?.toLowerCase().includes('already registered') || authErr.message?.toLowerCase().includes('already been registered')
+        ? 'An account with this email already exists. Please contact your admin if you need help.'
+        : authErr.message
+      return new Response(JSON.stringify({ error: msg }), { status: 400, headers: corsHeaders })
+    }
 
     // Insert application row
     const { error: appErr } = await supabaseAdmin.from('teacher_applications').insert({

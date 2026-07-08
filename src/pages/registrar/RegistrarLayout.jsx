@@ -40,7 +40,7 @@ export default function RegistrarLayout() {
         {tab === 'applications' && <AdminApplications />}
         {tab === 'students'     && <AdminStudents />}
         {tab === 'groups'       && <AdminGroups />}
-        {tab === 'users'        && <AdminUsers />}
+        {tab === 'users'        && <AdminUsers readOnly={true} />}
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}
       </div>

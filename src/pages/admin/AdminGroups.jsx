@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
-export default function AdminGroups() {
+export default function AdminGroups({ readOnly }) {
   const [groups, setGroups]   = useState([])
   const [teachers, setTeachers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -32,8 +32,12 @@ export default function AdminGroups() {
   }
 
   async function assignTeacher(groupId, teacherId) {
+    const group = groups.find(g => g.id === groupId)
+    // Clear old teacher's group_id before assigning the new one
+    if (group?.teacher_id && group.teacher_id !== teacherId) {
+      await supabase.from('users').update({ group_id: null }).eq('id', group.teacher_id)
+    }
     await supabase.from('groups').update({ teacher_id: teacherId || null }).eq('id', groupId)
-    // Also update teacher's group_id
     if (teacherId) await supabase.from('users').update({ group_id: groupId }).eq('id', teacherId)
     load()
   }
@@ -53,12 +57,14 @@ export default function AdminGroups() {
     <div className="card">
       <div className="card-title">Groups ({groups.length})</div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input type="text" placeholder="New group name…" value={newGroup} onChange={e => setNewGroup(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addGroup()}
-          style={{ flex: 1 }} />
-        <button className="btn btn-primary" disabled={busy || !newGroup.trim()} onClick={addGroup}>Add Group</button>
-      </div>
+      {!readOnly && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <input type="text" placeholder="New group name…" value={newGroup} onChange={e => setNewGroup(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addGroup()}
+            style={{ flex: 1 }} />
+          <button className="btn btn-primary" disabled={busy || !newGroup.trim()} onClick={addGroup}>Add Group</button>
+        </div>
+      )}
 
       <div className="table-wrap">
         <table>
@@ -67,7 +73,7 @@ export default function AdminGroups() {
               <th>Group Name</th>
               <th>Teacher</th>
               <th>Students</th>
-              <th></th>
+              {!readOnly && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -75,21 +81,29 @@ export default function AdminGroups() {
               <tr key={g.id}>
                 <td style={{ fontWeight: 600 }}>{g.name}</td>
                 <td>
-                  <select value={g.teacher_id || ''}
-                    onChange={e => assignTeacher(g.id, e.target.value)}
-                    style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: '.83rem', width: 180 }}>
-                    <option value="">No teacher assigned</option>
-                    {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
+                  {!readOnly ? (
+                    <select value={g.teacher_id || ''}
+                      onChange={e => assignTeacher(g.id, e.target.value)}
+                      style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: '.83rem', width: 180 }}>
+                      <option value="">No teacher assigned</option>
+                      {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: '.83rem' }}>
+                      {teachers.find(t => t.id === g.teacher_id)?.name || <span style={{ color: 'var(--muted)' }}>—</span>}
+                    </span>
+                  )}
                 </td>
                 <td>{g.students?.[0]?.count ?? 0}</td>
-                <td>
-                  <button className="btn btn-danger btn-xs" onClick={() => deleteGroup(g.id)}>Delete</button>
-                </td>
+                {!readOnly && (
+                  <td>
+                    <button className="btn btn-danger btn-xs" onClick={() => deleteGroup(g.id)}>Delete</button>
+                  </td>
+                )}
               </tr>
             ))}
             {groups.length === 0 && (
-              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No groups yet</td></tr>
+              <tr><td colSpan={readOnly ? 3 : 4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No groups yet</td></tr>
             )}
           </tbody>
         </table>

@@ -4,6 +4,27 @@ import { supabase } from '../../lib/supabase'
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
 const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
 
+// Parses a single CSV line, respecting double-quoted fields that may contain commas
+function parseCSVLine(line) {
+  const result = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
+      else inQuotes = !inQuotes
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim())
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  result.push(current.trim())
+  return result
+}
+
 // Accepts DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, YYYY-DD-MM, D/M/YYYY — returns YYYY-MM-DD or null
 function parseDateToISO(raw) {
   if (!raw?.trim()) return null
@@ -57,7 +78,7 @@ export default function AdminImport() {
   function parseCSV(text) {
     const lines = text.trim().split('\n')
     if (lines.length < 2) { setErrors(['File is empty or has no data rows']); return }
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''))
+    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase())
     const required = ['group_name', 'first_name', 'last_name']
     const missing = required.filter(r => !headers.includes(r))
     if (missing.length) { setErrors(['Missing required columns: ' + missing.join(', ')]); return }
@@ -65,7 +86,7 @@ export default function AdminImport() {
     const parsed = []; const errs = []
     lines.slice(1).forEach((line, i) => {
       if (!line.trim()) return
-      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+      const vals = parseCSVLine(line)
       const row = {}
       headers.forEach((h, j) => { row[h] = vals[j] || '' })
       if (!row.group_name) errs.push(`Row ${i + 2}: missing group_name`)
@@ -84,14 +105,16 @@ export default function AdminImport() {
     try {
       // Get or create groups
       const groupNames = [...new Set(rows.map(r => r.group_name.trim()))]
-      const { data: existingGroups } = await supabase.from('groups').select('id, name').in('name', groupNames)
+      const { data: existingGroups, error: groupFetchErr } = await supabase.from('groups').select('id, name').in('name', groupNames)
+      if (groupFetchErr) throw new Error('Could not load groups: ' + groupFetchErr.message)
       const groupMap = {}
-      existingGroups.forEach(g => { groupMap[g.name] = g.id })
+      ;(existingGroups || []).forEach(g => { groupMap[g.name] = g.id })
 
       // Create missing groups
       for (const gname of groupNames) {
         if (!groupMap[gname]) {
-          const { data: ng } = await supabase.from('groups').insert({ name: gname }).select('id').single()
+          const { data: ng, error: ngErr } = await supabase.from('groups').insert({ name: gname }).select('id').single()
+          if (ngErr) throw new Error('Could not create group "' + gname + '": ' + ngErr.message)
           groupMap[gname] = ng.id
         }
       }

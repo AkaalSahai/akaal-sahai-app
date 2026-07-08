@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 
@@ -31,12 +31,16 @@ export default function TeacherReports() {
   const { profile }              = useAuth()
   const [students, setStudents]  = useState([])
   const [stats, setStats]        = useState({})
-  const [notes, setNotes]        = useState({})   // { studentId: { progress_level, comments } }
-  const [history, setHistory]    = useState({})   // { studentId: [...records] }
+  const [notes, setNotes]        = useState({})
+  const [history, setHistory]    = useState({})
   const [expanded, setExpanded]  = useState(null)
   const [loading, setLoading]    = useState(true)
   const [saving, setSaving]      = useState({})
   const debounceRef              = useRef({})
+  const notesRef                 = useRef({})
+
+  // Keep notesRef in sync so debounced saves always have fresh data
+  useEffect(() => { notesRef.current = notes }, [notes])
 
   useEffect(() => { if (profile?.group_id) load() }, [profile])
 
@@ -94,7 +98,7 @@ export default function TeacherReports() {
         student_id: studentId,
         teacher_id: profile.id,
         group_id: profile.group_id,
-        ...notes[studentId],
+        ...notesRef.current[studentId],
         [field]: value,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'student_id' })
@@ -110,11 +114,11 @@ export default function TeacherReports() {
     saveNote(studentId, 'progress_level', value)
   }
 
-  const handleComments = useCallback((studentId, value) => {
+  function handleComments(studentId, value) {
     setNotes(n => ({ ...n, [studentId]: { ...n[studentId], comments: value } }))
     clearTimeout(debounceRef.current[studentId])
     debounceRef.current[studentId] = setTimeout(() => saveNote(studentId, 'comments', value), 1000)
-  }, [notes, profile])
+  }
 
   function age(dob) {
     if (!dob) return null
@@ -151,11 +155,10 @@ export default function TeacherReports() {
 
           return (
             <li key={s.id} style={{ borderBottom: '1px solid var(--border)' }}>
-              {/* Student header row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', cursor: 'pointer' }}
                 onClick={() => toggleExpand(s.id)}>
                 <div className="student-avatar" style={{ background: color(i), flexShrink: 0 }}>
-                  {s.first_name[0]}{s.last_name[0]}
+                  {s.first_name?.[0] ?? '?'}{s.last_name?.[0] ?? '?'}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="student-name">{fullName}</div>
@@ -186,7 +189,6 @@ export default function TeacherReports() {
                 </div>
               </div>
 
-              {/* Expanded section */}
               {isOpen && (
                 <div style={{ paddingBottom: 16, paddingLeft: 4 }}>
                   {s.medical_notes && (
@@ -197,7 +199,6 @@ export default function TeacherReports() {
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                    {/* Progress level */}
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: '.78rem' }}>Progress Level</label>
                       <select value={note.progress_level} onChange={e => handleProgress(s.id, e.target.value)}
@@ -208,13 +209,11 @@ export default function TeacherReports() {
                         {PROGRESS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </div>
-                    {/* Save indicator */}
                     <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                       {saving[s.id] && <span style={{ fontSize: '.75rem', color: 'var(--muted)' }}>⏳ Saving…</span>}
                     </div>
                   </div>
 
-                  {/* Comments */}
                   <div className="form-group" style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: '.78rem' }}>Teacher Comments</label>
                     <textarea
@@ -227,7 +226,6 @@ export default function TeacherReports() {
                     <div style={{ fontSize: '.7rem', color: 'var(--muted)', marginTop: 2 }}>Auto-saves as you type</div>
                   </div>
 
-                  {/* Full attendance history */}
                   <div>
                     <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)',
                       textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
@@ -246,11 +244,11 @@ export default function TeacherReports() {
                             </tr>
                           </thead>
                           <tbody>
-                            {hist.map(r => {
+                            {hist.map((r, idx) => {
                               const d = new Date(r.session_date + 'T12:00:00')
                               const statusColor = r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : '#dc2626'
                               return (
-                                <tr key={r.session_date} style={{ borderTop: '1px solid var(--border)' }}>
+                                <tr key={idx} style={{ borderTop: '1px solid var(--border)' }}>
                                   <td style={{ padding: '7px 12px', fontWeight: 600 }}>
                                     {d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   </td>

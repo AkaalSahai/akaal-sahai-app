@@ -11,16 +11,18 @@ function todayISO() { return new Date().toISOString().split('T')[0] }
 export default function TeacherRegister() {
   const { profile }              = useAuth()
   const [students, setStudents]  = useState([])
+  const [groupName, setGroupName] = useState(null)
   const [attendance, setAttendance] = useState({})
   const [date, setDate]          = useState(todayISO())
   const [loading, setLoading]    = useState(true)
   const [sessionId, setSessionId] = useState(null)
-  const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
+  const [saveState, setSaveState] = useState('idle')
   const [history, setHistory]    = useState(false)
   const [historyData, setHistoryData] = useState([])
-  const [transferOpen, setTransferOpen] = useState({})  // { studentId: reason }
+  const [transferOpen, setTransferOpen] = useState({})
   const [transferBusy, setTransferBusy] = useState(null)
-  const savingRef = useRef(null)
+  const savingRef    = useRef(null)
+  const creatingRef  = useRef(false)   // prevents duplicate session creation on rapid taps
 
   const isReadOnly = date < todayISO()
   const isToday    = date === todayISO()
@@ -29,13 +31,16 @@ export default function TeacherRegister() {
   useEffect(() => { if (profile?.group_id) loadSession() }, [date, profile])
 
   async function loadStudents() {
-    const { data } = await supabase
-      .from('students')
-      .select('id, first_name, middle_name, last_name, medical_notes')
-      .eq('group_id', profile.group_id)
-      .eq('active', true)
-      .order('last_name')
-    setStudents(data || [])
+    const [{ data: studentData }, { data: groupData }] = await Promise.all([
+      supabase.from('students')
+        .select('id, first_name, middle_name, last_name, medical_notes')
+        .eq('group_id', profile.group_id)
+        .eq('active', true)
+        .order('last_name'),
+      supabase.from('groups').select('name').eq('id', profile.group_id).single(),
+    ])
+    setStudents(studentData || [])
+    setGroupName(groupData?.name || null)
     setLoading(false)
   }
 
@@ -61,14 +66,20 @@ export default function TeacherRegister() {
 
   async function ensureSession() {
     if (sessionId) return sessionId
-    const { data, error } = await supabase
-      .from('attendance_sessions')
-      .insert({ group_id: profile.group_id, session_date: date, teacher_id: profile.id })
-      .select('id')
-      .single()
-    if (error) throw error
-    setSessionId(data.id)
-    return data.id
+    if (creatingRef.current) return null   // already creating — caller should retry or skip
+    creatingRef.current = true
+    try {
+      const { data, error } = await supabase
+        .from('attendance_sessions')
+        .insert({ group_id: profile.group_id, session_date: date, teacher_id: profile.id })
+        .select('id')
+        .single()
+      if (error) throw error
+      setSessionId(data.id)
+      return data.id
+    } finally {
+      creatingRef.current = false
+    }
   }
 
   async function mark(studentId, status) {
@@ -78,6 +89,7 @@ export default function TeacherRegister() {
     clearTimeout(savingRef.current)
     try {
       const sid = await ensureSession()
+      if (!sid) return   // session creation in progress; the state update is already optimistic
       const { error } = await supabase.from('attendance_records').upsert({
         session_id: sid,
         student_id: studentId,
@@ -113,7 +125,7 @@ export default function TeacherRegister() {
         student_id: student.id,
         student_name: fullName,
         from_group_id: profile.group_id,
-        from_group_name: profile.group_name || null,
+        from_group_name: groupName || null,
         requested_by: profile.id,
         reason,
         status: 'pending',
@@ -205,7 +217,7 @@ export default function TeacherRegister() {
               <li key={s.id} className="student-row">
                 <div className="student-row-main">
                   <div className="student-avatar" style={{ background: color(i) }}>
-                    {s.first_name[0]}{s.last_name[0]}
+                    {s.first_name?.[0] ?? '?'}{s.last_name?.[0] ?? '?'}
                   </div>
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div className="student-name">{fullName}</div>
