@@ -21,6 +21,8 @@ export default function TeacherStudents() {
   const [form, setForm]         = useState(EMPTY_FORM)
   const [busy, setBusy]         = useState(false)
   const [search, setSearch]     = useState('')
+  const [sortCol, setSortCol]   = useState('name')
+  const [sortDir, setSortDir]   = useState('asc')
 
   useEffect(() => { load() }, [user])
 
@@ -105,10 +107,51 @@ export default function TeacherStudents() {
     finally { setBusy(false) }
   }
 
+  function calcAge(dob) {
+    if (!dob) return null
+    const d = new Date(dob), now = new Date()
+    let a = now.getFullYear() - d.getFullYear()
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--
+    return a
+  }
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  function sortIcon(col) {
+    if (sortCol !== col) return <span style={{ marginLeft: 3, fontSize: '.6rem', color: '#cbd5e1' }}>⇅</span>
+    return <span style={{ marginLeft: 3, fontSize: '.6rem', color: 'var(--primary)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+  }
+
   const filtered = students.filter(s => {
     const q = search.toLowerCase()
     return !q || [s.first_name, s.middle_name, s.last_name, s.parent_name]
       .filter(Boolean).join(' ').toLowerCase().includes(q)
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    let va, vb
+    if (sortCol === 'name') {
+      va = [a.last_name, a.first_name].filter(Boolean).join(' ').toLowerCase()
+      vb = [b.last_name, b.first_name].filter(Boolean).join(' ').toLowerCase()
+    } else if (sortCol === 'age') {
+      va = calcAge(a.date_of_birth) ?? -1
+      vb = calcAge(b.date_of_birth) ?? -1
+    } else if (sortCol === 'dob') {
+      va = a.date_of_birth || ''
+      vb = b.date_of_birth || ''
+    } else if (sortCol === 'parent') {
+      va = a.parent_name?.toLowerCase() || ''
+      vb = b.parent_name?.toLowerCase() || ''
+    } else if (sortCol === 'phone') {
+      va = a.phone || ''
+      vb = b.phone || ''
+    } else { return 0 }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1
+    if (va > vb) return sortDir === 'asc' ? 1 : -1
+    return 0
   })
 
   if (loading) return <div className="spinner" />
@@ -245,15 +288,16 @@ export default function TeacherStudents() {
         <table>
           <thead>
             <tr>
-              <th>Student</th>
-              <th>Date of Birth</th>
-              <th>Parent</th>
-              <th>Phone</th>
+              <th onClick={() => toggleSort('name')}   style={{ cursor: 'pointer', userSelect: 'none' }}>Student{sortIcon('name')}</th>
+              <th onClick={() => toggleSort('age')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Age{sortIcon('age')}</th>
+              <th onClick={() => toggleSort('dob')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Date of Birth{sortIcon('dob')}</th>
+              <th onClick={() => toggleSort('parent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Parent{sortIcon('parent')}</th>
+              <th onClick={() => toggleSort('phone')}  style={{ cursor: 'pointer', userSelect: 'none' }}>Phone{sortIcon('phone')}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(s => {
+            {sorted.map(s => {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
               return (
                 <tr key={s.id}>
@@ -263,6 +307,7 @@ export default function TeacherStudents() {
                       <MedicalBadge notes={s.medical_notes} studentName={fullName} />
                     </div>
                   </td>
+                  <td style={{ fontSize: '.85rem', fontWeight: 600 }}>{calcAge(s.date_of_birth) ?? '—'}</td>
                   <td style={{ fontSize: '.85rem' }}>{fmtDate(s.date_of_birth)}</td>
                   <td style={{ fontSize: '.85rem' }}>
                     {s.parent_name ? `${s.parent_name}${s.relationship ? ` (${s.relationship})` : ''}` : '—'}
@@ -277,7 +322,7 @@ export default function TeacherStudents() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {search ? 'No students match your search' : 'No students in your group yet'}
               </td></tr>
             )}

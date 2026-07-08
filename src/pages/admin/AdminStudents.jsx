@@ -31,6 +31,8 @@ export default function AdminStudents({ readOnly }) {
   const [attendOpen, setAttendOpen]   = useState({})
   const [attendLoading, setAttendLoading] = useState({})
   const [editBusy, setEditBusy] = useState(null)
+  const [sortCol, setSortCol] = useState('name')
+  const [sortDir, setSortDir] = useState('asc')
 
   useEffect(() => { load() }, [])
 
@@ -131,11 +133,55 @@ export default function AdminStudents({ readOnly }) {
     load()
   }
 
+  function calcAge(dob) {
+    if (!dob) return null
+    const d = new Date(dob), now = new Date()
+    let a = now.getFullYear() - d.getFullYear()
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--
+    return a
+  }
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  function sortIcon(col) {
+    if (sortCol !== col) return <span style={{ marginLeft: 3, fontSize: '.6rem', color: '#cbd5e1' }}>⇅</span>
+    return <span style={{ marginLeft: 3, fontSize: '.6rem', color: 'var(--primary)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+  }
+
   const filtered = students.filter(s => {
     const name = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ').toLowerCase()
     const matchSearch = !search || name.includes(search.toLowerCase())
     const matchGroup  = !groupFilter || s.group_id === groupFilter
     return matchSearch && matchGroup
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    let va, vb
+    if (sortCol === 'name') {
+      va = [a.last_name, a.first_name].filter(Boolean).join(' ').toLowerCase()
+      vb = [b.last_name, b.first_name].filter(Boolean).join(' ').toLowerCase()
+    } else if (sortCol === 'age') {
+      va = calcAge(a.date_of_birth) ?? -1
+      vb = calcAge(b.date_of_birth) ?? -1
+    } else if (sortCol === 'dob') {
+      va = a.date_of_birth || ''
+      vb = b.date_of_birth || ''
+    } else if (sortCol === 'group') {
+      va = a.groups?.name?.toLowerCase() || ''
+      vb = b.groups?.name?.toLowerCase() || ''
+    } else if (sortCol === 'phone') {
+      va = a.phone || ''
+      vb = b.phone || ''
+    } else if (sortCol === 'date_joined') {
+      va = a.date_joined || ''
+      vb = b.date_joined || ''
+    } else { return 0 }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1
+    if (va > vb) return sortDir === 'asc' ? 1 : -1
+    return 0
   })
 
   if (loading) return <div className="spinner" />
@@ -159,16 +205,17 @@ export default function AdminStudents({ readOnly }) {
         <table>
           <thead>
             <tr>
-              <th>Student</th>
-              <th>DOB</th>
-              <th>Group</th>
-              <th>Phone</th>
-              <th>Date Joined</th>
+              <th onClick={() => toggleSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>Student{sortIcon('name')}</th>
+              <th onClick={() => toggleSort('age')}  style={{ cursor: 'pointer', userSelect: 'none' }}>Age{sortIcon('age')}</th>
+              <th onClick={() => toggleSort('dob')}  style={{ cursor: 'pointer', userSelect: 'none' }}>DOB{sortIcon('dob')}</th>
+              <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
+              <th onClick={() => toggleSort('phone')} style={{ cursor: 'pointer', userSelect: 'none' }}>Phone{sortIcon('phone')}</th>
+              <th onClick={() => toggleSort('date_joined')} style={{ cursor: 'pointer', userSelect: 'none' }}>Date Joined{sortIcon('date_joined')}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((s, i) => {
+            {sorted.map((s, i) => {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
               const records  = attendOpen[s.id]
               return (
@@ -194,6 +241,7 @@ export default function AdminStudents({ readOnly }) {
                         </div>
                       </div>
                     </td>
+                    <td style={{ fontWeight: 600 }}>{calcAge(s.date_of_birth) ?? '—'}</td>
                     <td>{fmtDate(s.date_of_birth)}</td>
                     <td>{s.groups?.name || <span style={{ color: 'var(--muted)' }}>No group</span>}</td>
                     <td>{s.phone || '—'}</td>
@@ -221,7 +269,7 @@ export default function AdminStudents({ readOnly }) {
 
                   {expanded === s.id && (
                     <tr key={s.id + '-exp'}>
-                      <td colSpan={6} style={{ background: '#f8fafc', padding: '12px 16px' }}>
+                      <td colSpan={7} style={{ background: '#f8fafc', padding: '12px 16px' }}>
                         <div className="app-details">
                           <Detail label="Parent/Guardian" value={s.parent_name} />
                           <Detail label="Relationship" value={s.relationship} />
@@ -257,7 +305,7 @@ export default function AdminStudents({ readOnly }) {
 
                   {records !== undefined && (
                     <tr key={s.id + '-att'}>
-                      <td colSpan={6} style={{ background: '#f0f9ff', padding: '12px 16px', borderTop: '2px solid #bae6fd' }}>
+                      <td colSpan={7} style={{ background: '#f0f9ff', padding: '12px 16px', borderTop: '2px solid #bae6fd' }}>
                         <div style={{ fontWeight: 700, fontSize: '.82rem', color: '#0369a1', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                           <span>
                             Attendance History — {fullName}
@@ -327,7 +375,7 @@ export default function AdminStudents({ readOnly }) {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>No students found</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>No students found</td></tr>
             )}
           </tbody>
         </table>
