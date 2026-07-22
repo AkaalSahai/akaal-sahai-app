@@ -1,0 +1,59 @@
+-- =====================================================
+-- FIX 1: Add missing columns to teacher_applications
+-- =====================================================
+
+ALTER TABLE public.teacher_applications ADD COLUMN IF NOT EXISTS auth_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL;
+
+ALTER TABLE public.teacher_applications ADD COLUMN IF NOT EXISTS dbs_number text;
+
+-- =====================================================
+-- FIX 2: Fix users role check constraint (add adminView)
+-- =====================================================
+
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_check;
+
+ALTER TABLE public.users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'registrar', 'teacher', 'adminView'));
+
+-- =====================================================
+-- FIX 3: Clean up duplicate RLS on teacher_applications
+-- =====================================================
+
+DROP POLICY IF EXISTS "teacher_apps_public_insert" ON public.teacher_applications;
+
+DROP POLICY IF EXISTS "teacher_apps_admin_read" ON public.teacher_applications;
+
+DROP POLICY IF EXISTS "teacher_apps_admin_update" ON public.teacher_applications;
+
+DROP POLICY IF EXISTS "teacher_apps_insert" ON public.teacher_applications;
+
+DROP POLICY IF EXISTS "teacher_apps_select" ON public.teacher_applications;
+
+DROP POLICY IF EXISTS "teacher_apps_manage" ON public.teacher_applications;
+
+CREATE POLICY "teacher_apps_insert" ON public.teacher_applications FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "teacher_apps_select" ON public.teacher_applications FOR SELECT USING (user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar'));
+
+CREATE POLICY "teacher_apps_manage" ON public.teacher_applications FOR ALL USING (user_has_role('admin') OR user_has_role('registrar'));
+
+-- =====================================================
+-- FIX 4: Clean up duplicate RLS on parent_applications
+-- =====================================================
+
+DROP POLICY IF EXISTS "parent_apps_public_insert" ON public.parent_applications;
+
+DROP POLICY IF EXISTS "parent_apps_staff_read" ON public.parent_applications;
+
+DROP POLICY IF EXISTS "parent_apps_staff_update" ON public.parent_applications;
+
+DROP POLICY IF EXISTS "parent_apps_insert" ON public.parent_applications;
+
+DROP POLICY IF EXISTS "parent_apps_select" ON public.parent_applications;
+
+DROP POLICY IF EXISTS "parent_apps_manage" ON public.parent_applications;
+
+CREATE POLICY "parent_apps_insert" ON public.parent_applications FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "parent_apps_select" ON public.parent_applications FOR SELECT USING (user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar'));
+
+CREATE POLICY "parent_apps_manage" ON public.parent_applications FOR ALL USING (user_has_role('admin') OR user_has_role('registrar'));

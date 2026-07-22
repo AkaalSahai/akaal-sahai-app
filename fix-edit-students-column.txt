@@ -1,0 +1,9 @@
+-- Step 1: Check if the column already exists (should return 1 row if it does)
+SELECT column_name, data_type, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'users'
+  AND column_name = 'can_edit_students';
+
+-- Step 2: Add the column (safe to run even if it already exists)
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS can_edit_students boolean DEFAULT false;

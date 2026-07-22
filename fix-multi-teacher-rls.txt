@@ -1,0 +1,37 @@
+-- FIX: Multiple teachers unable to view same group students
+-- Run in Supabase Dashboard → SQL Editor
+-- Date: 2026-07-18
+--
+-- Step 1: Check existing policy names on the students table
+SELECT policyname FROM pg_policies WHERE tablename = 'students';
+
+-- Step 2: Drop the old teacher read policy (update name below if different from what Step 1 returns)
+DROP POLICY IF EXISTS "Teachers can view their group students" ON students;
+DROP POLICY IF EXISTS "teachers_read_students" ON students;
+DROP POLICY IF EXISTS "Teacher access" ON students;
+
+-- Step 3: Create new policy covering both assignment methods
+-- (primary teacher via groups.teacher_id AND secondary via teacher_groups junction table)
+CREATE POLICY "teachers_read_group_students" ON students
+  FOR SELECT USING (
+    -- Primary teacher on the group
+    EXISTS (
+      SELECT 1 FROM groups
+      WHERE groups.id = students.group_id
+        AND groups.teacher_id = auth.uid()
+    )
+    OR
+    -- Secondary teacher via junction table
+    EXISTS (
+      SELECT 1 FROM teacher_groups
+      WHERE teacher_groups.group_id = students.group_id
+        AND teacher_groups.teacher_id = auth.uid()
+    )
+    OR
+    -- Admins and registrars
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE users.id = auth.uid()
+        AND users.role IN ('admin', 'registrar', 'admin_view')
+    )
+  );

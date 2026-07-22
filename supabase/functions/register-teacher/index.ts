@@ -36,21 +36,67 @@ Deno.serve(async (req) => {
     }
 
     // Create auth user — confirmed but NO public.users row yet (can't log in successfully until approved)
+    let authUserId: string
     const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
     })
+
     if (authErr) {
-      const msg = authErr.message?.toLowerCase().includes('already registered') || authErr.message?.toLowerCase().includes('already been registered')
-        ? 'An account with this email already exists. Please contact your admin if you need help.'
-        : authErr.message
-      return new Response(JSON.stringify({ error: msg }), { status: 400, headers: corsHeaders })
+      const isAlreadyExists =
+        authErr.message?.toLowerCase().includes('already registered') ||
+        authErr.message?.toLowerCase().includes('already been registered') ||
+        authErr.message?.toLowerCase().includes('already exists')
+
+      if (!isAlreadyExists) {
+        return new Response(JSON.stringify({ error: authErr.message }), { status: 400, headers: corsHeaders })
+      }
+
+      // "Already exists" — check whether this is an orphaned ghost account (created by
+      // a magic-link request that was never completed) or a real approved account.
+      const { data: existingProfile } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (existingProfile) {
+        // Genuine account — this person is already a registered user
+        return new Response(
+          JSON.stringify({ error: 'An account with this email already exists. If you are already a teacher, please sign in instead. Otherwise contact your admin.' }),
+          { status: 400, headers: corsHeaders }
+        )
+      }
+
+      // No profile → ghost account from a magic-link attempt. Recover it by updating
+      // the password so the teacher can register and log in normally.
+      const { data: { users: allAuthUsers } } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 })
+      const ghostUser = allAuthUsers?.find((u) => u.email?.toLowerCase() === email.toLowerCase())
+
+      if (!ghostUser) {
+        return new Response(
+          JSON.stringify({ error: 'An account with this email already exists. Please contact your admin.' }),
+          { status: 400, headers: corsHeaders }
+        )
+      }
+
+      const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(ghostUser.id, {
+        password,
+        email_confirm: true,
+      })
+      if (updateErr) {
+        return new Response(JSON.stringify({ error: updateErr.message }), { status: 400, headers: corsHeaders })
+      }
+
+      authUserId = ghostUser.id
+    } else {
+      authUserId = authData.user.id
     }
 
     // Insert application row
     const { error: appErr } = await supabaseAdmin.from('teacher_applications').insert({
-      auth_user_id: authData.user.id,
+      auth_user_id: authUserId,
       full_name,
       email,
       phone,
@@ -60,8 +106,8 @@ Deno.serve(async (req) => {
       status: 'pending',
     })
     if (appErr) {
-      // Roll back auth user if insert failed
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+      // Roll back only if we created a fresh auth user (not a recovered ghost)
+      if (authData?.user) await supabaseAdmin.auth.admin.deleteUser(authUserId)
       return new Response(JSON.stringify({ error: appErr.message }), { status: 400, headers: corsHeaders })
     }
 

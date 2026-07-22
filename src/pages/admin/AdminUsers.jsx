@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
@@ -30,22 +30,29 @@ export default function AdminUsers({ readOnly }) {
   const [editEmail, setEditEmail] = useState({})
   const [roleDrafts, setRoleDrafts] = useState({})
   const [savedMsg, setSavedMsg]     = useState({})
+  const [editPanel, setEditPanel]   = useState({})  // userId → {name, email, phone}
 
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoadError(null)
-    const [{ data: userData, error: userErr }, { data: groupData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name'),
+    const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name'),
+      supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
+    const groupMap = {}
+    ;(groupData || []).forEach(g => { groupMap[g.id] = g.name })
+    const tgMap = {}
+    ;(tgData || []).forEach(r => {
+      if (!tgMap[r.teacher_id]) tgMap[r.teacher_id] = []
+      if (r.groups) tgMap[r.teacher_id].push(r.groups.name)
+    })
     if (userErr) {
       if (userErr.message?.includes('can_edit_students')) {
         const { data: fallback } = await supabase
-          .from('users').select('id, name, email, role, extra_roles, last_login, group_id').order('role').order('name')
-        const groupMap = {}
-        ;(groupData || []).forEach(g => { groupMap[g.id] = g.name })
-        setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupName: u.group_id ? groupMap[u.group_id] : null })))
+          .from('users').select('id, name, email, phone, role, extra_roles, last_login, group_id').order('role').order('name')
+        setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
         setLoadError('⚠ Run the teacher-edit-permission.txt SQL to enable the Edit Students toggle.')
       } else {
         setLoadError('Error loading users: ' + userErr.message)
@@ -53,9 +60,7 @@ export default function AdminUsers({ readOnly }) {
       setLoading(false)
       return
     }
-    const groupMap = {}
-    ;(groupData || []).forEach(g => { groupMap[g.id] = g.name })
-    setUsers((userData || []).map(u => ({ ...u, groupName: u.group_id ? groupMap[u.group_id] : null })))
+    setUsers((userData || []).map(u => ({ ...u, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
     setLoading(false)
   }
 
@@ -170,9 +175,44 @@ export default function AdminUsers({ readOnly }) {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  function openEdit(u) {
+    setEditPanel(prev => ({ ...prev, [u.id]: { name: u.name || '', email: u.email || '', phone: u.phone || '' } }))
+  }
+
+  function closeEdit(userId) {
+    setEditPanel(prev => { const n = { ...prev }; delete n[userId]; return n })
+  }
+
+  async function saveDetails(userId) {
+    const draft = editPanel[userId]
+    if (!draft) return
+    const u = users.find(x => x.id === userId)
+    setBusy(userId)
+    try {
+      const updates = {}
+      if (draft.name.trim()  !== (u.name  || '')) updates.name  = draft.name.trim()
+      if (draft.phone.trim() !== (u.phone || '')) updates.phone = draft.phone.trim() || null
+
+      if (Object.keys(updates).length) {
+        const { error } = await supabase.from('users').update(updates).eq('id', userId)
+        if (error) throw error
+      }
+
+      if (draft.email.trim() !== u.email) {
+        const token = await getToken()
+        await callAdminAction({ action: 'update-email', userId, newEmail: draft.email.trim() }, token)
+      }
+
+      logAction(myProfile, 'Updated user details', u?.name || userId).catch(() => {})
+      closeEdit(userId)
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setBusy(null) }
+  }
+
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
   const sorted = [...users].sort((a, b) =>
-    roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || a.name.localeCompare(b.name)
+    roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || (a.name || '').localeCompare(b.name || '')
   )
 
   if (loading) return <div className="spinner" />
@@ -237,7 +277,8 @@ export default function AdminUsers({ readOnly }) {
           </thead>
           <tbody>
             {sorted.map(u => (
-              <tr key={u.id}>
+              <Fragment key={u.id}>
+              <tr>
                 <td style={{ fontWeight: 600 }}>{u.name}</td>
                 <td>
                   {!readOnly ? (
@@ -300,7 +341,16 @@ export default function AdminUsers({ readOnly }) {
                     </span>
                   )}
                 </td>
-                <td>{u.groupName || '—'}</td>
+                <td>
+                  {(u.groupNames || []).length > 0
+                    ? (u.groupNames || []).map((n, i) => (
+                        <span key={i} style={{ display: 'inline-block', background: '#e0e7ff', color: '#3730a3',
+                          borderRadius: 5, padding: '1px 7px', fontSize: '.75rem', fontWeight: 600,
+                          marginRight: 3, marginBottom: 2 }}>{n}</span>
+                      ))
+                    : <span style={{ color: 'var(--muted)' }}>—</span>
+                  }
+                </td>
                 <td>
                   {(u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) ? (
                     !readOnly ? (
@@ -331,7 +381,13 @@ export default function AdminUsers({ readOnly }) {
                 </td>
                 <td>
                   {!readOnly && (
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <button className="btn btn-outline btn-xs"
+                        style={{ borderColor: editPanel[u.id] ? 'var(--primary)' : undefined, color: editPanel[u.id] ? 'var(--primary)' : undefined }}
+                        disabled={busy === u.id}
+                        onClick={() => editPanel[u.id] ? closeEdit(u.id) : openEdit(u)}>
+                        ✎ Edit
+                      </button>
                       <button className="btn btn-warning btn-xs" disabled={busy === u.id} onClick={() => resetUserPassword(u.id, u.email)}>
                         {busy === u.id ? '…' : 'Reset PW'}
                       </button>
@@ -342,6 +398,43 @@ export default function AdminUsers({ readOnly }) {
                   )}
                 </td>
               </tr>
+              {editPanel[u.id] && !readOnly && (
+                <tr key={u.id + '-edit'}>
+                  <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                    <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
+                      Edit Details — {u.name}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '.76rem' }}>Full Name</label>
+                        <input type="text" value={editPanel[u.id].name}
+                          onChange={e => setEditPanel(prev => ({ ...prev, [u.id]: { ...prev[u.id], name: e.target.value } }))}
+                          style={{ fontSize: '.85rem', padding: '7px 10px' }} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '.76rem' }}>Email</label>
+                        <input type="email" value={editPanel[u.id].email}
+                          onChange={e => setEditPanel(prev => ({ ...prev, [u.id]: { ...prev[u.id], email: e.target.value } }))}
+                          style={{ fontSize: '.85rem', padding: '7px 10px' }} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '.76rem' }}>Contact Number</label>
+                        <input type="tel" value={editPanel[u.id].phone}
+                          onChange={e => setEditPanel(prev => ({ ...prev, [u.id]: { ...prev[u.id], phone: e.target.value } }))}
+                          placeholder="e.g. 07700 900000"
+                          style={{ fontSize: '.85rem', padding: '7px 10px' }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-primary btn-sm" disabled={busy === u.id} onClick={() => saveDetails(u.id)}>
+                        {busy === u.id ? 'Saving…' : 'Save Changes'}
+                      </button>
+                      <button className="btn btn-outline btn-sm" onClick={() => closeEdit(u.id)}>Cancel</button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             {sorted.length === 0 && (
               <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>

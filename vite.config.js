@@ -14,7 +14,7 @@ export default defineConfig({
         description: 'Punjabi classes attendance management',
         theme_color: '#1e1a6e',
         background_color: '#f1f5f9',
-        display: 'standalone',
+        display: 'minimal-ui',
         start_url: '/',
         icons: [
           { src: 'logo.png', sizes: '192x192', type: 'image/png' },

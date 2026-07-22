@@ -50,7 +50,7 @@ function parseDateToISO(raw) {
   return null
 }
 
-export default function AdminImport() {
+export default function AdminImport({ readOnly }) {
   const [csv, setCsv]     = useState(null)
   const [rows, setRows]   = useState([])
   const [errors, setErrors] = useState([])
@@ -149,6 +149,12 @@ export default function AdminImport() {
       setResult({ success: false, message: err.message })
     } finally { setBusy(false) }
   }
+
+  if (readOnly) return (
+    <div className="card">
+      <div className="alert alert-warning">You do not have permission to import data.</div>
+    </div>
+  )
 
   return (
     <div className="card">

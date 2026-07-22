@@ -11,6 +11,7 @@ import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
 import AdminActivity from './AdminActivity'
 import AdminMessages from './AdminMessages'
+import AdminSettings from './AdminSettings'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 
@@ -23,9 +24,12 @@ export default function AdminLayout() {
   const [unread, setUnread] = useState(0)
 
   useEffect(() => {
+    let mounted = true
     supabase.from('messages').select('id', { count: 'exact', head: true })
       .is('read_at', null)
-      .then(({ count }) => setUnread(count || 0))
+      .then(({ count }) => { if (mounted) setUnread(count || 0) })
+      .catch(() => {})
+    return () => { mounted = false }
   }, [])
 
   const TABS = [
@@ -40,6 +44,7 @@ export default function AdminLayout() {
     ...(!readOnly       ? [{ id: 'import',   label: 'Import Data' }] : []),
     ...(isPrimaryAdmin  ? [{ id: 'activity', label: 'Activity'    }] : []),
     { id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' },
+    ...(isPrimaryAdmin  ? [{ id: 'settings', label: 'Settings'    }] : []),
   ]
 
   return (
@@ -70,6 +75,7 @@ export default function AdminLayout() {
         {tab === 'mystudents'   && <TeacherStudents />}
         {tab === 'activity'     && <AdminActivity />}
         {tab === 'messages'     && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
+        {tab === 'settings'     && <AdminSettings />}
       </div>
     </div>
   )

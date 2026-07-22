@@ -1,0 +1,216 @@
+-- =====================================================
+-- MULTI-ROLE MIGRATION
+-- =====================================================
+
+-- 1. Add extra_roles column
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS extra_roles text[] DEFAULT '{}';
+
+-- 2. user_has_role() — checks primary role OR extra_roles
+CREATE OR REPLACE FUNCTION public.user_has_role(check_role text)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid()
+      AND (role = check_role OR check_role = ANY(COALESCE(extra_roles, '{}')))
+  )
+$$;
+
+-- 3. Keep current_user_role() for backward compat
+CREATE OR REPLACE FUNCTION public.current_user_role()
+RETURNS text LANGUAGE sql SECURITY DEFINER STABLE AS $$
+  SELECT role FROM public.users WHERE id = auth.uid()
+$$;
+
+-- =====================================================
+-- RLS: public.users
+-- =====================================================
+DROP POLICY IF EXISTS "users_select_own" ON public.users;
+DROP POLICY IF EXISTS "users_select_admin" ON public.users;
+DROP POLICY IF EXISTS "users_select_all" ON public.users;
+DROP POLICY IF EXISTS "users_update_own" ON public.users;
+DROP POLICY IF EXISTS "users_update_admin" ON public.users;
+DROP POLICY IF EXISTS "users_insert_admin" ON public.users;
+
+CREATE POLICY "users_select_all" ON public.users FOR SELECT USING (
+  auth.uid() = id
+  OR user_has_role('admin') OR user_has_role('adminView')
+  OR user_has_role('registrar') OR user_has_role('teacher')
+);
+
+CREATE POLICY "users_update_own" ON public.users FOR UPDATE USING (auth.uid() = id);
+
+CREATE POLICY "users_update_admin" ON public.users FOR UPDATE USING (user_has_role('admin'));
+
+CREATE POLICY "users_insert_admin" ON public.users FOR INSERT WITH CHECK (user_has_role('admin'));
+
+-- =====================================================
+-- RLS: public.groups
+-- =====================================================
+DROP POLICY IF EXISTS "groups_select" ON public.groups;
+DROP POLICY IF EXISTS "groups_manage" ON public.groups;
+
+CREATE POLICY "groups_select" ON public.groups FOR SELECT USING (
+  user_has_role('admin') OR user_has_role('adminView')
+  OR user_has_role('registrar') OR user_has_role('teacher')
+);
+
+CREATE POLICY "groups_manage" ON public.groups FOR ALL USING (
+  user_has_role('admin') OR user_has_role('registrar')
+);
+
+-- =====================================================
+-- RLS: public.students
+-- =====================================================
+DROP POLICY IF EXISTS "students_select" ON public.students;
+DROP POLICY IF EXISTS "students_select_teacher" ON public.students;
+DROP POLICY IF EXISTS "students_manage" ON public.students;
+
+CREATE POLICY "students_select" ON public.students FOR SELECT USING (
+  user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar')
+);
+
+CREATE POLICY "students_select_teacher" ON public.students FOR SELECT USING (
+  user_has_role('teacher') AND group_id IN (
+    SELECT id FROM public.groups WHERE teacher_id = auth.uid()
+  )
+);
+
+CREATE POLICY "students_manage" ON public.students FOR ALL USING (
+  user_has_role('admin') OR user_has_role('registrar')
+);
+
+-- =====================================================
+-- RLS: public.attendance_sessions
+-- =====================================================
+DROP POLICY IF EXISTS "sessions_select" ON public.attendance_sessions;
+DROP POLICY IF EXISTS "sessions_teacher_manage" ON public.attendance_sessions;
+DROP POLICY IF EXISTS "sessions_admin_manage" ON public.attendance_sessions;
+
+CREATE POLICY "sessions_select" ON public.attendance_sessions FOR SELECT USING (
+  user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar')
+  OR (user_has_role('teacher') AND group_id IN (
+    SELECT id FROM public.groups WHERE teacher_id = auth.uid()
+  ))
+);
+
+CREATE POLICY "sessions_teacher_manage" ON public.attendance_sessions FOR ALL USING (
+  user_has_role('teacher') AND group_id IN (
+    SELECT id FROM public.groups WHERE teacher_id = auth.uid()
+  )
+);
+
+CREATE POLICY "sessions_admin_manage" ON public.attendance_sessions FOR ALL USING (
+  user_has_role('admin')
+);
+
+-- =====================================================
+-- RLS: public.attendance_records
+-- =====================================================
+DROP POLICY IF EXISTS "records_select" ON public.attendance_records;
+DROP POLICY IF EXISTS "records_teacher_manage" ON public.attendance_records;
+DROP POLICY IF EXISTS "records_admin_manage" ON public.attendance_records;
+DROP POLICY IF EXISTS "records_teacher_update" ON public.attendance_records;
+
+CREATE POLICY "records_select" ON public.attendance_records FOR SELECT USING (
+  user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar')
+  OR (user_has_role('teacher') AND session_id IN (
+    SELECT s.id FROM public.attendance_sessions s
+    JOIN public.groups g ON g.id = s.group_id
+    WHERE g.teacher_id = auth.uid()
+  ))
+);
+
+CREATE POLICY "records_teacher_manage" ON public.attendance_records FOR ALL USING (
+  user_has_role('teacher') AND session_id IN (
+    SELECT s.id FROM public.attendance_sessions s
+    JOIN public.groups g ON g.id = s.group_id
+    WHERE g.teacher_id = auth.uid()
+  )
+);
+
+CREATE POLICY "records_admin_manage" ON public.attendance_records FOR ALL USING (
+  user_has_role('admin')
+);
+
+-- =====================================================
+-- RLS: public.parent_applications
+-- =====================================================
+DROP POLICY IF EXISTS "parent_apps_select" ON public.parent_applications;
+DROP POLICY IF EXISTS "parent_apps_manage" ON public.parent_applications;
+DROP POLICY IF EXISTS "parent_apps_insert" ON public.parent_applications;
+
+CREATE POLICY "parent_apps_insert" ON public.parent_applications FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "parent_apps_select" ON public.parent_applications FOR SELECT USING (
+  user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar')
+);
+
+CREATE POLICY "parent_apps_manage" ON public.parent_applications FOR ALL USING (
+  user_has_role('admin') OR user_has_role('registrar')
+);
+
+-- =====================================================
+-- RLS: public.teacher_applications
+-- =====================================================
+DROP POLICY IF EXISTS "teacher_apps_select" ON public.teacher_applications;
+DROP POLICY IF EXISTS "teacher_apps_manage" ON public.teacher_applications;
+DROP POLICY IF EXISTS "teacher_apps_insert" ON public.teacher_applications;
+
+CREATE POLICY "teacher_apps_insert" ON public.teacher_applications FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "teacher_apps_select" ON public.teacher_applications FOR SELECT USING (
+  user_has_role('admin') OR user_has_role('adminView') OR user_has_role('registrar')
+);
+
+CREATE POLICY "teacher_apps_manage" ON public.teacher_applications FOR ALL USING (
+  user_has_role('admin') OR user_has_role('registrar')
+);
+
+-- =====================================================
+-- RLS: public.student_notes
+-- =====================================================
+DROP POLICY IF EXISTS "notes_teacher_own" ON public.student_notes;
+DROP POLICY IF EXISTS "notes_admin_reg" ON public.student_notes;
+DROP POLICY IF EXISTS "notes_adminview" ON public.student_notes;
+
+CREATE POLICY "notes_teacher_own" ON public.student_notes FOR ALL USING (
+  user_has_role('teacher') AND student_id IN (
+    SELECT st.id FROM public.students st
+    JOIN public.groups g ON g.id = st.group_id
+    WHERE g.teacher_id = auth.uid()
+  )
+);
+
+CREATE POLICY "notes_admin_reg" ON public.student_notes FOR ALL USING (
+  user_has_role('admin') OR user_has_role('registrar')
+);
+
+CREATE POLICY "notes_adminview" ON public.student_notes FOR SELECT USING (
+  user_has_role('adminView')
+);
+
+-- =====================================================
+-- RLS: public.transfer_requests
+-- =====================================================
+DROP POLICY IF EXISTS "transfers_teacher_insert" ON public.transfer_requests;
+DROP POLICY IF EXISTS "transfers_teacher_select" ON public.transfer_requests;
+DROP POLICY IF EXISTS "transfers_admin_reg" ON public.transfer_requests;
+DROP POLICY IF EXISTS "transfers_adminview" ON public.transfer_requests;
+
+CREATE POLICY "transfers_teacher_insert" ON public.transfer_requests FOR INSERT WITH CHECK (
+  user_has_role('teacher')
+);
+
+CREATE POLICY "transfers_teacher_select" ON public.transfer_requests FOR SELECT USING (
+  user_has_role('teacher') AND from_group_id IN (
+    SELECT id FROM public.groups WHERE teacher_id = auth.uid()
+  )
+);
+
+CREATE POLICY "transfers_admin_reg" ON public.transfer_requests FOR ALL USING (
+  user_has_role('admin') OR user_has_role('registrar')
+);
+
+CREATE POLICY "transfers_adminview" ON public.transfer_requests FOR SELECT USING (
+  user_has_role('adminView')
+);

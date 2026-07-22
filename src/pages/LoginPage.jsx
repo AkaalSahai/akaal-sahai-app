@@ -46,7 +46,10 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email: resetEmail.trim(),
-        options: { emailRedirectTo: window.location.origin + '/' },
+        options: {
+          emailRedirectTo: window.location.origin + '/',
+          shouldCreateUser: false,
+        },
       })
       if (error) throw error
       setResetMsg('Sign-in link sent! Click the link in your email.')

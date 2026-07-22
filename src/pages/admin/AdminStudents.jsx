@@ -4,6 +4,7 @@ import MedicalBadge from '../../components/MedicalBadge'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
+import { notifyTeachersOfGroup } from '../../lib/notifications'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -33,19 +34,24 @@ export default function AdminStudents({ readOnly }) {
   const [editBusy, setEditBusy] = useState(null)
   const [sortCol, setSortCol] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
+  const [removalRequests, setRemovalRequests] = useState([])
+  const [removalBusy, setRemovalBusy] = useState(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }] = await Promise.all([
-      supabase.from('students').select('*, groups(id, name)').eq('active', true).order('last_name'),
+    const [{ data: s }, { data: g }, { data: n }, { data: removals }] = await Promise.all([
+      supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
+      supabase.from('transfer_requests').select('*')
+        .eq('request_type', 'removal').eq('status', 'pending'),
     ])
     const noteMap = {}
     ;(n || []).forEach(note => { noteMap[note.student_id] = note })
     setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
     setGroups(g || [])
+    setRemovalRequests(removals || [])
     setLoading(false)
   }
 
@@ -120,6 +126,7 @@ export default function AdminStudents({ readOnly }) {
     const g = groups.find(x => x.id === newGroupId)
     const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
     logAction(profile, 'Moved student to group', `${name} → ${g?.name || newGroupId}`).catch(() => {})
+    notifyTeachersOfGroup(newGroupId, `New student added to your group: ${name}`).catch(() => {})
     load()
   }
 
@@ -131,6 +138,28 @@ export default function AdminStudents({ readOnly }) {
     await supabase.from('students').update({ active: false }).eq('id', studentId)
     logAction(profile, 'Removed student', name).catch(() => {})
     load()
+  }
+
+  async function approveRemoval(req) {
+    setRemovalBusy(req.id)
+    try {
+      const { error: e1 } = await supabase.from('students').update({ active: false }).eq('id', req.student_id)
+      if (e1) throw e1
+      await supabase.from('transfer_requests').update({ status: 'approved' }).eq('id', req.id)
+      logAction(profile, 'Approved student removal', req.student_name).catch(() => {})
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setRemovalBusy(null) }
+  }
+
+  async function rejectRemoval(req) {
+    setRemovalBusy(req.id)
+    try {
+      await supabase.from('transfer_requests').update({ status: 'rejected' }).eq('id', req.id)
+      logAction(profile, 'Rejected student removal', req.student_name).catch(() => {})
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setRemovalBusy(null) }
   }
 
   function calcAge(dob) {
@@ -161,8 +190,8 @@ export default function AdminStudents({ readOnly }) {
   const sorted = [...filtered].sort((a, b) => {
     let va, vb
     if (sortCol === 'name') {
-      va = [a.last_name, a.first_name].filter(Boolean).join(' ').toLowerCase()
-      vb = [b.last_name, b.first_name].filter(Boolean).join(' ').toLowerCase()
+      va = [a.first_name, a.last_name].filter(Boolean).join(' ').toLowerCase()
+      vb = [b.first_name, b.last_name].filter(Boolean).join(' ').toLowerCase()
     } else if (sortCol === 'age') {
       va = calcAge(a.date_of_birth) ?? -1
       vb = calcAge(b.date_of_birth) ?? -1
@@ -187,6 +216,42 @@ export default function AdminStudents({ readOnly }) {
   if (loading) return <div className="spinner" />
 
   return (
+    <>
+    {removalRequests.length > 0 && (
+      <div className="card" style={{ borderTop: '3px solid #dc2626' }}>
+        <div className="card-title" style={{ color: '#991b1b' }}>
+          Pending Removal Requests ({removalRequests.length})
+        </div>
+        {removalRequests.map(req => (
+          <div key={req.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 0',
+            borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <div style={{ fontWeight: 700, fontSize: '.92rem' }}>{req.student_name}</div>
+              <div style={{ fontSize: '.78rem', color: 'var(--muted)', marginTop: 2 }}>
+                Group: {req.from_group_name || 'Unknown'}
+              </div>
+              {req.reason && (
+                <div style={{ fontSize: '.82rem', marginTop: 5, color: '#374151' }}>
+                  <strong>Reason:</strong> {req.reason}
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignSelf: 'center' }}>
+              <button className="btn btn-danger btn-sm"
+                disabled={removalBusy === req.id}
+                onClick={() => approveRemoval(req)}>
+                {removalBusy === req.id ? 'Processing…' : 'Approve'}
+              </button>
+              <button className="btn btn-outline btn-sm"
+                disabled={removalBusy === req.id}
+                onClick={() => rejectRemoval(req)}>
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
     <div className="card">
       <div className="card-title">
         Students ({filtered.length})
@@ -292,7 +357,7 @@ export default function AdminStudents({ readOnly }) {
                         {!readOnly && (
                           <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
                             <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Move to group:</label>
-                            <select defaultValue={s.group_id || ''} onChange={e => e.target.value && moveGroup(s.id, e.target.value)}
+                            <select value={s.group_id || ''} onChange={e => e.target.value && e.target.value !== s.group_id && moveGroup(s.id, e.target.value)}
                               style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }}>
                               <option value="">— select —</option>
                               {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -380,6 +445,7 @@ export default function AdminStudents({ readOnly }) {
         </table>
       </div>
     </div>
+    </>
   )
 }
 

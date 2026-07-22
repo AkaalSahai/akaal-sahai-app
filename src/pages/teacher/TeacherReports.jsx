@@ -30,6 +30,9 @@ function progressBadge(value) {
 
 export default function TeacherReports() {
   const { profile }              = useAuth()
+  const [myGroups, setMyGroups]  = useState([])
+  const [selectedGroupId, setSelectedGroupId] = useState(null)
+  const [groupsLoading, setGroupsLoading] = useState(true)
   const [students, setStudents]  = useState([])
   const [stats, setStats]        = useState({})
   const [notes, setNotes]        = useState({})
@@ -42,22 +45,43 @@ export default function TeacherReports() {
   const debounceRef              = useRef({})
   const notesRef                 = useRef({})
 
-  // Keep notesRef in sync so debounced saves always have fresh data
   useEffect(() => { notesRef.current = notes }, [notes])
+  useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
+  useEffect(() => { if (selectedGroupId) load() }, [selectedGroupId])
 
-  useEffect(() => { if (profile?.group_id) load() }, [profile])
+  async function loadMyGroups() {
+    const { data: tg } = await supabase
+      .from('teacher_groups')
+      .select('group_id, groups(id, name)')
+      .eq('teacher_id', profile.id)
+    if (tg && tg.length > 0) {
+      const grps = tg.map(r => r.groups).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+      setMyGroups(grps)
+      const def = grps.find(g => g.id === profile.group_id) || grps[0]
+      setSelectedGroupId(def.id)
+    } else if (profile.group_id) {
+      const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
+      setMyGroups(g ? [g] : [])
+      setSelectedGroupId(profile.group_id)
+    } else {
+      setMyGroups([])
+      setGroupsLoading(false)
+      setLoading(false)
+    }
+    setGroupsLoading(false)
+  }
 
   async function load() {
+    setLoading(true)
     const [{ data: studentData }, { data: records }, { data: noteData }] = await Promise.all([
       supabase.from('students')
         .select('id, first_name, middle_name, last_name, date_of_birth, medical_notes')
-        .eq('group_id', profile.group_id).eq('active', true).order('last_name'),
+        .eq('group_id', selectedGroupId).eq('active', true).order('first_name').order('last_name'),
       supabase.from('attendance_records')
         .select('student_id, status, session_date')
-        .eq('group_id', profile.group_id),
+        .eq('group_id', selectedGroupId),
       supabase.from('student_notes')
-        .select('student_id, progress_level, comments')
-        .eq('group_id', profile.group_id),
+        .select('student_id, progress_level, comments'),
     ])
 
     const statMap = {}
@@ -74,6 +98,8 @@ export default function TeacherReports() {
     setStudents(studentData || [])
     setStats(statMap)
     setNotes(noteMap)
+    setHistory({})
+    setExpanded(null)
     setLoading(false)
   }
 
@@ -83,7 +109,7 @@ export default function TeacherReports() {
       .from('attendance_records')
       .select('session_date, status')
       .eq('student_id', studentId)
-      .eq('group_id', profile.group_id)
+      .eq('group_id', selectedGroupId)
       .order('session_date', { ascending: false })
     setHistory(h => ({ ...h, [studentId]: data || [] }))
   }
@@ -100,7 +126,7 @@ export default function TeacherReports() {
       await supabase.from('student_notes').upsert({
         student_id: studentId,
         teacher_id: profile.id,
-        group_id: profile.group_id,
+        group_id: selectedGroupId,
         ...notesRef.current[studentId],
         [field]: value,
         updated_at: new Date().toISOString(),
@@ -139,8 +165,8 @@ export default function TeacherReports() {
   const sorted = [...students].sort((a, b) => {
     let va, vb
     if (sortCol === 'name') {
-      va = [a.last_name, a.first_name].filter(Boolean).join(' ').toLowerCase()
-      vb = [b.last_name, b.first_name].filter(Boolean).join(' ').toLowerCase()
+      va = [a.first_name, a.last_name].filter(Boolean).join(' ').toLowerCase()
+      vb = [b.first_name, b.last_name].filter(Boolean).join(' ').toLowerCase()
     } else {
       va = age(a.date_of_birth) ?? -1
       vb = age(b.date_of_birth) ?? -1
@@ -150,12 +176,13 @@ export default function TeacherReports() {
     return 0
   })
 
-  if (!profile?.group_id) return (
+  if (groupsLoading) return <div className="spinner" />
+
+  if (!selectedGroupId && myGroups.length === 0) return (
     <div className="card">
       <div className="alert alert-warning">You have not been assigned to a group yet.</div>
     </div>
   )
-  if (loading) return <div className="spinner" />
 
   return (
     <div className="card">
@@ -178,12 +205,26 @@ export default function TeacherReports() {
         </div>
       </div>
 
-      {students.length === 0 && (
-        <div className="empty-state"><div className="icon">📊</div>No students in your group yet</div>
+      {myGroups.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {myGroups.map(g => (
+            <button key={g.id} onClick={() => setSelectedGroupId(g.id)}
+              style={{ padding: '7px 16px', borderRadius: 8, fontWeight: 600, fontSize: '.85rem',
+                cursor: 'pointer', border: `2px solid ${selectedGroupId === g.id ? 'var(--primary)' : 'var(--border)'}`,
+                background: selectedGroupId === g.id ? 'var(--primary)' : 'white',
+                color: selectedGroupId === g.id ? 'white' : '#475569' }}>
+              {g.name}
+            </button>
+          ))}
+        </div>
       )}
 
+      {loading ? <div className="spinner" /> : students.length === 0 ? (
+        <div className="empty-state"><div className="icon">📊</div>No students in your group yet</div>
+      ) : null}
+
       <ul className="student-list" style={{ padding: 0 }}>
-        {sorted.map((s, i) => {
+        {!loading && sorted.map((s, i) => {
           const st     = stats[s.id] || { present: 0, late: 0, absent: 0, total: 0 }
           const pct    = st.total > 0 ? Math.round(((st.present + st.late) / st.total) * 100) : null
           const pctColor = pct === null ? 'var(--muted)' : pct >= 80 ? '#16a34a' : pct >= 60 ? '#d97706' : '#dc2626'

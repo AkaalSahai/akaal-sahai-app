@@ -19,9 +19,12 @@ export default function RegistrarLayout() {
   const [unread, setUnread] = useState(0)
 
   useEffect(() => {
+    let mounted = true
     supabase.from('messages').select('id', { count: 'exact', head: true })
       .is('read_at', null)
-      .then(({ count }) => setUnread(count || 0))
+      .then(({ count }) => { if (mounted) setUnread(count || 0) })
+      .catch(() => {})
+    return () => { mounted = false }
   }, [])
 
   const tabs = [

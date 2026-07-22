@@ -14,6 +14,7 @@ const EMPTY_FORM = {
 export default function TeacherStudents() {
   const { user, profile } = useAuth()
   const canEdit = profile?.can_edit_students === true
+  const [myGroups, setMyGroups] = useState([])
   const [students, setStudents] = useState([])
   const [groupId, setGroupId]   = useState(null)
   const [loading, setLoading]   = useState(true)
@@ -28,18 +29,52 @@ export default function TeacherStudents() {
 
   async function load() {
     if (!user) return
-    const { data: grp } = await supabase
-      .from('groups').select('id').eq('teacher_id', user.id).single()
-    if (!grp) { setLoading(false); return }
-    setGroupId(grp.id)
+    try {
+      // Query both assignment methods and merge to handle all teacher setups
+      const [{ data: tgRows }, { data: primaryRows }] = await Promise.all([
+        supabase.from('teacher_groups').select('group_id, groups(id, name)').eq('teacher_id', user.id),
+        supabase.from('groups').select('id, name').eq('teacher_id', user.id),
+      ])
+
+      const grpMap = new Map()
+      ;(tgRows || []).forEach(r => { if (r.groups) grpMap.set(r.groups.id, r.groups) })
+      ;(primaryRows || []).forEach(g => { if (!grpMap.has(g.id)) grpMap.set(g.id, g) })
+
+      let grps = [...grpMap.values()].sort((a, b) => a.name.localeCompare(b.name))
+
+      if (grps.length === 0 && profile?.group_id) {
+        const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
+        if (g) grps = [g]
+      }
+
+      setMyGroups(grps)
+      if (grps.length > 0) {
+        const gid = grps[0].id
+        setGroupId(gid)
+        await loadStudentsForGroup(gid)
+      }
+    } catch (err) {
+      console.error('TeacherStudents load error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function loadStudentsForGroup(gid) {
     const { data } = await supabase
-      .from('students')
-      .select('*')
-      .eq('group_id', grp.id)
-      .eq('active', true)
+      .from('students').select('*')
+      .eq('group_id', gid).eq('active', true)
       .order('last_name').order('first_name')
     setStudents(data || [])
-    setLoading(false)
+  }
+
+  async function switchGroup(gid) {
+    setGroupId(gid)
+    setEditing(null)
+    setSearch('')
+    setLoading(true)
+    try { await loadStudentsForGroup(gid) }
+    finally { setLoading(false) }
   }
 
   function startEdit(s) {
@@ -164,10 +199,25 @@ export default function TeacherStudents() {
     </div>
   )
 
+  const filtered_count = students.filter(s => {
+    if (!search) return true
+    const name = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ').toLowerCase()
+    return name.includes(search.toLowerCase())
+  }).length
+
   return (
+    <>
+    {myGroups.length > 1 && (
+      <div className="nav-tabs" style={{ marginBottom: 0 }}>
+        {myGroups.map(g => (
+          <button key={g.id} className={`nav-tab ${groupId === g.id ? 'active' : ''}`}
+            onClick={() => switchGroup(g.id)}>{g.name}</button>
+        ))}
+      </div>
+    )}
     <div className="card">
       <div className="card-title">
-        My Students ({students.length})
+        My Students ({search ? filtered_count : students.length})
         {canEdit && <button className="btn btn-primary btn-sm" onClick={startNew}>+ Add Student</button>}
       </div>
 
@@ -330,5 +380,6 @@ export default function TeacherStudents() {
         </table>
       </div>
     </div>
+    </>
   )
 }

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
+import { notifyTeachersOfGroup } from '../../lib/notifications'
 
 export default function AdminApplications({ readOnly }) {
   const { profile } = useAuth()
@@ -17,20 +18,25 @@ export default function AdminApplications({ readOnly }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }] = await Promise.all([
-      supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
-      supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
-      supabase.from('groups').select('id, name').order('name'),
-      supabase.from('transfer_requests').select('*').order('created_at', { ascending: false }),
-    ])
-    setStudentApps(sa || [])
-    setTeacherApps(ta || [])
-    setGroups(gr || [])
-    setTransfers(tr || [])
-    setLoading(false)
+    try {
+      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }] = await Promise.all([
+        supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
+        supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
+        supabase.from('groups').select('id, name').order('name'),
+        supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)').order('created_at', { ascending: false }),
+      ])
+      setStudentApps(sa || [])
+      setTeacherApps(ta || [])
+      setGroups(gr || [])
+      setTransfers(tr || [])
+    } catch (err) {
+      console.error('Applications load error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  async function approveStudent(app) {
+  async function approveStudent(app, groupId) {
     if (readOnly) return
     setBusy(app.id)
     try {
@@ -40,11 +46,15 @@ export default function AdminApplications({ readOnly }) {
         house_no: app.house_no, street_name: app.street_name, town: app.town, postcode: app.postcode,
         parent_name: app.parent_name, relationship: app.relationship,
         phone: app.phone, secondary_phone: app.secondary_phone, email: app.email,
-        photo_consent: app.photo_consent, date_joined: new Date().toISOString().split('T')[0], active: true,
+        photo_consent: app.photo_consent, date_joined: new Date().toISOString().split('T')[0],
+        active: true, group_id: groupId || null,
       })
       if (error) throw error
       await supabase.from('parent_applications').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', app.id)
-      logAction(profile, 'Approved student application', [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')).catch(() => {})
+      const studentName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')
+      const grp = groups.find(g => g.id === groupId)
+      logAction(profile, 'Approved student application', grp ? `${studentName} → ${grp.name}` : studentName).catch(() => {})
+      if (groupId) notifyTeachersOfGroup(groupId, `New student added to your group: ${studentName}`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -101,6 +111,7 @@ export default function AdminApplications({ readOnly }) {
       }).eq('id', tr.id)
       alert(`${tr.student_name} has been moved to ${grp?.name || 'the selected group'}.`)
       logAction(profile, 'Approved transfer request', `${tr.student_name} → ${grp?.name || 'new group'}`).catch(() => {})
+      notifyTeachersOfGroup(toGroupId, `New student transferred to your group: ${tr.student_name}`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -148,6 +159,14 @@ export default function AdminApplications({ readOnly }) {
     setBusy(null); load()
   }
 
+  function calcAge(dob) {
+    if (!dob) return null
+    const d = new Date(dob), now = new Date()
+    let a = now.getFullYear() - d.getFullYear()
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--
+    return a
+  }
+
   const pending = {
     students:  studentApps.filter(a => a.status === 'pending').length,
     teachers:  teacherApps.filter(a => a.status === 'pending').length,
@@ -173,12 +192,17 @@ export default function AdminApplications({ readOnly }) {
       {tab === 'students' && (
         <>
           {studentApps.length === 0 && <div className="empty-state"><div className="icon">📝</div>No student applications</div>}
-          {studentApps.map(app => (
+          {studentApps.map(app => {
+            const age = calcAge(app.date_of_birth)
+            return (
             <ApplicationCard key={app.id} status={app.status}>
               <div className="app-header">
                 <div>
                   <div className="app-name">{[app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')}</div>
-                  <div className="app-meta">DOB: {fmtDate(app.date_of_birth)} · Applied: {fmtDate(app.created_at)}</div>
+                  <div className="app-meta">
+                    {age !== null && <span>Age: {age}y · </span>}
+                    DOB: {fmtDate(app.date_of_birth)} · Applied: {fmtDate(app.created_at)}
+                  </div>
                 </div>
                 <span className={`tag tag-${app.status}`}>{app.status}</span>
               </div>
@@ -193,22 +217,22 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Photo Consent" value={app.photo_consent ? 'Yes' : 'No'} />
               </div>
               {!readOnly && (
-                <div className="app-actions">
-                  {app.status === 'pending' && <>
-                    <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => approveStudent(app)}>
-                      {busy === app.id ? '…' : 'Approve & Add Student'}
+                <div>
+                  {app.status === 'pending' && (
+                    <StudentApproveForm app={app} groups={groups} onApprove={approveStudent} onReject={rejectStudent} busy={busy} />
+                  )}
+                  <div style={{ marginTop: app.status === 'pending' ? 8 : 0 }}>
+                    <button className="btn btn-outline btn-sm" disabled={busy === app.id}
+                      onClick={() => clearApp('parent_applications', app.id)}
+                      style={{ color: '#94a3b8', borderColor: '#cbd5e1' }}>
+                      {busy === app.id ? '…' : 'Clear'}
                     </button>
-                    <button className="btn btn-danger btn-sm" disabled={busy === app.id} onClick={() => rejectStudent(app)}>Reject</button>
-                  </>}
-                  <button className="btn btn-outline btn-sm" disabled={busy === app.id}
-                    onClick={() => clearApp('parent_applications', app.id)}
-                    style={{ marginLeft: 'auto', color: '#94a3b8', borderColor: '#cbd5e1' }}>
-                    {busy === app.id ? '…' : 'Clear'}
-                  </button>
+                  </div>
                 </div>
               )}
             </ApplicationCard>
-          ))}
+          )})}
+
         </>
       )}
 
@@ -259,6 +283,7 @@ export default function AdminApplications({ readOnly }) {
                 <div>
                   <div className="app-name">{tr.student_name}</div>
                   <div className="app-meta">
+                    {calcAge(tr.students?.date_of_birth) !== null && <span>Age: {calcAge(tr.students?.date_of_birth)}y · </span>}
                     From: {tr.from_group_name || '—'} · Requested: {fmtDate(tr.created_at)}
                   </div>
                 </div>
@@ -267,6 +292,9 @@ export default function AdminApplications({ readOnly }) {
               <div className="app-details">
                 <Detail label="Reason for Transfer" value={tr.reason} />
                 {tr.to_group_id && <Detail label="Moved To" value={groups.find(g => g.id === tr.to_group_id)?.name || '—'} />}
+                {tr.students?.medical_notes && (
+                  <Detail label="Medical Notes" value={tr.students.medical_notes} />
+                )}
               </div>
               {!readOnly && (
                 <div>
@@ -299,6 +327,23 @@ function Detail({ label, value }) {
     <div className="app-detail-item">
       <div className="app-detail-label">{label}</div>
       <div style={{ fontWeight: 600 }}>{value}</div>
+    </div>
+  )
+}
+
+function StudentApproveForm({ app, groups, onApprove, onReject, busy }) {
+  const [groupId, setGroupId] = useState('')
+  return (
+    <div className="app-actions">
+      <select value={groupId} onChange={e => setGroupId(e.target.value)}
+        style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.84rem' }}>
+        <option value="">Assign to group (optional)</option>
+        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+      </select>
+      <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => onApprove(app, groupId || null)}>
+        {busy === app.id ? '…' : 'Approve & Add'}
+      </button>
+      <button className="btn btn-danger btn-sm" disabled={busy === app.id} onClick={() => onReject(app)}>Reject</button>
     </div>
   )
 }

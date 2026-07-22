@@ -10,12 +10,17 @@ export default function AdminMessages({ onRead }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setMessages(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+      setMessages(data || [])
+    } catch (err) {
+      console.error('Messages load error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function toggleExpand(msg) {
