@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
@@ -353,19 +354,18 @@ function Detail({ label, value }) {
 }
 
 function GroupPanel({ groups, selectedId, onSelect, onClose }) {
-  const panelRef = useRef(null)
-
   useEffect(() => {
-    function handle(e) {
-      if (panelRef.current && !panelRef.current.contains(e.target)) onClose()
-    }
-    document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
+    function handle(e) { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
   }, [onClose])
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500 }}>
-      <div ref={panelRef} style={{ position: 'fixed', top: 16, right: 16, background: 'white', borderRadius: 14,
+  return createPortal(
+    <>
+      {/* transparent click-outside catcher */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 500 }} />
+      {/* panel — independent, top-right */}
+      <div style={{ position: 'fixed', top: 16, right: 16, background: 'white', borderRadius: 14,
         boxShadow: '0 12px 40px rgba(30,26,110,.18), 0 2px 8px rgba(0,0,0,.08)',
         width: 'min(420px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column',
         border: '1px solid var(--border)', zIndex: 501 }}>
@@ -426,7 +426,8 @@ function GroupPanel({ groups, selectedId, onSelect, onClose }) {
           Click a row to select that group
         </div>
       </div>
-    </div>
+    </>,
+    document.body
   )
 }
 
