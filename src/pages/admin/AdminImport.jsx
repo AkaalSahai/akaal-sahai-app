@@ -119,7 +119,7 @@ export default function AdminImport({ readOnly }) {
         }
       }
 
-      // Insert students
+      // Build student records
       const students = rows.map(r => ({
         group_id: groupMap[r.group_name.trim()],
         first_name: r.first_name.trim(),
@@ -141,9 +141,32 @@ export default function AdminImport({ readOnly }) {
         active: true,
       }))
 
-      const { data: inserted, error } = await supabase.from('students').insert(students).select('id')
+      // Fetch existing students in the same groups to detect duplicates
+      const groupIds = [...new Set(students.map(s => s.group_id))]
+      const { data: existing, error: existErr } = await supabase
+        .from('students')
+        .select('group_id, first_name, last_name')
+        .in('group_id', groupIds)
+      if (existErr) throw new Error('Could not check for duplicates: ' + existErr.message)
+
+      // Fingerprint: group + first + last (case-insensitive)
+      const existingKeys = new Set(
+        (existing || []).map(s => `${s.group_id}|${s.first_name.toLowerCase()}|${s.last_name.toLowerCase()}`)
+      )
+      const toInsert = students.filter(s =>
+        !existingKeys.has(`${s.group_id}|${s.first_name.toLowerCase()}|${s.last_name.toLowerCase()}`)
+      )
+      const skipped = students.length - toInsert.length
+
+      if (toInsert.length === 0) {
+        setResult({ success: true, count: 0, skipped, groups: Object.keys(groupMap).length })
+        setRows([]); setCsv(null)
+        return
+      }
+
+      const { data: inserted, error } = await supabase.from('students').insert(toInsert).select('id')
       if (error) throw error
-      setResult({ success: true, count: inserted.length, groups: Object.keys(groupMap).length })
+      setResult({ success: true, count: inserted.length, skipped, groups: Object.keys(groupMap).length })
       setRows([]); setCsv(null)
     } catch (err) {
       setResult({ success: false, message: err.message })
@@ -216,7 +239,10 @@ export default function AdminImport({ readOnly }) {
 
       {result?.success && (
         <div className="alert alert-success" style={{ marginTop: 12 }}>
-          Successfully imported {result.count} students across {result.groups} groups.
+          {result.count > 0
+            ? <>Successfully imported {result.count} students across {result.groups} groups.</>
+            : <>No new students to import.</>}
+          {result.skipped > 0 && <> {result.skipped} duplicate{result.skipped > 1 ? 's' : ''} already existed and were skipped.</>}
         </div>
       )}
       {result?.success === false && (
