@@ -2,16 +2,19 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 
 const DEFAULTS = {
-  class_schedule:   'Every Friday & Saturday, 6:15PM – 8:30PM',
-  phone:            '07471 122007',
-  dress_code_girls: 'Girls MUST wear Keski/Dastar',
-  dress_code_boys:  'Boys MUST wear Patka/Dastar at ALL times',
-  website:          'www.karamishersar.com',
-  whatsapp_url:     '',
-  facebook_url:     '',
-  instagram_url:    '',
-  youtube_url:      '',
-  donate_url:       'https://karamishersar.com/donate',
+  class_schedule:    'Every Friday & Saturday, 6:15PM – 8:30PM',
+  phone:             '07471 122007',
+  dress_code_girls:  'Girls MUST wear Keski/Dastar',
+  dress_code_boys:   'Boys MUST wear Patka/Dastar at ALL times',
+  website:           'www.karamishersar.com',
+  whatsapp_url:      '',
+  facebook_url:      '',
+  instagram_url:     '',
+  youtube_url:       '',
+  donate_url:        'https://karamishersar.com/donate',
+  broadcast_message: '',
+  broadcast_active:  'false',
+  broadcast_id:      '',
 }
 
 export default function AdminSettings() {
@@ -33,6 +36,7 @@ export default function AdminSettings() {
   function set(k) { return e => { setForm(f => ({ ...f, [k]: e.target.value })); setSaved(false) } }
 
   async function save() {
+    // kept for compatibility — broadcast save uses inline handler with new broadcast_id
     setBusy(true)
     const rows = Object.entries(form).map(([key, value]) => ({ key, value }))
     const { error } = await supabase.from('site_settings').upsert(rows)
@@ -122,7 +126,40 @@ export default function AdminSettings() {
             Leave any social field blank to hide that button from parents.
           </div>
 
-          <button className="btn btn-primary" onClick={save} disabled={busy}>
+          <div className="section-label" style={{ marginTop: 8 }}>Teacher Broadcast Message</div>
+
+          <div className="form-group">
+            <label>Message</label>
+            <textarea value={form.broadcast_message} onChange={set('broadcast_message')}
+              placeholder="e.g. Classes cancelled this Friday — no register needed."
+              style={{ minHeight: 80 }} />
+            <div style={{ fontSize: '.73rem', color: 'var(--muted)', marginTop: 4 }}>
+              This appears as a floating pop-up for all teachers when they log in. Leave blank to show nothing.
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 400, cursor: 'pointer' }}>
+              <input type="checkbox"
+                checked={form.broadcast_active === 'true'}
+                onChange={e => { setForm(f => ({ ...f, broadcast_active: e.target.checked ? 'true' : 'false' })); setSaved(false) }}
+                style={{ width: 'auto' }} />
+              Show this message to all teachers now
+            </label>
+          </div>
+
+          <button className="btn btn-primary" onClick={async () => {
+            // Generate a new broadcast_id on save so dismissed teachers see it again
+            const newId = String(Date.now())
+            setForm(f => ({ ...f, broadcast_id: newId }))
+            setBusy(true)
+            const rows = Object.entries({ ...form, broadcast_id: newId }).map(([key, value]) => ({ key, value }))
+            const { error } = await supabase.from('site_settings').upsert(rows)
+            setBusy(false)
+            if (error) { alert('Save failed: ' + error.message); return }
+            setSaved(true)
+            setTimeout(() => setSaved(false), 3000)
+          }} disabled={busy}>
             {busy ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
           </button>
         </div>

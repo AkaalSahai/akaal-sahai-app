@@ -6,6 +6,21 @@ import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 
+function calcAgeRange(students) {
+  if (!students?.length) return null
+  const now = new Date()
+  const ages = students.map(s => {
+    if (!s.date_of_birth) return null
+    const d = new Date(s.date_of_birth)
+    let a = now.getFullYear() - d.getFullYear()
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--
+    return a
+  }).filter(a => a !== null)
+  if (!ages.length) return null
+  const min = Math.min(...ages), max = Math.max(...ages)
+  return min === max ? `${min}y` : `${min}–${max}y`
+}
+
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
 
@@ -40,17 +55,19 @@ export default function AdminStudents({ readOnly }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }, { data: removals }] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }] = await Promise.all([
       supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
-      supabase.from('groups').select('id, name').order('name'),
+      supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
       supabase.from('transfer_requests').select('*')
         .eq('request_type', 'removal').eq('status', 'pending'),
+      supabase.from('users').select('id, name').eq('role', 'teacher'),
     ])
+    const teacherMap = Object.fromEntries((us || []).map(u => [u.id, u.name]))
     const noteMap = {}
     ;(n || []).forEach(note => { noteMap[note.student_id] = note })
     setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
-    setGroups(g || [])
+    setGroups((g || []).map(grp => ({ ...grp, teacherName: teacherMap[grp.teacher_id] || null })))
     setRemovalRequests(removals || [])
     setLoading(false)
   }
@@ -261,7 +278,10 @@ export default function AdminStudents({ readOnly }) {
           <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
             style={{ padding: '7px 10px', fontSize: '.84rem' }}>
             <option value="">All groups</option>
-            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            {groups.map(g => {
+              const range = calcAgeRange(g.students)
+              return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
+            })}
           </select>
         </div>
       </div>
@@ -360,7 +380,11 @@ export default function AdminStudents({ readOnly }) {
                             <select value={s.group_id || ''} onChange={e => e.target.value && e.target.value !== s.group_id && moveGroup(s.id, e.target.value)}
                               style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }}>
                               <option value="">— select —</option>
-                              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                              {groups.map(g => {
+                                const t = g.teacher
+                                const teacher = t ? `${t.first_name} ${t.last_name}` : 'No teacher'
+                                return <option key={g.id} value={g.id}>{g.name} — {teacher}</option>
+                              })}
                             </select>
                           </div>
                         )}

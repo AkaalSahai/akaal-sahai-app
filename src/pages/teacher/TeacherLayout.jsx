@@ -10,6 +10,7 @@ import AdminUsers from '../admin/AdminUsers'
 import TeacherStudents from './TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import BroadcastBanner from '../../components/BroadcastBanner'
 
 function NotificationBell({ userId }) {
   const [notes, setNotes]   = useState([])
@@ -194,6 +195,7 @@ export default function TeacherLayout() {
           <NotificationBell userId={myProfile?.id} />
         </div>
       </div>
+      <BroadcastBanner />
       <div className="content">
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}

@@ -20,10 +20,11 @@ export default function TeacherStudents() {
   const [loading, setLoading]   = useState(true)
   const [editing, setEditing]   = useState(null)   // student id or 'new'
   const [form, setForm]         = useState(EMPTY_FORM)
-  const [busy, setBusy]         = useState(false)
-  const [search, setSearch]     = useState('')
-  const [sortCol, setSortCol]   = useState('name')
-  const [sortDir, setSortDir]   = useState('asc')
+  const [busy, setBusy]             = useState(false)
+  const [newStudentGroupId, setNewStudentGroupId] = useState(null)
+  const [search, setSearch]         = useState('')
+  const [sortCol, setSortCol]       = useState('name')
+  const [sortDir, setSortDir]       = useState('asc')
 
   useEffect(() => { load() }, [user])
 
@@ -93,6 +94,7 @@ export default function TeacherStudents() {
 
   function startNew() {
     setForm(EMPTY_FORM)
+    setNewStudentGroupId(groupId)
     setEditing('new')
   }
 
@@ -128,7 +130,7 @@ export default function TeacherStudents() {
       if (editing === 'new') {
         const { error } = await supabase.from('students').insert({
           ...payload,
-          group_id: groupId,
+          group_id: newStudentGroupId || groupId,
           date_joined: new Date().toISOString().split('T')[0],
           active: true,
         })
@@ -234,6 +236,15 @@ export default function TeacherStudents() {
           <div style={{ fontWeight: 700, fontSize: '.95rem', marginBottom: 16, color: 'var(--primary)' }}>
             {editing === 'new' ? 'Add New Student' : 'Edit Student'}
           </div>
+
+          {editing === 'new' && myGroups.length > 1 && (
+            <div className="form-group" style={{ marginBottom: 16, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 14px' }}>
+              <label style={{ fontWeight: 700, color: 'var(--primary)' }}>Add to Group *</label>
+              <select value={newStudentGroupId || ''} onChange={e => setNewStudentGroupId(e.target.value)}>
+                {myGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </div>
+          )}
 
           <div style={{ fontWeight: 600, fontSize: '.8rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Student Details</div>
           <div className="form-grid" style={{ marginBottom: 12 }}>

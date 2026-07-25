@@ -5,6 +5,21 @@ import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 
+function calcAgeRange(students) {
+  if (!students?.length) return null
+  const now = new Date()
+  const ages = students.map(s => {
+    if (!s.date_of_birth) return null
+    const d = new Date(s.date_of_birth)
+    let a = now.getFullYear() - d.getFullYear()
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--
+    return a
+  }).filter(a => a !== null)
+  if (!ages.length) return null
+  const min = Math.min(...ages), max = Math.max(...ages)
+  return min === max ? `${min}y` : `${min}–${max}y`
+}
+
 export default function AdminApplications({ readOnly }) {
   const { profile } = useAuth()
   const [tab, setTab]               = useState('students')
@@ -19,15 +34,17 @@ export default function AdminApplications({ readOnly }) {
 
   async function load() {
     try {
-      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }] = await Promise.all([
+      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }] = await Promise.all([
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
-        supabase.from('groups').select('id, name').order('name'),
+        supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)').order('created_at', { ascending: false }),
+        supabase.from('users').select('id, name').eq('role', 'teacher'),
       ])
+      const teacherMap = Object.fromEntries((us || []).map(u => [u.id, u.name]))
       setStudentApps(sa || [])
       setTeacherApps(ta || [])
-      setGroups(gr || [])
+      setGroups((gr || []).map(g => ({ ...g, teacherName: teacherMap[g.teacher_id] || null })))
       setTransfers(tr || [])
     } catch (err) {
       console.error('Applications load error:', err)
@@ -55,6 +72,10 @@ export default function AdminApplications({ readOnly }) {
       const grp = groups.find(g => g.id === groupId)
       logAction(profile, 'Approved student application', grp ? `${studentName} → ${grp.name}` : studentName).catch(() => {})
       if (groupId) notifyTeachersOfGroup(groupId, `New student added to your group: ${studentName}`).catch(() => {})
+      alert(grp
+        ? `✓ ${studentName} has been approved and added to ${grp.name}.`
+        : `✓ ${studentName} has been approved. No group assigned — remember to assign them later.`
+      )
       load()
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
@@ -338,7 +359,10 @@ function StudentApproveForm({ app, groups, onApprove, onReject, busy }) {
       <select value={groupId} onChange={e => setGroupId(e.target.value)}
         style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.84rem' }}>
         <option value="">Assign to group (optional)</option>
-        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+        {groups.map(g => {
+          const range = calcAgeRange(g.students)
+          return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
+        })}
       </select>
       <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => onApprove(app, groupId || null)}>
         {busy === app.id ? '…' : 'Approve & Add'}
@@ -355,7 +379,10 @@ function TeacherApproveForm({ app, groups, onApprove, onReject, busy }) {
       <select value={groupId} onChange={e => setGroupId(e.target.value)}
         style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.84rem' }}>
         <option value="">Assign group (optional)</option>
-        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+        {groups.map(g => {
+          const range = calcAgeRange(g.students)
+          return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
+        })}
       </select>
       <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => onApprove(app, groupId || null)}>
         {busy === app.id ? '…' : 'Approve'}
@@ -372,9 +399,10 @@ function TransferApproveForm({ tr, groups, onApprove, onReject, busy }) {
       <select value={toGroupId} onChange={e => setToGroupId(e.target.value)}
         style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.84rem' }}>
         <option value="">Select destination group…</option>
-        {groups.filter(g => g.id !== tr.from_group_id).map(g => (
-          <option key={g.id} value={g.id}>{g.name}</option>
-        ))}
+        {groups.filter(g => g.id !== tr.from_group_id).map(g => {
+          const range = calcAgeRange(g.students)
+          return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
+        })}
       </select>
       <button className="btn btn-success btn-sm" disabled={busy === tr.id} onClick={() => onApprove(tr, toGroupId)}>
         {busy === tr.id ? '…' : 'Approve & Move'}
