@@ -228,15 +228,18 @@ export default function AdminApplications({ readOnly }) {
               const range = calcAgeRange(g.students)
               const count = g.students?.length ?? 0
               const countColor = count >= 30 ? '#dc2626' : count >= 25 ? '#d97706' : '#16a34a'
+              const teacherShort = g.teacherName
+                ? g.teacherName.split(' ').map((w, i, a) => i === a.length - 1 ? w : w[0] + '.').join(' ')
+                : null
               return (
                 <tr key={g.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                  <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 }}>{g.name}</td>
-                  <td style={{ padding: '8px 8px', color: g.teacherName ? '#475569' : '#cbd5e1',
-                    fontSize: '.74rem', fontStyle: g.teacherName ? 'normal' : 'italic' }}>
-                    {g.teacherName || 'none'}
+                  <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>{g.name}</td>
+                  <td style={{ padding: '7px 8px', color: g.teacherName ? '#475569' : '#cbd5e1',
+                    fontSize: '.74rem', fontStyle: g.teacherName ? 'normal' : 'italic', whiteSpace: 'nowrap' }}>
+                    {teacherShort || '—'}
                   </td>
-                  <td style={{ padding: '8px 8px', textAlign: 'center', fontWeight: 700, color: countColor }}>{count}</td>
-                  <td style={{ padding: '8px 10px', color: '#64748b', fontSize: '.74rem' }}>{range || '—'}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'center', fontWeight: 700, color: countColor, whiteSpace: 'nowrap' }}>{count}</td>
+                  <td style={{ padding: '7px 10px', color: '#64748b', fontSize: '.74rem', whiteSpace: 'nowrap' }}>{range || '—'}</td>
                 </tr>
               )
             })}
