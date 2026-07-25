@@ -229,7 +229,7 @@ export default function AdminApplications({ readOnly }) {
               const count = g.students?.length ?? 0
               const countColor = count >= 30 ? '#dc2626' : count >= 25 ? '#d97706' : '#16a34a'
               const teacherShort = g.teacherName
-                ? g.teacherName.split(' ').map((w, i, a) => i === a.length - 1 ? w : w[0] + '.').join(' ')
+                ? g.teacherName.split(' ').map((w, i, a) => i === a.length - 1 ? w[0] + '.' : w).join(' ')
                 : null
               return (
                 <tr key={g.id} style={{ borderBottom: '1px solid #f8fafc' }}>
