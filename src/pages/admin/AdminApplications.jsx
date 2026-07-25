@@ -364,11 +364,11 @@ function GroupPanel({ groups, selectedId, onSelect, onClose }) {
   }, [onClose])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(15,10,60,.35)', backdropFilter: 'blur(2px)' }}>
-      <div ref={panelRef} style={{ background: 'white', borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,.2)',
-        width: 'min(520px, calc(100vw - 32px))', maxHeight: '75vh', display: 'flex', flexDirection: 'column',
-        border: '1px solid var(--border)' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500 }}>
+      <div ref={panelRef} style={{ position: 'fixed', top: 16, right: 16, background: 'white', borderRadius: 14,
+        boxShadow: '0 12px 40px rgba(30,26,110,.18), 0 2px 8px rgba(0,0,0,.08)',
+        width: 'min(420px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column',
+        border: '1px solid var(--border)', zIndex: 501 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 800, fontSize: '.95rem', color: 'var(--primary)' }}>All Groups</div>
