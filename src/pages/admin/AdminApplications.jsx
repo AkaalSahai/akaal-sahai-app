@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
@@ -352,22 +352,112 @@ function Detail({ label, value }) {
   )
 }
 
+function GroupPanel({ groups, selectedId, onSelect, onClose }) {
+  const panelRef = useRef(null)
+
+  useEffect(() => {
+    function handle(e) {
+      if (panelRef.current && !panelRef.current.contains(e.target)) onClose()
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [onClose])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(15,10,60,.35)', backdropFilter: 'blur(2px)' }}>
+      <div ref={panelRef} style={{ background: 'white', borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,.2)',
+        width: 'min(520px, calc(100vw - 32px))', maxHeight: '75vh', display: 'flex', flexDirection: 'column',
+        border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 800, fontSize: '.95rem', color: 'var(--primary)' }}>All Groups</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--muted)', fontSize: '1.2rem', lineHeight: 1, padding: '2px 6px', borderRadius: 6 }}>×</button>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.84rem' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
+                <th style={{ padding: '9px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--muted)',
+                  fontSize: '.72rem', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid var(--border)' }}>Group</th>
+                <th style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--muted)',
+                  fontSize: '.72rem', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid var(--border)' }}>Teacher</th>
+                <th style={{ padding: '9px 12px', textAlign: 'center', fontWeight: 700, color: 'var(--muted)',
+                  fontSize: '.72rem', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid var(--border)' }}>Students</th>
+                <th style={{ padding: '9px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--muted)',
+                  fontSize: '.72rem', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid var(--border)' }}>Age Range</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(g => {
+                const range = calcAgeRange(g.students)
+                const count = g.students?.length ?? 0
+                const isSelected = g.id === selectedId
+                return (
+                  <tr key={g.id} onClick={() => { onSelect(g.id); onClose() }}
+                    style={{ cursor: 'pointer', background: isSelected ? '#eff6ff' : 'white',
+                      borderBottom: '1px solid #f1f5f9', transition: 'background .1s' }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#f8fafc' }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'white' }}>
+                    <td style={{ padding: '10px 16px', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {isSelected
+                        ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'inline-block' }} />
+                        : <span style={{ width: 8, height: 8, flexShrink: 0, display: 'inline-block' }} />}
+                      {g.name}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: g.teacherName ? 'var(--text)' : 'var(--muted)' }}>
+                      {g.teacherName || '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700,
+                      color: count >= 30 ? '#dc2626' : count >= 25 ? '#d97706' : 'var(--text)' }}>
+                      {count}
+                    </td>
+                    <td style={{ padding: '10px 16px', color: 'var(--muted)' }}>
+                      {range || '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', fontSize: '.72rem', color: 'var(--muted)' }}>
+          Click a row to select that group
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StudentApproveForm({ app, groups, onApprove, onReject, busy }) {
   const [groupId, setGroupId] = useState('')
+  const [showPanel, setShowPanel] = useState(false)
+  const closePanel = () => setShowPanel(false)
+
   return (
-    <div className="app-actions">
-      <select value={groupId} onChange={e => setGroupId(e.target.value)}
-        style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.84rem' }}>
-        <option value="">Assign to group (optional)</option>
-        {groups.map(g => {
-          const range = calcAgeRange(g.students)
-          return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
-        })}
-      </select>
+    <div className="app-actions" style={{ flexWrap: 'wrap', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 6, flex: 1, minWidth: 0, alignItems: 'center' }}>
+        <select value={groupId} onChange={e => setGroupId(e.target.value)}
+          style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.84rem', minWidth: 0 }}>
+          <option value="">Assign to group (optional)</option>
+          {groups.map(g => {
+            const range = calcAgeRange(g.students)
+            return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
+          })}
+        </select>
+        <button onClick={() => setShowPanel(true)} title="View all groups"
+          style={{ flexShrink: 0, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)',
+            background: 'white', cursor: 'pointer', fontSize: '.82rem', color: 'var(--primary)', fontWeight: 600,
+            whiteSpace: 'nowrap' }}>
+          Groups ▦
+        </button>
+      </div>
       <button className="btn btn-success btn-sm" disabled={busy === app.id} onClick={() => onApprove(app, groupId || null)}>
         {busy === app.id ? '…' : 'Approve & Add'}
       </button>
       <button className="btn btn-danger btn-sm" disabled={busy === app.id} onClick={() => onReject(app)}>Reject</button>
+      {showPanel && <GroupPanel groups={groups} selectedId={groupId} onSelect={setGroupId} onClose={closePanel} />}
     </div>
   )
 }
