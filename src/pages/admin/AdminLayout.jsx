@@ -12,6 +12,8 @@ import TeacherStudents from '../teacher/TeacherStudents'
 import AdminActivity from './AdminActivity'
 import AdminMessages from './AdminMessages'
 import AdminSettings from './AdminSettings'
+import AdminRegisterStatus from './AdminRegisterStatus'
+import AdminTeacherRegister from './AdminTeacherRegister'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 
@@ -41,6 +43,8 @@ export default function AdminLayout() {
     ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
     ...(isTeacher ? [{ id: 'myreports',   label: 'My Reports'   }] : []),
     ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
+    { id: 'registerstatus',    label: 'Register Status'    },
+    { id: 'teacherregister',   label: 'Teacher Register'   },
     ...(!readOnly       ? [{ id: 'import',   label: 'Import Data' }] : []),
     ...(isPrimaryAdmin  ? [{ id: 'activity', label: 'Activity'    }] : []),
     { id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' },
@@ -73,6 +77,8 @@ export default function AdminLayout() {
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'myreports'    && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}
+        {tab === 'registerstatus'  && <AdminRegisterStatus />}
+        {tab === 'teacherregister' && <AdminTeacherRegister readOnly={readOnly} />}
         {tab === 'activity'     && <AdminActivity />}
         {tab === 'messages'     && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
         {tab === 'settings'     && <AdminSettings />}

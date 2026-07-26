@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
+function isClassDay() { const d = new Date().getDay(); return d === 5 || d === 6 }
 
 function calcAge(dob) {
   if (!dob) return null
@@ -190,6 +191,26 @@ export default function AdminDashboard({ setTab }) {
           </div>
         ))}
       </div>
+
+      {/* Missing register warning — only on class days (Fri/Sat) */}
+      {isClassDay() && notDoneGroups.length > 0 && (
+        <div onClick={() => setTab('registerstatus')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fef2f2',
+            border: '1px solid #fecaca', borderLeft: '4px solid #dc2626', borderRadius: 10,
+            padding: '12px 16px', marginBottom: 12, cursor: 'pointer',
+            boxShadow: '0 1px 4px rgba(220,38,38,.08)' }}>
+          <span style={{ fontSize: '1.2rem' }}>⚠</span>
+          <div style={{ flex: 1 }}>
+            <span style={{ fontWeight: 700, color: '#dc2626' }}>
+              {notDoneGroups.length} group{notDoneGroups.length > 1 ? 's have' : ' has'} not submitted today's register
+            </span>
+            <span style={{ fontSize: '.8rem', color: '#991b1b', marginLeft: 8 }}>
+              ({notDoneGroups.map(g => g.name).join(', ')})
+            </span>
+          </div>
+          <span style={{ fontWeight: 700, color: '#dc2626', whiteSpace: 'nowrap' }}>View Status →</span>
+        </div>
+      )}
 
       {/* Pending applications */}
       {(pendingStudents > 0 || pendingTeachers > 0) && (

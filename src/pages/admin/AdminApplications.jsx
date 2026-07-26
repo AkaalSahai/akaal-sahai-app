@@ -38,7 +38,8 @@ export default function AdminApplications({ readOnly }) {
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
-        supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)').order('created_at', { ascending: false }),
+        supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
+          .eq('request_type', 'transfer').order('created_at', { ascending: false }),
         supabase.from('users').select('id, name').eq('role', 'teacher'),
       ])
       const teacherMap = Object.fromEntries((us || []).map(u => [u.id, u.name]))
