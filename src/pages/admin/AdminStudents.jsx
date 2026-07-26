@@ -143,7 +143,11 @@ export default function AdminStudents({ readOnly }) {
     const g = groups.find(x => x.id === newGroupId)
     const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
     logAction(profile, 'Moved student to group', `${name} → ${g?.name || newGroupId}`).catch(() => {})
-    notifyTeachersOfGroup(newGroupId, `New student added to your group: ${name}`).catch(() => {})
+    const fromGroup = groups.find(x => x.id === s?.group_id)
+    const msg = fromGroup
+      ? `${name} has been moved to your group from ${fromGroup.name}`
+      : `${name} has been moved to your group`
+    notifyTeachersOfGroup(newGroupId, msg).catch(() => {})
     load()
   }
 

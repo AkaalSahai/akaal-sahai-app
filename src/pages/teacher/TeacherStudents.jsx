@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { notifyTeachersOfGroup } from '../../lib/notifications'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 
@@ -128,13 +129,15 @@ export default function TeacherStudents() {
       }
 
       if (editing === 'new') {
+        const targetGroupId = newStudentGroupId || groupId
         const { error } = await supabase.from('students').insert({
           ...payload,
-          group_id: newStudentGroupId || groupId,
+          group_id: targetGroupId,
           date_joined: new Date().toISOString().split('T')[0],
           active: true,
         })
         if (error) throw error
+        notifyTeachersOfGroup(targetGroupId, `New student added to your group: ${payload.first_name} ${payload.last_name}`).catch(() => {})
       } else {
         const { error } = await supabase.from('students').update(payload).eq('id', editing)
         if (error) throw error
