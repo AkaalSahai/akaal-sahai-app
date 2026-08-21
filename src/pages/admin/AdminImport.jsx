@@ -51,7 +51,6 @@ function parseDateToISO(raw) {
 }
 
 export default function AdminImport({ readOnly }) {
-  const [csv, setCsv]     = useState(null)
   const [rows, setRows]   = useState([])
   const [errors, setErrors] = useState([])
   const [busy, setBusy]   = useState(false)
@@ -69,7 +68,6 @@ export default function AdminImport({ readOnly }) {
   function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
-    setCsv(file)
     const reader = new FileReader()
     reader.onload = (ev) => parseCSV(ev.target.result)
     reader.readAsText(file)
@@ -160,14 +158,14 @@ export default function AdminImport({ readOnly }) {
 
       if (toInsert.length === 0) {
         setResult({ success: true, count: 0, skipped, groups: Object.keys(groupMap).length })
-        setRows([]); setCsv(null)
+        setRows([])
         return
       }
 
       const { data: inserted, error } = await supabase.from('students').insert(toInsert).select('id')
       if (error) throw error
       setResult({ success: true, count: inserted.length, skipped, groups: Object.keys(groupMap).length })
-      setRows([]); setCsv(null)
+      setRows([])
     } catch (err) {
       setResult({ success: false, message: err.message })
     } finally { setBusy(false) }
