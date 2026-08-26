@@ -14,7 +14,6 @@ export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
   const { hasRole }   = useAuth()
   const isTeacher     = hasRole('teacher')
-  const isAdmin       = hasRole('admin')
 
   const tabs = [
     { id: 'dashboard',    label: 'Dashboard'    },
@@ -22,7 +21,7 @@ export default function RegistrarLayout() {
     { id: 'students',     label: 'Students'     },
     { id: 'groups',       label: 'Groups'       },
     { id: 'classes',      label: 'Classes'      },
-    ...(isAdmin   ? [{ id: 'users',     label: 'Teachers'    }] : []),
+    { id: 'users',        label: 'Teachers'     },
     ...(isTeacher ? [{ id: 'register',  label: 'My Register' }] : []),
     ...(isTeacher ? [{ id: 'reports',   label: 'My Reports'  }] : []),
   ]
@@ -43,7 +42,7 @@ export default function RegistrarLayout() {
         {tab === 'students'     && <AdminStudents />}
         {tab === 'groups'       && <AdminGroups />}
         {tab === 'classes'      && <AdminClasses />}
-        {tab === 'users'        && <AdminUsers readOnly={true} />}
+        {tab === 'users'        && <AdminUsers readOnly={true} canToggleEditStudents={true} />}
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}
       </div>
