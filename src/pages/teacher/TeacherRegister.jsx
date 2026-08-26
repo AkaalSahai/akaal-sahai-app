@@ -20,6 +20,7 @@ function calcAge(dob) {
 export default function TeacherRegister() {
   const { profile }               = useAuth()
   const [myGroups, setMyGroups]   = useState([])
+  const [allGroups, setAllGroups] = useState([])
   const [selectedGroupId, setSelectedGroupId] = useState(null)
   const [groupName, setGroupName] = useState(null)
   const [students, setStudents]   = useState([])
@@ -42,6 +43,7 @@ export default function TeacherRegister() {
 
   useEffect(() => { notesRef.current = notes }, [notes])
   useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
+  useEffect(() => { loadAllGroups() }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
 
@@ -49,6 +51,11 @@ export default function TeacherRegister() {
   const isToday    = date === todayISO()
   const dayOfWeek  = new Date(date + 'T12:00:00').getDay()
   const isClassDay = dayOfWeek === 5 || dayOfWeek === 6
+
+  async function loadAllGroups() {
+    const { data } = await supabase.from('groups').select('id, name').order('name')
+    setAllGroups(data || [])
+  }
 
   async function loadMyGroups() {
     const { data: tg } = await supabase
@@ -204,20 +211,25 @@ export default function TeacherRegister() {
     setTransferOpen(prev => {
       const next = { ...prev }
       if (next[studentId] !== undefined) delete next[studentId]
-      else next[studentId] = ''
+      else next[studentId] = { reason: '', toGroupId: '' }
       return next
     })
   }
 
   async function submitTransfer(student) {
-    const reason = transferOpen[student.id]?.trim()
+    const entry = transferOpen[student.id] || {}
+    const reason = (entry.reason || '').trim()
+    const toGroupId = entry.toGroupId || ''
     if (!reason) { alert('Please explain why this student needs to be transferred.'); return }
+    if (!toGroupId) { alert('Please select which group this student should move to.'); return }
     setTransferBusy(student.id)
     try {
       const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
+      const toGroupName = allGroups.find(g => g.id === toGroupId)?.name || null
       const { error } = await supabase.from('transfer_requests').insert({
         student_id: student.id, student_name: fullName,
         from_group_id: selectedGroupId, from_group_name: groupName || null,
+        requested_to_group_id: toGroupId, requested_to_group_name: toGroupName,
         requested_by: profile.id, reason, status: 'pending', request_type: 'transfer',
       })
       if (error) throw error
@@ -425,8 +437,16 @@ export default function TeacherRegister() {
                       <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
                         Transfer request — {[s.first_name, s.last_name].join(' ')}
                       </div>
-                      <textarea value={transferOpen[s.id]}
-                        onChange={e => setTransferOpen(prev => ({ ...prev, [s.id]: e.target.value }))}
+                      <select value={transferOpen[s.id]?.toGroupId || ''}
+                        onChange={e => setTransferOpen(prev => ({ ...prev, [s.id]: { ...prev[s.id], toGroupId: e.target.value } }))}
+                        style={{ width: '100%', fontSize: '.83rem', marginBottom: 8, padding: '6px 8px', boxSizing: 'border-box' }}>
+                        <option value="">Select destination group…</option>
+                        {allGroups.filter(g => g.id !== selectedGroupId).map(g => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                      </select>
+                      <textarea value={transferOpen[s.id]?.reason || ''}
+                        onChange={e => setTransferOpen(prev => ({ ...prev, [s.id]: { ...prev[s.id], reason: e.target.value } }))}
                         placeholder="Explain why this student needs to be moved to a different group…"
                         rows={2} style={{ width: '100%', fontSize: '.83rem', resize: 'vertical', marginBottom: 8, boxSizing: 'border-box' }} />
                       <div style={{ display: 'flex', gap: 8 }}>
