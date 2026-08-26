@@ -19,7 +19,7 @@ async function callAdminAction(payload, token) {
 
 const ROLES = ['admin','registrar','teacher','adminView']
 
-export default function AdminUsers({ readOnly }) {
+export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const { profile: myProfile } = useAuth()
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
@@ -167,7 +167,7 @@ export default function AdminUsers({ readOnly }) {
   async function toggleEditStudents(userId, current) {
     const updated = !current
     try {
-      const { error } = await supabase.from('users').update({ can_edit_students: updated }).eq('id', userId)
+      const { error } = await supabase.rpc('toggle_teacher_edit_permission', { target_user_id: userId, new_value: updated })
       if (error) throw error
       const u = users.find(x => x.id === userId)
       logAction(myProfile, 'Toggled student edit permission', `${u?.name}: ${updated ? 'enabled' : 'disabled'}`).catch(() => {})
@@ -353,7 +353,7 @@ export default function AdminUsers({ readOnly }) {
                 </td>
                 <td>
                   {(u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) ? (
-                    !readOnly ? (
+                    (!readOnly || canToggleEditStudents) ? (
                       <button onClick={() => toggleEditStudents(u.id, u.can_edit_students)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
                           padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
