@@ -181,6 +181,7 @@ export default function AdminApplications({ readOnly }) {
     if (readOnly) return
     setBusy(tr.id)
     await supabase.from('transfer_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', tr.id)
+    logAction(profile, 'Rejected transfer request', tr.student_name).catch(() => {})
     setBusy(null); load()
   }
 

@@ -88,6 +88,9 @@ export default function AdminStudents({ readOnly }) {
       setAttendOpen(prev => { const n = { ...prev }; delete n[studentId]; return n })
     } else {
       loadAttendHistory(studentId)
+      const s = students.find(x => x.id === studentId)
+      const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
+      logAction(profile, 'Viewed attendance history', name).catch(() => {})
     }
   }
 
