@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import { logAction } from '../../lib/audit'
 
 export default function TeacherMessage() {
   const { profile }       = useAuth()
@@ -23,10 +24,12 @@ export default function TeacherMessage() {
         body:         body.trim(),
       })
       if (err) throw err
+      logAction(profile, 'Sent message', subject.trim()).catch(() => {})
       setSent(true)
       setSubject('')
       setBody('')
     } catch (err) {
+      logAction(profile, 'Sent message', `${subject.trim()}: ${err.message}`, false).catch(() => {})
       setError(err.message)
     } finally {
       setSending(false)

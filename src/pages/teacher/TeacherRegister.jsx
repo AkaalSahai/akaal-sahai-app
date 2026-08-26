@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
+import { logAction } from '../../lib/audit'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -154,6 +155,8 @@ export default function TeacherRegister() {
     if (isReadOnly) return
     const current   = attendance[studentId]
     const newStatus = current === status ? null : status
+    const student     = students.find(s => s.id === studentId)
+    const studentName = student ? [student.first_name, student.last_name].filter(Boolean).join(' ') : studentId
 
     setAttendance(prev => {
       const next = { ...prev }
@@ -183,9 +186,11 @@ export default function TeacherRegister() {
         }, { onConflict: 'session_id,student_id' })
         if (error) throw error
       }
+      logAction(profile, 'Marked attendance', `${studentName}: ${newStatus || 'cleared'} (${date})`).catch(() => {})
       setSaveState('saved')
       savingRef.current = setTimeout(() => setSaveState('idle'), 2000)
     } catch (err) {
+      logAction(profile, 'Marked attendance', `${studentName}: ${err.message}`, false).catch(() => {})
       setSaveState('error')
       alert('Could not save: ' + err.message)
     }
@@ -197,7 +202,7 @@ export default function TeacherRegister() {
     if (!currentStatus) return
     const sid = sessionId || await ensureSession()
     if (!sid) return
-    await supabase.from('attendance_records').upsert({
+    const { error } = await supabase.from('attendance_records').upsert({
       session_id:   sid,
       student_id:   studentId,
       group_id:     selectedGroupId,
@@ -205,6 +210,9 @@ export default function TeacherRegister() {
       status:       currentStatus,
       notes:        text || null,
     }, { onConflict: 'session_id,student_id' })
+    const student     = students.find(s => s.id === studentId)
+    const studentName = student ? [student.first_name, student.last_name].filter(Boolean).join(' ') : studentId
+    logAction(profile, 'Added attendance note', `${studentName}: ${text || '(cleared)'}`, !error).catch(() => {})
   }
 
   function toggleTransfer(studentId) {
@@ -223,8 +231,8 @@ export default function TeacherRegister() {
     if (!reason) { alert('Please explain why this student needs to be transferred.'); return }
     if (!toGroupId) { alert('Please select which group this student should move to.'); return }
     setTransferBusy(student.id)
+    const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
     try {
-      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
       const toGroupName = allGroups.find(g => g.id === toGroupId)?.name || null
       const { error } = await supabase.from('transfer_requests').insert({
         student_id: student.id, student_name: fullName,
@@ -233,9 +241,13 @@ export default function TeacherRegister() {
         requested_by: profile.id, reason, status: 'pending', request_type: 'transfer',
       })
       if (error) throw error
+      logAction(profile, 'Submitted transfer request', `${fullName} → ${toGroupName || 'unknown group'}`).catch(() => {})
       alert(`Transfer request submitted for ${fullName}.`)
       setTransferOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
-    } catch (err) { alert('Error: ' + err.message) }
+    } catch (err) {
+      logAction(profile, 'Submitted transfer request', `${fullName}: ${err.message}`, false).catch(() => {})
+      alert('Error: ' + err.message)
+    }
     finally { setTransferBusy(null) }
   }
 
@@ -252,17 +264,21 @@ export default function TeacherRegister() {
     const reason = removeOpen[student.id]?.trim()
     if (!reason) { alert('Please explain why this student is leaving.'); return }
     setRemoveBusy(student.id)
+    const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
     try {
-      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(' ')
       const { error } = await supabase.from('transfer_requests').insert({
         student_id: student.id, student_name: fullName,
         from_group_id: selectedGroupId, from_group_name: groupName || null,
         requested_by: profile.id, reason, status: 'pending', request_type: 'removal',
       })
       if (error) throw error
+      logAction(profile, 'Submitted removal request', fullName).catch(() => {})
       alert(`Removal request submitted for ${fullName}. Admin will review and approve.`)
       setRemoveOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
-    } catch (err) { alert('Error: ' + err.message) }
+    } catch (err) {
+      logAction(profile, 'Submitted removal request', `${fullName}: ${err.message}`, false).catch(() => {})
+      alert('Error: ' + err.message)
+    }
     finally { setRemoveBusy(null) }
   }
 
@@ -276,6 +292,7 @@ export default function TeacherRegister() {
       .order('session_date', { ascending: false })
       .limit(20)
     setHistoryData(data || [])
+    logAction(profile, 'Viewed attendance history', groupName || selectedGroupId).catch(() => {})
   }
 
   if (groupsLoading) return <div className="spinner" />

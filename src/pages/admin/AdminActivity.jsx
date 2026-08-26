@@ -147,8 +147,9 @@ export default function AdminActivity() {
               <tbody>
                 {filtered.map(l => {
                   const d = new Date(l.created_at)
+                  const failed = l.success === false
                   return (
-                    <tr key={l.id}>
+                    <tr key={l.id} style={failed ? { borderLeft: '3px solid #dc2626' } : undefined}>
                       <td style={{ fontSize: '.78rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                         {fmtDate(l.created_at)}
                         {', '}
@@ -164,6 +165,15 @@ export default function AdminActivity() {
                         }}>
                           {l.action}
                         </span>
+                        {failed && (
+                          <span style={{
+                            fontSize: '.7rem', fontWeight: 700, color: '#dc2626',
+                            background: '#fef2f2', borderRadius: 5, padding: '2px 6px',
+                            marginLeft: 6, whiteSpace: 'nowrap',
+                          }}>
+                            ✕ Failed
+                          </span>
+                        )}
                       </td>
                       <td style={{ fontSize: '.82rem', color: 'var(--muted)' }}>{l.detail || '—'}</td>
                     </tr>
