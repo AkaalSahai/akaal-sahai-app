@@ -31,6 +31,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const [roleDrafts, setRoleDrafts] = useState({})
   const [savedMsg, setSavedMsg]     = useState({})
   const [editPanel, setEditPanel]   = useState({})  // userId → {name, email, phone}
+  const [sortCol, setSortCol]       = useState(null)
+  const [sortDir, setSortDir]       = useState('asc')
 
   useEffect(() => { load() }, [])
 
@@ -210,10 +212,40 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     finally { setBusy(null) }
   }
 
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  function sortIcon(col) {
+    if (sortCol !== col) return <span style={{ marginLeft: 3, fontSize: '.6rem', color: '#cbd5e1' }}>⇅</span>
+    return <span style={{ marginLeft: 3, fontSize: '.6rem', color: 'var(--primary)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+  }
+
+  function editStudentsRank(u) {
+    if (u.can_edit_students) return 2
+    if (u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) return 1
+    return 0
+  }
+
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
-  const sorted = [...users].sort((a, b) =>
-    roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || (a.name || '').localeCompare(b.name || '')
-  )
+  const sorted = sortCol
+    ? [...users].sort((a, b) => {
+        let va, vb
+        if (sortCol === 'name') { va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase() }
+        else if (sortCol === 'role') { va = (a.role || '').toLowerCase(); vb = (b.role || '').toLowerCase() }
+        else if (sortCol === 'email') { va = (a.email || '').toLowerCase(); vb = (b.email || '').toLowerCase() }
+        else if (sortCol === 'group') { va = (a.groupNames?.[0] || '').toLowerCase(); vb = (b.groupNames?.[0] || '').toLowerCase() }
+        else if (sortCol === 'edit_students') { va = editStudentsRank(a); vb = editStudentsRank(b) }
+        else if (sortCol === 'last_login') { va = a.last_login || ''; vb = b.last_login || '' }
+        else return 0
+        if (va < vb) return sortDir === 'asc' ? -1 : 1
+        if (va > vb) return sortDir === 'asc' ? 1 : -1
+        return 0
+      })
+    : [...users].sort((a, b) =>
+        roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || (a.name || '').localeCompare(b.name || '')
+      )
 
   if (loading) return <div className="spinner" />
 
@@ -266,12 +298,12 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Role</th>
-              <th>Email</th>
-              <th>Group</th>
-              <th>Edit Students</th>
-              <th>Last Login</th>
+              <th onClick={() => toggleSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>Name{sortIcon('name')}</th>
+              <th onClick={() => toggleSort('role')} style={{ cursor: 'pointer', userSelect: 'none' }}>Role{sortIcon('role')}</th>
+              <th onClick={() => toggleSort('email')} style={{ cursor: 'pointer', userSelect: 'none' }}>Email{sortIcon('email')}</th>
+              <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
+              <th onClick={() => toggleSort('edit_students')} style={{ cursor: 'pointer', userSelect: 'none' }}>Edit Students{sortIcon('edit_students')}</th>
+              <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
               {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
