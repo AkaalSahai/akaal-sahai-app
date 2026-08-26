@@ -272,7 +272,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th>Group</th>
               <th>Edit Students</th>
               <th>Last Login</th>
-              <th>Actions</th>
+              {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -379,8 +379,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
-                <td>
-                  {!readOnly && (
+                {!readOnly && (
+                  <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-xs"
                         style={{ borderColor: editPanel[u.id] ? 'var(--primary)' : undefined, color: editPanel[u.id] ? 'var(--primary)' : undefined }}
@@ -395,8 +395,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                         {busy === u.id ? '…' : 'Delete'}
                       </button>
                     </div>
-                  )}
-                </td>
+                  </td>
+                )}
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
@@ -437,7 +437,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 6 : 7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
