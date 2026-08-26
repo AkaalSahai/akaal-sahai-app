@@ -16,7 +16,7 @@ export default function AdminGroups({ readOnly }) {
   async function load() {
     const [{ data: g }, { data: t }, { data: tg }] = await Promise.all([
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
-      supabase.from('users').select('id, name').eq('role', 'teacher').order('name'),
+      supabase.from('users').select('id, name, role, extra_roles').order('name'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
     ])
     const tgMap = {}
@@ -24,8 +24,12 @@ export default function AdminGroups({ readOnly }) {
       if (!tgMap[r.group_id]) tgMap[r.group_id] = []
       tgMap[r.group_id].push(r.teacher_id)
     })
-    setGroups((g || []).map(grp => ({ ...grp, teacherIds: tgMap[grp.id] || [] })))
-    setTeachers(t || [])
+    setGroups((g || []).map(grp => {
+      const ids = tgMap[grp.id] || []
+      const teacherIds = grp.teacher_id && !ids.includes(grp.teacher_id) ? [grp.teacher_id, ...ids] : ids
+      return { ...grp, teacherIds }
+    }))
+    setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
     setLoading(false)
   }
 
