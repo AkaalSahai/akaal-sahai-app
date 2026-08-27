@@ -4,19 +4,26 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 
 export default function AdminGroups({ readOnly }) {
-  const { profile } = useAuth()
+  const { profile, hasRole } = useAuth()
   const [groups, setGroups]     = useState([])
   const [teachers, setTeachers] = useState([])
   const [loading, setLoading]   = useState(true)
   const [newGroup, setNewGroup]  = useState('')
   const [busy, setBusy]         = useState(false)
+  const [showMerge, setShowMerge]     = useState(false)
+  const [mergeA, setMergeA]           = useState('')
+  const [mergeB, setMergeB]           = useState('')
+  const [keepId, setKeepId]           = useState('')
+  const [mergeConflicts, setMergeConflicts] = useState(null)
+  const [mergeChecking, setMergeChecking]   = useState(false)
+  const [mergeBusy, setMergeBusy]     = useState(false)
 
   useEffect(() => { load() }, [])
 
   async function load() {
     const [{ data: g }, { data: t }, { data: tg }] = await Promise.all([
-      supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
-      supabase.from('users').select('id, name').eq('role', 'teacher').order('name'),
+      supabase.from('groups').select('id, name, teacher_id, class_type, students(date_of_birth)').order('name'),
+      supabase.from('users').select('id, name, role, extra_roles').order('name'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
     ])
     const tgMap = {}
@@ -24,9 +31,54 @@ export default function AdminGroups({ readOnly }) {
       if (!tgMap[r.group_id]) tgMap[r.group_id] = []
       tgMap[r.group_id].push(r.teacher_id)
     })
-    setGroups((g || []).map(grp => ({ ...grp, teacherIds: tgMap[grp.id] || [] })))
-    setTeachers(t || [])
+    setGroups((g || []).map(grp => {
+      const ids = tgMap[grp.id] || []
+      const teacherIds = grp.teacher_id && !ids.includes(grp.teacher_id) ? [grp.teacher_id, ...ids] : ids
+      return { ...grp, teacherIds }
+    }))
+    setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
     setLoading(false)
+  }
+
+  useEffect(() => {
+    if (mergeA && mergeB && mergeA !== mergeB) checkMergeConflicts(mergeA, mergeB)
+    else setMergeConflicts(null)
+  }, [mergeA, mergeB])
+
+  async function checkMergeConflicts(idA, idB) {
+    setMergeChecking(true)
+    try {
+      const [{ data: da }, { data: db }] = await Promise.all([
+        supabase.from('attendance_sessions').select('session_date').eq('group_id', idA),
+        supabase.from('attendance_sessions').select('session_date').eq('group_id', idB),
+      ])
+      const datesB = new Set((db || []).map(r => r.session_date))
+      const overlap = (da || []).map(r => r.session_date).filter(d => datesB.has(d))
+      setMergeConflicts(overlap)
+    } catch (err) {
+      setMergeConflicts(['unknown — could not check, please retry'])
+    } finally {
+      setMergeChecking(false)
+    }
+  }
+
+  async function submitMerge() {
+    if (!mergeA || !mergeB || !keepId) return
+    const sourceId = keepId === mergeA ? mergeB : mergeA
+    const targetId = keepId
+    const sourceGroup = groups.find(g => g.id === sourceId)
+    const targetGroup = groups.find(g => g.id === targetId)
+    if (!confirm(`Merge "${sourceGroup?.name}" into "${targetGroup?.name}"?\n\nEverything from "${sourceGroup?.name}" (students, attendance history, teachers, class enrollments) will move into "${targetGroup?.name}", then "${sourceGroup?.name}" will be permanently deleted.\n\nThis cannot be undone.`)) return
+    setMergeBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('merge_groups', { source_group_id: sourceId, target_group_id: targetId })
+      if (error) throw error
+      logAction(profile, 'Merged groups', `${sourceGroup?.name} → ${targetGroup?.name}`).catch(() => {})
+      alert(`Merged successfully.\n\n${data?.students_moved ?? 0} student(s), ${data?.sessions_moved ?? 0} attendance session(s), ${data?.teachers_merged ?? 0} co-teacher(s), and ${data?.class_enrollments_moved ?? 0} class enrollment(s) moved into "${targetGroup?.name}".`)
+      setShowMerge(false); setMergeA(''); setMergeB(''); setKeepId(''); setMergeConflicts(null)
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setMergeBusy(false) }
   }
 
   function calcAge(dob) {
@@ -104,6 +156,76 @@ export default function AdminGroups({ readOnly }) {
           <input type="text" placeholder="New group name…" value={newGroup} onChange={e => setNewGroup(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addGroup()} style={{ flex: 1 }} />
           <button className="btn btn-primary" disabled={busy || !newGroup.trim()} onClick={addGroup}>Add Group</button>
+        </div>
+      )}
+
+      {hasRole('admin') && !readOnly && (
+        <div style={{ marginBottom: 16 }}>
+          <button className="btn btn-outline btn-sm" onClick={() => setShowMerge(s => !s)}>
+            {showMerge ? 'Cancel Merge' : 'Merge Groups'}
+          </button>
+          {showMerge && (
+            <div style={{ marginTop: 10, padding: 14, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8 }}>
+              <div style={{ fontSize: '.8rem', fontWeight: 700, color: '#991b1b', marginBottom: 10 }}>
+                Merge two groups — this permanently deletes one of them after moving everything into the other.
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                <select value={mergeA} onChange={e => { setMergeA(e.target.value); setKeepId('') }}
+                  style={{ flex: 1, minWidth: 160, padding: '6px 8px' }}>
+                  <option value="">Select group A…</option>
+                  {groups.filter(g => g.id !== mergeB).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                <select value={mergeB} onChange={e => { setMergeB(e.target.value); setKeepId('') }}
+                  style={{ flex: 1, minWidth: 160, padding: '6px 8px' }}>
+                  <option value="">Select group B…</option>
+                  {groups.filter(g => g.id !== mergeA).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+
+              {mergeA && mergeB && (() => {
+                const groupA = groups.find(g => g.id === mergeA)
+                const groupB = groups.find(g => g.id === mergeB)
+                const typeA = groupA?.class_type || 'punjabi'
+                const typeB = groupB?.class_type || 'punjabi'
+                const typeMismatch = typeA !== typeB
+                const hasDateConflicts = mergeConflicts && mergeConflicts.length > 0
+                return (
+                  <>
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: '.82rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                        <input type="radio" name="keepGroup" checked={keepId === mergeA} onChange={() => setKeepId(mergeA)} />
+                        Keep "{groupA?.name}"
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                        <input type="radio" name="keepGroup" checked={keepId === mergeB} onChange={() => setKeepId(mergeB)} />
+                        Keep "{groupB?.name}"
+                      </label>
+                    </div>
+
+                    {typeMismatch && (
+                      <div style={{ color: '#991b1b', fontSize: '.8rem', fontWeight: 600, marginBottom: 10 }}>
+                        Cannot merge — these groups are different types ({typeA} vs {typeB}).
+                      </div>
+                    )}
+                    {mergeChecking && (
+                      <div style={{ color: 'var(--muted)', fontSize: '.8rem', marginBottom: 10 }}>Checking for conflicting attendance dates…</div>
+                    )}
+                    {!mergeChecking && hasDateConflicts && (
+                      <div style={{ color: '#991b1b', fontSize: '.8rem', fontWeight: 600, marginBottom: 10 }}>
+                        Cannot merge — both groups have attendance sessions on: {mergeConflicts.join(', ')}
+                      </div>
+                    )}
+
+                    <button className="btn btn-danger btn-sm"
+                      disabled={!keepId || typeMismatch || hasDateConflicts || mergeChecking || mergeBusy}
+                      onClick={submitMerge}>
+                      {mergeBusy ? 'Merging…' : 'Merge Groups'}
+                    </button>
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </div>
       )}
 

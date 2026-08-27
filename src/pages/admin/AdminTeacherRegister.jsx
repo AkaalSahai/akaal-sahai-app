@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { fmtDate } from '../../lib/dates'
+import { logAction } from '../../lib/audit'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
@@ -73,9 +74,11 @@ export default function AdminTeacherRegister({ readOnly }) {
           // Tap same status → clear
           await supabase.from('teacher_attendance').delete().eq('id', existing.id)
           setAttendance(prev => { const n = { ...prev }; delete n[teacher.id]; return n })
+          logAction(profile, 'Marked teacher attendance', `${teacher.name}: cleared (${date})`).catch(() => {})
         } else {
           await supabase.from('teacher_attendance').update({ status, marked_by: profile.id }).eq('id', existing.id)
           setAttendance(prev => ({ ...prev, [teacher.id]: { ...prev[teacher.id], status } }))
+          logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${date})`).catch(() => {})
         }
       } else {
         const { data, error } = await supabase.from('teacher_attendance').insert({
@@ -83,8 +86,12 @@ export default function AdminTeacherRegister({ readOnly }) {
         }).select('id').single()
         if (error) throw error
         setAttendance(prev => ({ ...prev, [teacher.id]: { id: data.id, status, notes: '' } }))
+        logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${date})`).catch(() => {})
       }
-    } catch (err) { alert('Error: ' + err.message) }
+    } catch (err) {
+      logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${err.message}`, false).catch(() => {})
+      alert('Error: ' + err.message)
+    }
     finally { setBusy(b => ({ ...b, [teacher.id]: false })) }
   }
 
@@ -98,7 +105,11 @@ export default function AdminTeacherRegister({ readOnly }) {
       await supabase.from('teacher_attendance').update({ notes }).eq('id', existing.id)
       setAttendance(prev => ({ ...prev, [teacher.id]: { ...prev[teacher.id], notes } }))
       setNoteOpen(prev => { const n = { ...prev }; delete n[teacher.id]; return n })
-    } catch (err) { alert('Error: ' + err.message) }
+      logAction(profile, 'Added teacher attendance note', `${teacher.name}: ${notes || '(cleared)'}`).catch(() => {})
+    } catch (err) {
+      logAction(profile, 'Added teacher attendance note', `${teacher.name}: ${err.message}`, false).catch(() => {})
+      alert('Error: ' + err.message)
+    }
     finally { setBusy(b => ({ ...b, [teacher.id]: false })) }
   }
 
@@ -113,6 +124,7 @@ export default function AdminTeacherRegister({ readOnly }) {
       .order('session_date', { ascending: false })
     setHistory(data || [])
     setHistLoading(false)
+    logAction(profile, 'Viewed teacher attendance history').catch(() => {})
   }
 
   const present  = teachers.filter(t => attendance[t.id]?.status === 'present').length

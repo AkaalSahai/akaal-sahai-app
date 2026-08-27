@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
+import { logAction } from '../../lib/audit'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -128,6 +129,7 @@ export default function TeacherStudents() {
         photo_consent: form.photo_consent,
       }
 
+      const fullName = [payload.first_name, payload.last_name].filter(Boolean).join(' ')
       if (editing === 'new') {
         const targetGroupId = newStudentGroupId || groupId
         const { error } = await supabase.from('students').insert({
@@ -138,12 +140,17 @@ export default function TeacherStudents() {
         })
         if (error) throw error
         notifyTeachersOfGroup(targetGroupId, `New student added to your group: ${payload.first_name} ${payload.last_name}`).catch(() => {})
+        logAction(profile, 'Added student', fullName).catch(() => {})
       } else {
         const { error } = await supabase.from('students').update(payload).eq('id', editing)
         if (error) throw error
+        logAction(profile, 'Updated student', fullName).catch(() => {})
       }
       cancel(); load()
-    } catch (err) { alert('Error: ' + err.message) }
+    } catch (err) {
+      logAction(profile, editing === 'new' ? 'Added student' : 'Updated student', err.message, false).catch(() => {})
+      alert('Error: ' + err.message)
+    }
     finally { setBusy(false) }
   }
 

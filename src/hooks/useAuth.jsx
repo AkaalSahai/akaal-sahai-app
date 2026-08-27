@@ -58,11 +58,18 @@ export function AuthProvider({ children }) {
       email: user.email,
       password: currentPassword,
     })
-    if (reAuthError) throw new Error('Current password is incorrect')
+    if (reAuthError) {
+      logAction(profile, 'Changed password', 'Incorrect current password', false).catch(() => {})
+      throw new Error('Current password is incorrect')
+    }
 
     const { error } = await supabase.auth.updateUser({ password: newPassword })
-    if (error) throw error
+    if (error) {
+      logAction(profile, 'Changed password', error.message, false).catch(() => {})
+      throw error
+    }
     await supabase.from('users').update({ pw_changed_at: new Date().toISOString() }).eq('id', user.id)
+    logAction(profile, 'Changed password').catch(() => {})
   }
 
   async function requestPasswordReset(email) {

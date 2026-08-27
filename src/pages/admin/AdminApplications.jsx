@@ -27,6 +27,7 @@ export default function AdminApplications({ readOnly }) {
   const [teacherApps, setTeacherApps] = useState([])
   const [transfers, setTransfers]   = useState([])
   const [groups, setGroups]         = useState([])
+  const [teacherMap, setTeacherMap] = useState({})
   const [loading, setLoading]       = useState(true)
   const [busy, setBusy]             = useState(null)
 
@@ -40,12 +41,14 @@ export default function AdminApplications({ readOnly }) {
         supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
-        supabase.from('users').select('id, name').eq('role', 'teacher'),
+        supabase.from('users').select('id, name, role, extra_roles'),
       ])
-      const teacherMap = Object.fromEntries((us || []).map(u => [u.id, u.name]))
+      const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
+      const tMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
+      setTeacherMap(tMap)
       setStudentApps(sa || [])
       setTeacherApps(ta || [])
-      setGroups((gr || []).map(g => ({ ...g, teacherName: teacherMap[g.teacher_id] || null })))
+      setGroups((gr || []).map(g => ({ ...g, teacherName: tMap[g.teacher_id] || null })))
       setTransfers(tr || [])
     } catch (err) {
       console.error('Applications load error:', err)
@@ -178,6 +181,7 @@ export default function AdminApplications({ readOnly }) {
     if (readOnly) return
     setBusy(tr.id)
     await supabase.from('transfer_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', tr.id)
+    logAction(profile, 'Rejected transfer request', tr.student_name).catch(() => {})
     setBusy(null); load()
   }
 
@@ -368,11 +372,15 @@ export default function AdminApplications({ readOnly }) {
                     {calcAge(tr.students?.date_of_birth) !== null && <span>Age: {calcAge(tr.students?.date_of_birth)}y · </span>}
                     From: {tr.from_group_name || '—'} · Requested: {fmtDate(tr.created_at)}
                   </div>
+                  <div className="app-meta">
+                    Submitted by: {teacherMap[tr.requested_by] || 'Unknown'}
+                  </div>
                 </div>
                 <span className={`tag tag-${tr.status}`}>{tr.status}</span>
               </div>
               <div className="app-details">
                 <Detail label="Reason for Transfer" value={tr.reason} />
+                {tr.requested_to_group_name && <Detail label="Requested Destination" value={tr.requested_to_group_name} />}
                 {tr.to_group_id && <Detail label="Moved To" value={groups.find(g => g.id === tr.to_group_id)?.name || '—'} />}
                 {tr.students?.medical_notes && (
                   <Detail label="Medical Notes" value={tr.students.medical_notes} />
@@ -456,7 +464,7 @@ function TeacherApproveForm({ app, groups, onApprove, onReject, busy }) {
 }
 
 function TransferApproveForm({ tr, groups, onApprove, onReject, busy }) {
-  const [toGroupId, setToGroupId] = useState('')
+  const [toGroupId, setToGroupId] = useState(tr.requested_to_group_id || '')
   return (
     <div className="app-actions">
       <select value={toGroupId} onChange={e => setToGroupId(e.target.value)}

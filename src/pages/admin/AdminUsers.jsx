@@ -19,7 +19,7 @@ async function callAdminAction(payload, token) {
 
 const ROLES = ['admin','registrar','teacher','adminView']
 
-export default function AdminUsers({ readOnly }) {
+export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const { profile: myProfile } = useAuth()
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
@@ -31,6 +31,8 @@ export default function AdminUsers({ readOnly }) {
   const [roleDrafts, setRoleDrafts] = useState({})
   const [savedMsg, setSavedMsg]     = useState({})
   const [editPanel, setEditPanel]   = useState({})  // userId → {name, email, phone}
+  const [sortCol, setSortCol]       = useState(null)
+  const [sortDir, setSortDir]       = useState('asc')
 
   useEffect(() => { load() }, [])
 
@@ -167,7 +169,7 @@ export default function AdminUsers({ readOnly }) {
   async function toggleEditStudents(userId, current) {
     const updated = !current
     try {
-      const { error } = await supabase.from('users').update({ can_edit_students: updated }).eq('id', userId)
+      const { error } = await supabase.rpc('toggle_teacher_edit_permission', { target_user_id: userId, new_value: updated })
       if (error) throw error
       const u = users.find(x => x.id === userId)
       logAction(myProfile, 'Toggled student edit permission', `${u?.name}: ${updated ? 'enabled' : 'disabled'}`).catch(() => {})
@@ -210,10 +212,40 @@ export default function AdminUsers({ readOnly }) {
     finally { setBusy(null) }
   }
 
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  function sortIcon(col) {
+    if (sortCol !== col) return <span style={{ marginLeft: 3, fontSize: '.6rem', color: '#cbd5e1' }}>⇅</span>
+    return <span style={{ marginLeft: 3, fontSize: '.6rem', color: 'var(--primary)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+  }
+
+  function editStudentsRank(u) {
+    if (u.can_edit_students) return 2
+    if (u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) return 1
+    return 0
+  }
+
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
-  const sorted = [...users].sort((a, b) =>
-    roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || (a.name || '').localeCompare(b.name || '')
-  )
+  const sorted = sortCol
+    ? [...users].sort((a, b) => {
+        let va, vb
+        if (sortCol === 'name') { va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase() }
+        else if (sortCol === 'role') { va = (a.role || '').toLowerCase(); vb = (b.role || '').toLowerCase() }
+        else if (sortCol === 'email') { va = (a.email || '').toLowerCase(); vb = (b.email || '').toLowerCase() }
+        else if (sortCol === 'group') { va = (a.groupNames?.[0] || '').toLowerCase(); vb = (b.groupNames?.[0] || '').toLowerCase() }
+        else if (sortCol === 'edit_students') { va = editStudentsRank(a); vb = editStudentsRank(b) }
+        else if (sortCol === 'last_login') { va = a.last_login || ''; vb = b.last_login || '' }
+        else return 0
+        if (va < vb) return sortDir === 'asc' ? -1 : 1
+        if (va > vb) return sortDir === 'asc' ? 1 : -1
+        return 0
+      })
+    : [...users].sort((a, b) =>
+        roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role) || (a.name || '').localeCompare(b.name || '')
+      )
 
   if (loading) return <div className="spinner" />
 
@@ -266,13 +298,13 @@ export default function AdminUsers({ readOnly }) {
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Role</th>
-              <th>Email</th>
-              <th>Group</th>
-              <th>Edit Students</th>
-              <th>Last Login</th>
-              <th>Actions</th>
+              <th onClick={() => toggleSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>Name{sortIcon('name')}</th>
+              <th onClick={() => toggleSort('role')} style={{ cursor: 'pointer', userSelect: 'none' }}>Role{sortIcon('role')}</th>
+              <th onClick={() => toggleSort('email')} style={{ cursor: 'pointer', userSelect: 'none' }}>Email{sortIcon('email')}</th>
+              <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
+              <th onClick={() => toggleSort('edit_students')} style={{ cursor: 'pointer', userSelect: 'none' }}>Edit Students{sortIcon('edit_students')}</th>
+              <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
+              {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -353,7 +385,7 @@ export default function AdminUsers({ readOnly }) {
                 </td>
                 <td>
                   {(u.role === 'teacher' || (u.extra_roles || []).includes('teacher')) ? (
-                    !readOnly ? (
+                    (!readOnly || canToggleEditStudents) ? (
                       <button onClick={() => toggleEditStudents(u.id, u.can_edit_students)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
                           padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
@@ -379,8 +411,8 @@ export default function AdminUsers({ readOnly }) {
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
-                <td>
-                  {!readOnly && (
+                {!readOnly && (
+                  <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-xs"
                         style={{ borderColor: editPanel[u.id] ? 'var(--primary)' : undefined, color: editPanel[u.id] ? 'var(--primary)' : undefined }}
@@ -395,8 +427,8 @@ export default function AdminUsers({ readOnly }) {
                         {busy === u.id ? '…' : 'Delete'}
                       </button>
                     </div>
-                  )}
-                </td>
+                  </td>
+                )}
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
@@ -437,7 +469,7 @@ export default function AdminUsers({ readOnly }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 6 : 7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>

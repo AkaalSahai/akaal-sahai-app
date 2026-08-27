@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { logAction } from '../../lib/audit'
 
 const DEFAULTS = {
   class_schedule:    'Every Friday & Saturday, 6:15PM – 8:30PM',
@@ -18,6 +20,7 @@ const DEFAULTS = {
 }
 
 export default function AdminSettings() {
+  const { profile } = useAuth()
   const [form, setForm]     = useState(DEFAULTS)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]     = useState(false)
@@ -41,7 +44,8 @@ export default function AdminSettings() {
     const rows = Object.entries(form).map(([key, value]) => ({ key, value }))
     const { error } = await supabase.from('site_settings').upsert(rows)
     setBusy(false)
-    if (error) { alert('Save failed: ' + error.message); return }
+    if (error) { logAction(profile, 'Updated site settings', error.message, false).catch(() => {}); alert('Save failed: ' + error.message); return }
+    logAction(profile, 'Updated site settings').catch(() => {})
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -156,7 +160,8 @@ export default function AdminSettings() {
             const rows = Object.entries({ ...form, broadcast_id: newId }).map(([key, value]) => ({ key, value }))
             const { error } = await supabase.from('site_settings').upsert(rows)
             setBusy(false)
-            if (error) { alert('Save failed: ' + error.message); return }
+            if (error) { logAction(profile, 'Updated site settings', error.message, false).catch(() => {}); alert('Save failed: ' + error.message); return }
+            logAction(profile, 'Updated site settings', form.broadcast_active === 'true' ? 'Broadcast message updated (active)' : 'Broadcast message updated').catch(() => {})
             setSaved(true)
             setTimeout(() => setSaved(false), 3000)
           }} disabled={busy}>

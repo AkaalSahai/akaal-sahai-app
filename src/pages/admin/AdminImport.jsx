@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
+import { logAction } from '../../lib/audit'
 
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
 const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
@@ -51,6 +53,7 @@ function parseDateToISO(raw) {
 }
 
 export default function AdminImport({ readOnly }) {
+  const { profile } = useAuth()
   const [, setCsv]        = useState(null)
   const [rows, setRows]   = useState([])
   const [errors, setErrors] = useState([])
@@ -161,6 +164,7 @@ export default function AdminImport({ readOnly }) {
       if (toInsert.length === 0) {
         setResult({ success: true, count: 0, skipped, groups: Object.keys(groupMap).length })
         setRows([]); setCsv(null)
+        logAction(profile, 'Imported students', `0 imported, ${skipped} skipped (duplicates), ${groupNames.length} group(s)`).catch(() => {})
         return
       }
 
@@ -168,8 +172,10 @@ export default function AdminImport({ readOnly }) {
       if (error) throw error
       setResult({ success: true, count: inserted.length, skipped, groups: Object.keys(groupMap).length })
       setRows([]); setCsv(null)
+      logAction(profile, 'Imported students', `${inserted.length} imported, ${skipped} skipped (duplicates), ${groupNames.length} group(s)`).catch(() => {})
     } catch (err) {
       setResult({ success: false, message: err.message })
+      logAction(profile, 'Imported students', err.message, false).catch(() => {})
     } finally { setBusy(false) }
   }
 
