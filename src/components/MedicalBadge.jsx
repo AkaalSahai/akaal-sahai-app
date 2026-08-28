@@ -1,13 +1,16 @@
 import { useState } from 'react'
+import { useAuth } from '../hooks/useAuth'
+import { logAction } from '../lib/audit'
 
 export default function MedicalBadge({ notes, studentName }) {
+  const { profile } = useAuth()
   const [open, setOpen] = useState(false)
   if (!notes?.trim()) return null
 
   return (
     <>
       <button
-        onClick={e => { e.stopPropagation(); setOpen(true) }}
+        onClick={e => { e.stopPropagation(); setOpen(true); logAction(profile, 'Viewed medical notes', studentName || null).catch(() => {}) }}
         title="Medical notes — click to view"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 4,
