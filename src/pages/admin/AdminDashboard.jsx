@@ -1,9 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
+import { useAuth } from '../../hooks/useAuth'
+import html2canvas from 'html2canvas'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 function isClassDay() { const d = new Date().getDay(); return d === 5 || d === 6 }
+
+function getLastWeekend() {
+  const d = new Date()
+  while (d.getDay() !== 6) d.setDate(d.getDate() - 1)
+  const saturday = d.toISOString().split('T')[0]
+  const fri = new Date(d)
+  fri.setDate(fri.getDate() - 1)
+  const friday = fri.toISOString().split('T')[0]
+  return { friday, saturday }
+}
 
 function calcAge(dob) {
   if (!dob) return null
@@ -29,8 +41,12 @@ function PctBadge({ value }) {
 }
 
 export default function AdminDashboard({ setTab }) {
+  const { hasRole } = useAuth()
   const [data, setData]     = useState(null)
   const [loading, setLoading] = useState(true)
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportData, setReportData] = useState(null)
+  const reportRef = useRef(null)
 
   useEffect(() => { load() }, [])
 
@@ -158,6 +174,88 @@ export default function AdminDashboard({ setTab }) {
     }
   }
 
+  async function generateWeeklyReport() {
+    setReportBusy(true)
+    try {
+      const { friday, saturday } = getLastWeekend()
+      const [
+        { data: groupRows },
+        { data: teacherRows },
+        { data: tgRows },
+        { data: sessions },
+        { data: records },
+      ] = await Promise.all([
+        supabase.from('groups').select('id, name, teacher_id, class_type').order('name'),
+        supabase.from('users').select('id, name').eq('role', 'teacher'),
+        supabase.from('teacher_groups').select('teacher_id, group_id'),
+        supabase.from('attendance_sessions').select('id, group_id, session_date').in('session_date', [friday, saturday]),
+        supabase.from('attendance_records').select('session_id, group_id, status, session_date').in('session_date', [friday, saturday]),
+      ])
+
+      const teacherMap = Object.fromEntries((teacherRows || []).map(t => [t.id, t.name]))
+      const tgMap = {}
+      ;(tgRows || []).forEach(r => {
+        if (!tgMap[r.group_id]) tgMap[r.group_id] = []
+        if (teacherMap[r.teacher_id]) tgMap[r.group_id].push(teacherMap[r.teacher_id])
+      })
+
+      const punjabiGroups = (groupRows || []).filter(g => g.class_type === 'punjabi' || !g.class_type)
+      const submittedGroupIds = new Set((sessions || []).map(s => s.group_id))
+
+      const counts = {}
+      ;(records || []).forEach(r => {
+        if (!counts[r.group_id]) counts[r.group_id] = { present: 0, absent: 0, late: 0 }
+        if (counts[r.group_id][r.status] !== undefined) counts[r.group_id][r.status]++
+      })
+
+      const groupSummaries = punjabiGroups.map(g => {
+        const c = counts[g.id] || { present: 0, absent: 0, late: 0 }
+        const marked = c.present + c.absent + c.late
+        const attended = c.present + c.late
+        const teacherNames = tgMap[g.id] || (g.teacher_id && teacherMap[g.teacher_id] ? [teacherMap[g.teacher_id]] : [])
+        return {
+          name: g.name,
+          teacherNames,
+          submitted: submittedGroupIds.has(g.id),
+          present: c.present, absent: c.absent, late: c.late,
+          pct: marked > 0 ? Math.round((attended / marked) * 100) : null,
+        }
+      })
+
+      const totalMarked   = groupSummaries.reduce((s, g) => s + g.present + g.absent + g.late, 0)
+      const totalAttended = groupSummaries.reduce((s, g) => s + g.present + g.late, 0)
+      const overallPct = totalMarked > 0 ? Math.round((totalAttended / totalMarked) * 100) : null
+      const best = [...groupSummaries].filter(g => g.pct !== null).sort((a, b) => b.pct - a.pct)[0] || null
+      const missing = groupSummaries.filter(g => !g.submitted)
+
+      setReportData({ friday, saturday, groupSummaries, overallPct, best, missing })
+    } catch (err) {
+      alert('Could not generate report: ' + err.message)
+      setReportBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!reportData || !reportRef.current) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const canvas = await html2canvas(reportRef.current, { scale: 2, backgroundColor: '#ffffff' })
+        if (cancelled) return
+        const url = canvas.toDataURL('image/png')
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `weekly-report-${reportData.saturday}.png`
+        a.click()
+      } catch (err) {
+        alert('Could not create image: ' + err.message)
+      } finally {
+        if (!cancelled) { setReportData(null); setReportBusy(false) }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [reportData])
+
   if (loading) return <div className="spinner" />
   if (!data)   return (
     <div className="card">
@@ -191,6 +289,89 @@ export default function AdminDashboard({ setTab }) {
           </div>
         ))}
       </div>
+
+      {hasRole('admin') && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <button className="btn btn-outline btn-sm" disabled={reportBusy} onClick={generateWeeklyReport}>
+            {reportBusy ? 'Generating…' : '📄 Download Weekly Report (Punjabi)'}
+          </button>
+          <span style={{ fontSize: '.78rem', color: 'var(--muted)' }}>
+            Covers the most recent Friday + Saturday
+          </span>
+        </div>
+      )}
+
+      {reportData && (
+        <div ref={reportRef} style={{
+          position: 'fixed', top: 0, left: -9999, width: 800, background: '#ffffff',
+          padding: 40, fontFamily: 'Arial, Helvetica, sans-serif', color: '#1a1a2e',
+          boxSizing: 'border-box',
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: 24, borderBottom: '3px solid #1e1a6e', paddingBottom: 16 }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>Weekly Report — Punjabi Classes</div>
+            <div style={{ fontSize: '.95rem', color: '#64748b', marginTop: 4 }}>
+              {fmtDate(reportData.friday)} – {fmtDate(reportData.saturday)}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 60, marginBottom: 24 }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#1e1a6e' }}>
+                {reportData.overallPct === null ? '—' : `${reportData.overallPct}%`}
+              </div>
+              <div style={{ fontSize: '.78rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                Overall Attendance
+              </div>
+            </div>
+            {reportData.best && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2.4rem', fontWeight: 800, color: '#16a34a' }}>{reportData.best.pct}%</div>
+                <div style={{ fontSize: '.78rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                  Best — {reportData.best.name}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {reportData.missing.length > 0 && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+              padding: '10px 14px', marginBottom: 20, fontSize: '.85rem', color: '#991b1b' }}>
+              ⚠ Register not submitted: {reportData.missing.map(g => g.name).join(', ')}
+            </div>
+          )}
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.85rem' }}>
+            <thead>
+              <tr style={{ background: '#f1f5f9', textAlign: 'left' }}>
+                <th style={{ padding: '8px 10px' }}>Group</th>
+                <th style={{ padding: '8px 10px' }}>Teacher</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>Present</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>Late</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>Absent</th>
+                <th style={{ padding: '8px 10px', textAlign: 'center' }}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportData.groupSummaries.map((g, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '7px 10px', fontWeight: 600 }}>{g.name}</td>
+                  <td style={{ padding: '7px 10px', color: '#64748b' }}>{g.teacherNames.join(', ') || '—'}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'center' }}>{g.present}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'center' }}>{g.late}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'center' }}>{g.absent}</td>
+                  <td style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 700 }}>
+                    {g.pct === null ? '—' : `${g.pct}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ marginTop: 24, textAlign: 'center', fontSize: '.72rem', color: '#94a3b8' }}>
+            Generated {fmtDate(new Date().toISOString())}
+          </div>
+        </div>
+      )}
 
       {/* Missing register warning — only on class days (Fri/Sat) */}
       {isClassDay() && notDoneGroups.length > 0 && (
