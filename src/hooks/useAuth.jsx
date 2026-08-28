@@ -23,8 +23,11 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         setUser(session?.user ?? null)
-        if (session?.user) fetchProfile(session.user.id).finally(() => setLoading(false))
-        else setLoading(false)
+        if (session?.user) {
+          fetchProfile(session.user.id).finally(() => setLoading(false))
+          supabase.from('users').update({ last_seen: new Date().toISOString() }).eq('id', session.user.id)
+            .then(({ error }) => { if (error) console.error('last_seen update failed:', error.message) })
+        } else setLoading(false)
       })
       .catch(() => setLoading(false))
 
@@ -39,7 +42,10 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
-    await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', data.user.id)
+    const now = new Date().toISOString()
+    await supabase.from('users').update({ last_login: now }).eq('id', data.user.id)
+    supabase.from('users').update({ last_seen: now }).eq('id', data.user.id)
+      .then(({ error }) => { if (error) console.error('last_seen update failed:', error.message) })
     const profileData = await fetchProfile(data.user.id)
     logAction(profileData, 'Signed in').catch(() => {})
     return data
