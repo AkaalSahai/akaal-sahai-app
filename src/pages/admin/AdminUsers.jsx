@@ -39,7 +39,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   async function load() {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, last_seen, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
@@ -53,9 +53,14 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     if (userErr) {
       if (userErr.message?.includes('can_edit_students')) {
         const { data: fallback } = await supabase
-          .from('users').select('id, name, email, phone, role, extra_roles, last_login, group_id').order('role').order('name')
+          .from('users').select('id, name, email, phone, role, extra_roles, last_login, last_seen, group_id').order('role').order('name')
         setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
         setLoadError('⚠ Run the teacher-edit-permission.txt SQL to enable the Edit Students toggle.')
+      } else if (userErr.message?.includes('last_seen')) {
+        const { data: fallback } = await supabase
+          .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name')
+        setUsers((fallback || []).map(u => ({ ...u, last_seen: null, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
+        setLoadError('⚠ Run the fix-add-last-seen.sql migration to enable the Last Seen column.')
       } else {
         setLoadError('Error loading users: ' + userErr.message)
       }
@@ -238,6 +243,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         else if (sortCol === 'group') { va = (a.groupNames?.[0] || '').toLowerCase(); vb = (b.groupNames?.[0] || '').toLowerCase() }
         else if (sortCol === 'edit_students') { va = editStudentsRank(a); vb = editStudentsRank(b) }
         else if (sortCol === 'last_login') { va = a.last_login || ''; vb = b.last_login || '' }
+        else if (sortCol === 'last_seen') { va = a.last_seen || ''; vb = b.last_seen || '' }
         else return 0
         if (va < vb) return sortDir === 'asc' ? -1 : 1
         if (va > vb) return sortDir === 'asc' ? 1 : -1
@@ -304,6 +310,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
               <th onClick={() => toggleSort('edit_students')} style={{ cursor: 'pointer', userSelect: 'none' }}>Edit Students{sortIcon('edit_students')}</th>
               <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
+              <th onClick={() => toggleSort('last_seen')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Seen{sortIcon('last_seen')}</th>
               {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
@@ -411,6 +418,9 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
+                <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                  {u.last_seen ? fmtDate(u.last_seen) : 'Never'}
+                </td>
                 {!readOnly && (
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -432,7 +442,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
-                  <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={8} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       Edit Details — {u.name}
                     </div>
@@ -469,7 +479,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={readOnly ? 6 : 7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 7 : 8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
