@@ -55,7 +55,7 @@ export default function AdminGroups({ readOnly }) {
       const datesB = new Set((db || []).map(r => r.session_date))
       const overlap = (da || []).map(r => r.session_date).filter(d => datesB.has(d))
       setMergeConflicts(overlap)
-    } catch (err) {
+    } catch  {
       setMergeConflicts(['unknown — could not check, please retry'])
     } finally {
       setMergeChecking(false)
