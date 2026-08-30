@@ -3,8 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 
-const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
-const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
+const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,date_joined,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
+const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,01/09/2020,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
 
 // Parses a single CSV line, respecting double-quoted fields that may contain commas
 function parseCSVLine(line) {
@@ -97,6 +97,8 @@ export default function AdminImport({ readOnly }) {
       if (!row.last_name)  errs.push(`Row ${i + 2}: missing last_name`)
       if (row.date_of_birth && !parseDateToISO(row.date_of_birth))
         errs.push(`Row ${i + 2}: unrecognised date format "${row.date_of_birth}" — use DD/MM/YYYY`)
+      if (row.date_joined && !parseDateToISO(row.date_joined))
+        errs.push(`Row ${i + 2}: unrecognised date_joined format "${row.date_joined}" — use DD/MM/YYYY`)
       parsed.push(row)
     })
     setRows(parsed); setErrors(errs); setResult(null)
@@ -140,7 +142,10 @@ export default function AdminImport({ readOnly }) {
         secondary_phone: r.secondary_phone?.trim() || null,
         email: r.email?.trim() || null,
         photo_consent: ['yes','true','1'].includes(r.photo_consent?.trim().toLowerCase()),
-        date_joined: new Date().toISOString().split('T')[0],
+        // Real historical join date if the CSV provides one (e.g. migrating
+        // existing students), otherwise today — don't silently backdate
+        // everyone to the import date.
+        date_joined: parseDateToISO(r.date_joined) || new Date().toISOString().split('T')[0],
         active: true,
       }))
 

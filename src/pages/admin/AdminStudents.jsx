@@ -154,6 +154,16 @@ export default function AdminStudents({ readOnly }) {
     load()
   }
 
+  async function updateDateJoined(studentId, newDate) {
+    if (readOnly || !newDate) return
+    const { error } = await supabase.from('students').update({ date_joined: newDate }).eq('id', studentId)
+    if (error) { alert('Error updating date joined: ' + error.message); return }
+    const s = students.find(x => x.id === studentId)
+    const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
+    logAction(profile, 'Corrected date joined', `${name} → ${fmtDate(newDate)}`).catch(() => {})
+    load()
+  }
+
   async function deactivate(studentId) {
     if (readOnly) return
     if (!confirm('Remove this student from the system? This cannot be undone.')) return
@@ -393,6 +403,17 @@ export default function AdminStudents({ readOnly }) {
                                 return <option key={g.id} value={g.id}>{g.name} — {teacher}</option>
                               })}
                             </select>
+                          </div>
+                        )}
+                        {!readOnly && (
+                          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Date joined:</label>
+                            <input type="date" defaultValue={s.date_joined || ''}
+                              onBlur={e => e.target.value && e.target.value !== s.date_joined && updateDateJoined(s.id, e.target.value)}
+                              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }} />
+                            <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>
+                              Correct this if it was set automatically on import rather than their real join date
+                            </span>
                           </div>
                         )}
                       </td>

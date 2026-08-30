@@ -9,6 +9,7 @@ import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_L
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
+  date_joined: '',
   parent_name: '', relationship: '', phone: '', secondary_phone: '',
   email: '', house_no: '', street_name: '', town: '', postcode: '',
   medical_notes: '', photo_consent: false,
@@ -135,6 +136,7 @@ export default function TeacherStudents() {
     setForm({
       first_name: s.first_name || '', middle_name: s.middle_name || '',
       last_name: s.last_name || '', date_of_birth: s.date_of_birth || '',
+      date_joined: s.date_joined || '',
       parent_name: s.parent_name || '', relationship: s.relationship || '',
       phone: s.phone || '', secondary_phone: s.secondary_phone || '',
       email: s.email || '', house_no: s.house_no || '',
@@ -146,7 +148,7 @@ export default function TeacherStudents() {
   }
 
   function startNew() {
-    setForm(EMPTY_FORM)
+    setForm({ ...EMPTY_FORM, date_joined: new Date().toISOString().split('T')[0] })
     setNewStudentGroupId(groupId)
     setEditing('new')
   }
@@ -167,6 +169,7 @@ export default function TeacherStudents() {
         middle_name: form.middle_name.trim() || null,
         last_name: form.last_name.trim(),
         date_of_birth: form.date_of_birth || null,
+        date_joined: form.date_joined || null,
         parent_name: form.parent_name.trim() || null,
         relationship: form.relationship.trim() || null,
         phone: form.phone.trim() || null,
@@ -186,7 +189,6 @@ export default function TeacherStudents() {
         const { error } = await supabase.from('students').insert({
           ...payload,
           group_id: targetGroupId,
-          date_joined: new Date().toISOString().split('T')[0],
           active: true,
         })
         if (error) throw error
@@ -324,6 +326,10 @@ export default function TeacherStudents() {
             <div className="form-group">
               <label>Date of Birth</label>
               <input type="date" value={form.date_of_birth} onChange={set('date_of_birth')} />
+            </div>
+            <div className="form-group">
+              <label>Date Joined</label>
+              <input type="date" value={form.date_joined} onChange={set('date_joined')} />
             </div>
           </div>
 
@@ -482,6 +488,7 @@ export default function TeacherStudents() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
                         gap: 10, marginBottom: 14, fontSize: '.83rem' }}>
                         <div><strong>Date of birth:</strong> {fmtDate(s.date_of_birth) || '—'}</div>
+                        <div><strong>Date joined:</strong> {fmtDate(s.date_joined) || '—'}</div>
                         <div><strong>Parent/Guardian:</strong> {s.parent_name || '—'} {s.relationship ? `(${s.relationship})` : ''}</div>
                         <div><strong>Phone:</strong> {s.phone || '—'}</div>
                         <div><strong>Secondary phone:</strong> {s.secondary_phone || '—'}</div>
