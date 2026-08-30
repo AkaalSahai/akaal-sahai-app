@@ -405,44 +405,50 @@ export default function AdminDashboard({ setTab }) {
       {/* Today's register status */}
       <div className="card">
         <div className="card-title">Today's Register Status</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-          <div>
-            <div style={{ fontSize: '.72rem', fontWeight: 700, textTransform: 'uppercase',
-              letterSpacing: '.06em', color: '#16a34a', marginBottom: 8 }}>
-              ✓ Submitted ({doneGroups.length})
-            </div>
-            {doneGroups.length === 0
-              ? <div style={{ fontSize: '.82rem', color: 'var(--muted)' }}>None yet today</div>
-              : doneGroups.map(g => (
-                  <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '6px 10px', marginBottom: 4, borderRadius: 7,
-                    background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                    <span style={{ fontWeight: 600, fontSize: '.83rem' }}>{g.name}</span>
-                    <span style={{ fontSize: '.73rem', color: '#16a34a', fontWeight: 600 }}>
-                      {g.teacherNames.join(', ') || '—'}
-                    </span>
-                  </div>
-                ))}
+        {!isClassDay() ? (
+          <div style={{ fontSize: '.85rem', color: 'var(--muted)', padding: '8px 0' }}>
+            No class today — register status will show here on Friday/Saturday.
           </div>
-          <div>
-            <div style={{ fontSize: '.72rem', fontWeight: 700, textTransform: 'uppercase',
-              letterSpacing: '.06em', color: '#dc2626', marginBottom: 8 }}>
-              ✗ Not Submitted ({notDoneGroups.length})
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: '.72rem', fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '.06em', color: '#16a34a', marginBottom: 8 }}>
+                ✓ Submitted ({doneGroups.length})
+              </div>
+              {doneGroups.length === 0
+                ? <div style={{ fontSize: '.82rem', color: 'var(--muted)' }}>None yet today</div>
+                : doneGroups.map(g => (
+                    <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '6px 10px', marginBottom: 4, borderRadius: 7,
+                      background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                      <span style={{ fontWeight: 600, fontSize: '.83rem' }}>{g.name}</span>
+                      <span style={{ fontSize: '.73rem', color: '#16a34a', fontWeight: 600 }}>
+                        {g.teacherNames.join(', ') || '—'}
+                      </span>
+                    </div>
+                  ))}
             </div>
-            {notDoneGroups.length === 0
-              ? <div style={{ fontSize: '.82rem', color: '#16a34a', fontWeight: 600 }}>All registers submitted today!</div>
-              : notDoneGroups.map(g => (
-                  <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '6px 10px', marginBottom: 4, borderRadius: 7,
-                    background: '#fef2f2', border: '1px solid #fecaca' }}>
-                    <span style={{ fontWeight: 600, fontSize: '.83rem' }}>{g.name}</span>
-                    <span style={{ fontSize: '.73rem', color: '#dc2626', fontWeight: 600 }}>
-                      {g.teacherNames.join(', ') || 'No teacher'}
-                    </span>
-                  </div>
-                ))}
+            <div>
+              <div style={{ fontSize: '.72rem', fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '.06em', color: '#dc2626', marginBottom: 8 }}>
+                ✗ Not Submitted ({notDoneGroups.length})
+              </div>
+              {notDoneGroups.length === 0
+                ? <div style={{ fontSize: '.82rem', color: '#16a34a', fontWeight: 600 }}>All registers submitted today!</div>
+                : notDoneGroups.map(g => (
+                    <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '6px 10px', marginBottom: 4, borderRadius: 7,
+                      background: '#fef2f2', border: '1px solid #fecaca' }}>
+                      <span style={{ fontWeight: 600, fontSize: '.83rem' }}>{g.name}</span>
+                      <span style={{ fontSize: '.73rem', color: '#dc2626', fontWeight: 600 }}>
+                        {g.teacherNames.join(', ') || 'No teacher'}
+                      </span>
+                    </div>
+                  ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Group overview */}
