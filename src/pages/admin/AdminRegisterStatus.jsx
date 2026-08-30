@@ -129,7 +129,7 @@ export default function AdminRegisterStatus() {
         {!classDay && (
           <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8,
             padding: '10px 14px', marginBottom: 16, fontSize: '.83rem', color: 'var(--muted)' }}>
-            Today is not a class day — classes run on Fridays and Saturdays.
+            Today is not a class day for any group.
           </div>
         )}
 

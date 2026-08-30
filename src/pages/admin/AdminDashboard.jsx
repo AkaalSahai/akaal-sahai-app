@@ -3,7 +3,9 @@ import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
 import { useAuth } from '../../hooks/useAuth'
 import { isAnyClassDay } from '../../lib/classTypes'
+import { getVerificationStatus } from '../../lib/verification'
 import AdminRegisterStatus from './AdminRegisterStatus'
+import AdminVerificationStatus from './AdminVerificationStatus'
 import html2canvas from 'html2canvas'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
@@ -267,6 +269,7 @@ export default function AdminDashboard({ setTab }) {
   const [data, setData]         = useState(null)
   const [loading, setLoading]   = useState(true)
   const [showRS, setShowRS]     = useState(false)
+  const [showVerify, setShowVerify] = useState(false)
   const [reportBusy, setReportBusy] = useState(false)
   const [reportData, setReportData] = useState(null)
   const reportRef = useRef(null)
@@ -296,6 +299,8 @@ export default function AdminDashboard({ setTab }) {
       { data: attStats },
       { data: studentRows },
       { data: tgRows },
+      { data: verificationRows },
+      { data: verifySettingsRows },
     ] = await Promise.all([
       supabase.from('students').select('*', { count: 'exact', head: true }).eq('active', true),
       supabase.from('groups').select('*', { count: 'exact', head: true }),
@@ -307,8 +312,10 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('users').select('id, name, last_login, last_seen').eq('role', 'teacher').order('name'),
       supabase.from('attendance_sessions').select('id, group_id').eq('session_date', today),
       supabase.rpc('get_dashboard_attendance_stats', { from_date: fromDate }),
-      supabase.from('students').select('id, first_name, last_name, group_id').eq('active', true),
+      supabase.from('students').select('*').eq('active', true),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
+      supabase.from('student_verifications').select('*').order('verified_at', { ascending: false }),
+      supabase.from('site_settings').select('key, value').eq('key', 'verification_required_since'),
     ])
 
     const scInGroupIds = new Set((scRows || []).map(r => r.student_id))
@@ -374,12 +381,33 @@ export default function AdminDashboard({ setTab }) {
       return new Date(av) - new Date(bv)
     })
 
+    // Student detail verification - groups fully verified vs outstanding
+    const verifyRequiredSince = (verifySettingsRows || [])[0]?.value || null
+    const latestVerificationByStudent = {}
+    ;(verificationRows || []).forEach(v => {
+      if (!latestVerificationByStudent[v.student_id]) latestVerificationByStudent[v.student_id] = v
+    })
+    const studentsByGroupForVerify = {}
+    ;(studentRows || []).forEach(s => {
+      if (!s.group_id) return
+      if (!studentsByGroupForVerify[s.group_id]) studentsByGroupForVerify[s.group_id] = []
+      studentsByGroupForVerify[s.group_id].push(s)
+    })
+    const groupsWithStudentsForVerify = Object.keys(studentsByGroupForVerify)
+    const groupsFullyVerified = groupsWithStudentsForVerify.filter(gid =>
+      studentsByGroupForVerify[gid].every(s =>
+        getVerificationStatus(s, latestVerificationByStudent[s.id], verifyRequiredSince).verified
+      )
+    ).length
+
     const result = {
       totalStudents, totalGroups, totalTeachers,
       pendingStudents, pendingTeachers,
       enrichedGroups, lowestStudents, leastActive,
       todayCount: doneGroupIds.size,
       unassignedStudents: unassignedStudents || 0,
+      groupsFullyVerified,
+      groupsWithStudentsCount: groupsWithStudentsForVerify.length,
     }
     _dashCache = result
     _dashCacheAt = Date.now()
@@ -494,9 +522,23 @@ export default function AdminDashboard({ setTab }) {
     </>
   )
 
+  if (showVerify) return (
+    <>
+      <button onClick={() => setShowVerify(false)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 16,
+          background: 'white', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '7px 14px', fontSize: '.82rem', fontWeight: 700, color: 'var(--primary)',
+          cursor: 'pointer', fontFamily: 'inherit' }}>
+        ← Back to Dashboard
+      </button>
+      <AdminVerificationStatus />
+    </>
+  )
+
   const { totalStudents, totalGroups, totalTeachers,
     pendingStudents, pendingTeachers, unassignedStudents,
-    enrichedGroups, lowestStudents, leastActive, todayCount } = data
+    enrichedGroups, lowestStudents, leastActive, todayCount,
+    groupsFullyVerified, groupsWithStudentsCount } = data
 
   const notDoneGroups = enrichedGroups.filter(g => !g.doneToday)
   const classDay      = isClassDay()
@@ -575,7 +617,7 @@ export default function AdminDashboard({ setTab }) {
       )}
 
       {/* KPI strip */}
-      <div className="dash-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div className="dash-kpi" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
         {[
           {
             label: 'Active Students',
@@ -608,6 +650,14 @@ export default function AdminDashboard({ setTab }) {
             accent: totalPending > 0 ? '#dc2626' : '#16a34a',
             subColor: totalPending > 0 ? '#dc2626' : '#16a34a',
             tab: 'applications',
+          },
+          {
+            label: 'Verified',
+            value: `${groupsFullyVerified}/${groupsWithStudentsCount}`,
+            sub: groupsFullyVerified === groupsWithStudentsCount ? 'All groups verified' : 'groups outstanding',
+            accent: groupsFullyVerified < groupsWithStudentsCount ? '#d97706' : '#16a34a',
+            subColor: groupsFullyVerified < groupsWithStudentsCount ? '#d97706' : '#16a34a',
+            action: () => setShowVerify(true),
           },
         ].map(({ label, value, sub, accent, subColor, tab, action }) => (
           <div key={label}
