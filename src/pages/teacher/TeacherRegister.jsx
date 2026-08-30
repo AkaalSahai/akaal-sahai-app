@@ -59,29 +59,45 @@ export default function TeacherRegister() {
   }
 
   async function loadMyGroups() {
-    const { data: tg } = await supabase
-      .from('teacher_groups')
-      .select('group_id, groups(id, name)')
-      .eq('teacher_id', profile.id)
+    try {
+      // Query both assignment methods and merge, same as TeacherStudents.jsx -
+      // a teacher can be a primary teacher (groups.teacher_id) on one group
+      // and a co-teacher (teacher_groups) on another; checking only one left
+      // the other group invisible here.
+      const [{ data: tg }, { data: primaryGroups }] = await Promise.all([
+        supabase.from('teacher_groups').select('group_id, groups(id, name)').eq('teacher_id', profile.id),
+        supabase.from('groups').select('id, name').eq('teacher_id', profile.id),
+      ])
+      const grpMap = new Map()
+      ;(tg || []).forEach(r => { if (r.groups) grpMap.set(r.groups.id, r.groups) })
+      ;(primaryGroups || []).forEach(g => { if (!grpMap.has(g.id)) grpMap.set(g.id, g) })
+      let grps = [...grpMap.values()].sort((a, b) => a.name.localeCompare(b.name))
 
-    if (tg && tg.length > 0) {
-      const grps = tg.map(r => r.groups).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+      if (grps.length === 0 && profile.group_id) {
+        const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
+        if (g) grps = [g]
+      }
+
       setMyGroups(grps)
-      const defaultGrp = grps.find(g => g.id === profile.group_id) || grps[0]
-      setSelectedGroupId(defaultGrp.id)
-      setGroupName(defaultGrp.name)
-    } else if (profile.group_id) {
-      const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
-      const grps = g ? [g] : []
-      setMyGroups(grps)
-      setSelectedGroupId(profile.group_id)
-      setGroupName(g?.name || null)
-    } else {
-      setMyGroups([])
+      if (grps.length > 0) {
+        // profile.group_id is a legacy single-group field that isn't kept in
+        // sync once a teacher has real assignments via teacher_groups/groups -
+        // it can point at a group the teacher no longer teaches. Always
+        // default the same predictable way instead of trusting that field
+        // (matches TeacherStudents.jsx); the teacher can still switch groups
+        // explicitly using the selector below if this isn't the one they want.
+        const defaultGrp = grps[0]
+        setSelectedGroupId(defaultGrp.id)
+        setGroupName(defaultGrp.name)
+      } else {
+        setMyGroups([])
+      }
+    } catch (err) {
+      console.error('loadMyGroups error:', err)
+    } finally {
       setGroupsLoading(false)
       setLoading(false)
     }
-    setGroupsLoading(false)
   }
 
   function selectGroup(groupId) {
