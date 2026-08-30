@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
+import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_LABEL } from '../../lib/verification'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -27,6 +28,11 @@ export default function TeacherStudents() {
   const [search, setSearch]         = useState('')
   const [sortCol, setSortCol]       = useState('name')
   const [sortDir, setSortDir]       = useState('asc')
+  const [verifications, setVerifications] = useState({})  // studentId -> latest verification row
+  const [requiredSince, setRequiredSince] = useState(null)
+  const [requiredReason, setRequiredReason] = useState(null)
+  const [verifyingId, setVerifyingId]     = useState(null)
+  const [verifyBusy, setVerifyBusy]       = useState(false)
 
   useEffect(() => { load() }, [user])
 
@@ -69,11 +75,56 @@ export default function TeacherStudents() {
       .eq('group_id', gid).eq('active', true)
       .order('last_name').order('first_name')
     setStudents(data || [])
+    await loadVerifications((data || []).map(s => s.id))
+  }
+
+  async function loadVerifications(studentIds) {
+    if (studentIds.length === 0) { setVerifications({}); return }
+    const [{ data: verRows }, { data: settingsRows }] = await Promise.all([
+      supabase.from('student_verifications').select('*')
+        .in('student_id', studentIds).order('verified_at', { ascending: false }),
+      supabase.from('site_settings').select('key, value')
+        .in('key', ['verification_required_since', 'verification_required_reason']),
+    ])
+    const latest = {}
+    ;(verRows || []).forEach(v => { if (!latest[v.student_id]) latest[v.student_id] = v })
+    setVerifications(latest)
+    const settingsMap = Object.fromEntries((settingsRows || []).map(r => [r.key, r.value]))
+    setRequiredSince(settingsMap.verification_required_since || null)
+    setRequiredReason(settingsMap.verification_required_reason || null)
+  }
+
+  function toggleVerify(studentId) {
+    setEditing(null)
+    setVerifyingId(v => v === studentId ? null : studentId)
+  }
+
+  async function submitVerification(s) {
+    setVerifyBusy(true)
+    try {
+      const { error } = await supabase.from('student_verifications').insert({
+        student_id: s.id,
+        verified_by: user.id,
+        verified_by_name: profile?.name || 'Unknown',
+        snapshot: buildVerificationSnapshot(s),
+      })
+      if (error) throw error
+      const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
+      logAction(profile, 'Verified student details', fullName).catch(() => {})
+      setVerifyingId(null)
+      await loadVerifications(students.map(x => x.id))
+    } catch (err) {
+      logAction(profile, 'Verified student details', err.message, false).catch(() => {})
+      alert('Error: ' + err.message)
+    } finally {
+      setVerifyBusy(false)
+    }
   }
 
   async function switchGroup(gid) {
     setGroupId(gid)
     setEditing(null)
+    setVerifyingId(null)
     setSearch('')
     setLoading(true)
     try { await loadStudentsForGroup(gid) }
@@ -364,14 +415,17 @@ export default function TeacherStudents() {
               <th onClick={() => toggleSort('dob')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Date of Birth{sortIcon('dob')}</th>
               <th onClick={() => toggleSort('parent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Parent{sortIcon('parent')}</th>
               <th onClick={() => toggleSort('phone')}  style={{ cursor: 'pointer', userSelect: 'none' }}>Phone{sortIcon('phone')}</th>
+              <th>Details Verified</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {sorted.map(s => {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
+              const status = getVerificationStatus(s, verifications[s.id], requiredSince)
               return (
-                <tr key={s.id}>
+                <Fragment key={s.id}>
+                <tr>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600 }}>{fullName}</span>
@@ -385,15 +439,71 @@ export default function TeacherStudents() {
                   </td>
                   <td style={{ fontSize: '.85rem' }}>{s.phone || '—'}</td>
                   <td>
-                    {canEdit && (
-                      <button className="btn btn-outline btn-xs" onClick={() => startEdit(s)}>Edit</button>
+                    {status.verified ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '3px 10px', borderRadius: 12, fontSize: '.72rem', fontWeight: 700,
+                        background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                        ✓ Verified {fmtDate(status.verifiedAt)}
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '3px 10px', borderRadius: 12, fontSize: '.72rem', fontWeight: 700,
+                        background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>
+                        ⚠ {VERIFICATION_REASON_LABEL[status.reason]}
+                      </span>
                     )}
                   </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <button className="btn btn-outline btn-xs"
+                        style={{ borderColor: verifyingId === s.id ? 'var(--primary)' : undefined,
+                          color: verifyingId === s.id ? 'var(--primary)' : undefined }}
+                        onClick={() => toggleVerify(s.id)}>
+                        {verifyingId === s.id ? 'Close' : status.verified ? 'Re-check' : 'Verify'}
+                      </button>
+                      {canEdit && (
+                        <button className="btn btn-outline btn-xs" onClick={() => startEdit(s)}>Edit</button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
+                {verifyingId === s.id && (
+                  <tr>
+                    <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                      {requiredReason && !status.verified && status.reason === 'admin_required' && (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+                          padding: '8px 12px', marginBottom: 12, fontSize: '.8rem', color: '#92400e' }}>
+                          Admin has requested re-verification: {requiredReason}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 10 }}>
+                        Please review {fullName}'s details below
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                        gap: 10, marginBottom: 14, fontSize: '.83rem' }}>
+                        <div><strong>Date of birth:</strong> {fmtDate(s.date_of_birth) || '—'}</div>
+                        <div><strong>Parent/Guardian:</strong> {s.parent_name || '—'} {s.relationship ? `(${s.relationship})` : ''}</div>
+                        <div><strong>Phone:</strong> {s.phone || '—'}</div>
+                        <div><strong>Secondary phone:</strong> {s.secondary_phone || '—'}</div>
+                        <div><strong>Email:</strong> {s.email || '—'}</div>
+                        <div><strong>Address:</strong> {[s.house_no, s.street_name, s.town, s.postcode].filter(Boolean).join(', ') || '—'}</div>
+                        <div style={{ gridColumn: '1 / -1' }}><strong>Medical notes:</strong> {s.medical_notes || 'None'}</div>
+                        <div><strong>Photo consent:</strong> {s.photo_consent ? 'Yes' : 'No'}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-primary btn-sm" disabled={verifyBusy} onClick={() => submitVerification(s)}>
+                          {verifyBusy ? 'Saving…' : '✓ I confirm these details are correct'}
+                        </button>
+                        <button className="btn btn-outline btn-sm" onClick={() => setVerifyingId(null)}>Cancel</button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {search ? 'No students match your search' : 'No students in your group yet'}
               </td></tr>
             )}
