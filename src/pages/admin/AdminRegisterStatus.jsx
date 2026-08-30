@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
+import { isAnyClassDay } from '../../lib/classTypes'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
-function isClassDay() { const d = new Date().getDay(); return d === 5 || d === 6 }
 
 export default function AdminRegisterStatus() {
   const [data, setData]         = useState(null)
@@ -69,7 +69,7 @@ export default function AdminRegisterStatus() {
 
   if (loading) return <div className="spinner" />
 
-  const classDay  = isClassDay()
+  const classDay  = isAnyClassDay()
   const submitted = (data || []).filter(g => g.submitted)
   const missing   = (data || []).filter(g => !g.submitted)
   const displayed = filterMissing ? missing : (data || [])
