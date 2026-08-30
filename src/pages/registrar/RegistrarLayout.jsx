@@ -8,6 +8,7 @@ import AdminClasses from '../admin/AdminClasses'
 import AdminUsers from '../admin/AdminUsers'
 import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
+import TeacherStudents from '../teacher/TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 
 export default function RegistrarLayout() {
@@ -22,8 +23,9 @@ export default function RegistrarLayout() {
     { id: 'groups',       label: 'Groups'       },
     { id: 'classes',      label: 'Classes'      },
     { id: 'users',        label: 'Teachers'     },
-    ...(isTeacher ? [{ id: 'register',  label: 'My Register' }] : []),
-    ...(isTeacher ? [{ id: 'reports',   label: 'My Reports'  }] : []),
+    ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
+    ...(isTeacher ? [{ id: 'reports',     label: 'My Reports'   }] : []),
+    ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
   ]
 
   return (
@@ -45,6 +47,7 @@ export default function RegistrarLayout() {
         {tab === 'users'        && <AdminUsers readOnly={true} canToggleEditStudents={true} />}
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}
+        {tab === 'mystudents'   && <TeacherStudents />}
       </div>
     </div>
   )
