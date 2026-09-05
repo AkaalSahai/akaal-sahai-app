@@ -54,7 +54,6 @@ function parseDateToISO(raw) {
 
 export default function AdminImport({ readOnly }) {
   const { profile } = useAuth()
-  const [csv, setCsv]     = useState(null)
   const [rows, setRows]   = useState([])
   const [errors, setErrors] = useState([])
   const [busy, setBusy]   = useState(false)

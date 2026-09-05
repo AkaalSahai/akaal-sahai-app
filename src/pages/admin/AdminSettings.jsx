@@ -38,18 +38,6 @@ export default function AdminSettings() {
 
   function set(k) { return e => { setForm(f => ({ ...f, [k]: e.target.value })); setSaved(false) } }
 
-  async function save() {
-    // kept for compatibility — broadcast save uses inline handler with new broadcast_id
-    setBusy(true)
-    const rows = Object.entries(form).map(([key, value]) => ({ key, value }))
-    const { error } = await supabase.from('site_settings').upsert(rows)
-    setBusy(false)
-    if (error) { logAction(profile, 'Updated site settings', error.message, false).catch(() => {}); alert('Save failed: ' + error.message); return }
-    logAction(profile, 'Updated site settings').catch(() => {})
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
-  }
-
   if (loading) return <div className="empty-state">Loading settings…</div>
 
   return (
