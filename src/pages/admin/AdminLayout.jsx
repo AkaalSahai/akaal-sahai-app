@@ -10,6 +10,7 @@ import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
 import AdminActivity from './AdminActivity'
+import AdminArchive from './AdminArchive'
 import AdminMessages from './AdminMessages'
 import AdminSettings from './AdminSettings'
 import AdminRegisterStatus from './AdminRegisterStatus'
@@ -47,6 +48,7 @@ export default function AdminLayout() {
     { id: 'teacherregister',   label: 'Teacher Register'   },
     ...(!readOnly       ? [{ id: 'import',   label: 'Import Data' }] : []),
     ...(isPrimaryAdmin  ? [{ id: 'activity', label: 'Activity'    }] : []),
+    ...(isPrimaryAdmin  ? [{ id: 'archive',  label: 'Archive'     }] : []),
     { id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' },
     ...(isPrimaryAdmin  ? [{ id: 'settings', label: 'Settings'    }] : []),
   ]
@@ -80,6 +82,7 @@ export default function AdminLayout() {
         {tab === 'registerstatus'  && <AdminRegisterStatus />}
         {tab === 'teacherregister' && <AdminTeacherRegister readOnly={readOnly} />}
         {tab === 'activity'     && <AdminActivity />}
+        {tab === 'archive'      && <AdminArchive />}
         {tab === 'messages'     && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
         {tab === 'settings'     && <AdminSettings />}
       </div>
