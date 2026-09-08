@@ -1,6 +1,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
@@ -54,6 +55,8 @@ export default function AdminStudents({ readOnly }) {
   const [editingStudentId, setEditingStudentId] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [savingStudent, setSavingStudent] = useState(false)
+  const [dialog, setDialog] = useState(null)
+  const [teacherMap, setTeacherMap] = useState({})
 
   useEffect(() => { load() }, [])
 
@@ -69,6 +72,7 @@ export default function AdminStudents({ readOnly }) {
     ])
     const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
+    setTeacherMap(teacherMap)
     // A group's teacher can be set via the legacy groups.teacher_id field or via
     // the teacher_groups junction (multi-teacher groups) — check both, same as
     // AdminGroups.jsx.
@@ -231,20 +235,59 @@ export default function AdminStudents({ readOnly }) {
     load()
   }
 
-  async function deactivate(studentId) {
+  function deactivate(studentId) {
     if (readOnly) return
-    if (!confirm('Remove this student from the system? This cannot be undone.')) return
     const s = students.find(x => x.id === studentId)
     const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
-    await supabase.from('students').update({ active: false }).eq('id', studentId)
-    logAction(profile, 'Removed student', name).catch(() => {})
-    load()
+    setDialog({
+      message: `Remove ${name} from the system? They will be moved to the archive.`,
+      confirmText: 'Remove Student',
+      danger: true,
+      needsReason: true,
+      reasonLabel: 'Reason for removal (required for GDPR record):',
+      onConfirm: async (reason) => {
+        setDialog(null)
+        const result = await supabase.from('students').update({
+          active: false,
+          archived_at: new Date().toISOString(),
+          archived_by_id: profile.id,
+          archived_by_name: profile.name,
+          deletion_reason: reason || null,
+          deletion_requested_by_name: null,
+        }).eq('id', studentId)
+        let error = result.error
+        if (error?.message?.includes('archived_at')) {
+          // Migration not run yet — still remove the student, just without
+          // the archive fields the Archive tab needs to show them.
+          const fallback = await supabase.from('students').update({ active: false }).eq('id', studentId)
+          error = fallback.error
+        }
+        if (error) { alert('Error archiving student: ' + error.message); return }
+        logAction(profile, 'Removed student', name).catch(() => {})
+        load()
+      },
+    })
   }
 
   async function approveRemoval(req) {
     setRemovalBusy(req.id)
     try {
-      const { error: e1 } = await supabase.from('students').update({ active: false }).eq('id', req.student_id)
+      const requesterName = teacherMap[req.requested_by] || null
+      const result = await supabase.from('students').update({
+        active: false,
+        archived_at: new Date().toISOString(),
+        archived_by_id: profile.id,
+        archived_by_name: profile.name,
+        deletion_reason: req.reason || null,
+        deletion_requested_by_name: requesterName,
+      }).eq('id', req.student_id)
+      let e1 = result.error
+      if (e1?.message?.includes('archived_at')) {
+        // Migration not run yet — still remove the student, just without the
+        // archive fields the Archive tab needs to show them.
+        const fallback = await supabase.from('students').update({ active: false }).eq('id', req.student_id)
+        e1 = fallback.error
+      }
       if (e1) throw e1
       await supabase.from('transfer_requests').update({ status: 'approved' }).eq('id', req.id)
       logAction(profile, 'Approved student removal', req.student_name).catch(() => {})
@@ -318,6 +361,7 @@ export default function AdminStudents({ readOnly }) {
 
   return (
     <>
+    {dialog && <ConfirmDialog {...dialog} onCancel={() => setDialog(null)} />}
     {removalRequests.length > 0 && (
       <div className="card" style={{ borderTop: '3px solid #dc2626' }}>
         <div className="card-title" style={{ color: '#991b1b' }}>

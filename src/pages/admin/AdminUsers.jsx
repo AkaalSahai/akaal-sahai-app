@@ -1,5 +1,6 @@
 import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
@@ -33,6 +34,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const [editPanel, setEditPanel]   = useState({})  // userId → {name, email, phone}
   const [sortCol, setSortCol]       = useState(null)
   const [sortDir, setSortDir]       = useState('asc')
+  const [dialog, setDialog]         = useState(null)
 
   useEffect(() => { load() }, [])
 
@@ -131,16 +133,42 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     finally { setBusy(null) }
   }
 
-  async function deleteUser(userId, name) {
-    if (!confirm(`Delete user "${name}"? This cannot be undone.`)) return
-    setBusy(userId)
-    try {
-      const token = await getToken()
-      await callAdminAction({ action: 'delete', userId }, token)
-      logAction(myProfile, 'Deleted user', name).catch(() => {})
-      load()
-    } catch (err) { alert('Error: ' + err.message) }
-    finally { setBusy(null) }
+  function deleteUser(userId, name) {
+    setDialog({
+      message: `Delete "${name}"? Their record will be moved to the archive.`,
+      confirmText: 'Delete User',
+      danger: true,
+      needsReason: true,
+      reasonLabel: 'Reason for deletion (required for GDPR record):',
+      onConfirm: async (reason) => {
+        setDialog(null)
+        setBusy(userId)
+        try {
+          const u = users.find(x => x.id === userId)
+          const { error: archErr } = await supabase.from('users_archive').insert({
+            original_id: userId,
+            name: u?.name,
+            email: u?.email,
+            phone: u?.phone,
+            role: u?.role,
+            extra_roles: u?.extra_roles || [],
+            group_names: u?.groupNames || [],
+            last_login: u?.last_login,
+            deleted_by_id: myProfile.id,
+            deleted_by_name: myProfile.name,
+            deletion_reason: reason || null,
+          })
+          if (archErr && !archErr.message?.includes('users_archive')) throw archErr
+          // If users_archive doesn't exist yet (migration not run), still
+          // proceed with the deletion — just without the GDPR record.
+          const token = await getToken()
+          await callAdminAction({ action: 'delete', userId }, token)
+          logAction(myProfile, 'Deleted user', name).catch(() => {})
+          load()
+        } catch (err) { alert('Error: ' + err.message) }
+        finally { setBusy(null) }
+      },
+    })
   }
 
   async function changeRole(userId, newRole) {
@@ -270,6 +298,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   if (loading) return <div className="spinner" />
 
   return (
+    <>
+    {dialog && <ConfirmDialog {...dialog} onCancel={() => setDialog(null)} />}
     <div className="card">
       <div className="card-title">
         Teachers & Staff ({users.length})
@@ -499,5 +529,6 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         </table>
       </div>
     </div>
+    </>
   )
 }
