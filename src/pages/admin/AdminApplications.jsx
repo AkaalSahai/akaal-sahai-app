@@ -76,7 +76,18 @@ export default function AdminApplications({ readOnly }) {
         active: true, group_id: groupId || null,
       })
       if (error) throw error
-      await supabase.from('parent_applications').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', app.id)
+      const { error: appErr } = await supabase.from('parent_applications')
+        .update({ status: 'approved', reviewed_at: new Date().toISOString(), assigned_group_id: groupId || null })
+        .eq('id', app.id)
+      if (appErr) {
+        if (appErr.message?.includes('assigned_group_id')) {
+          // Migration not run yet — still mark the application approved, just
+          // without recording which group so it can show on the card later.
+          await supabase.from('parent_applications')
+            .update({ status: 'approved', reviewed_at: new Date().toISOString() })
+            .eq('id', app.id)
+        } else throw appErr
+      }
       const studentName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')
       const grp = groups.find(g => g.id === groupId)
       logAction(profile, 'Approved student application', grp ? `${studentName} → ${grp.name}` : studentName).catch(() => {})
@@ -298,6 +309,15 @@ export default function AdminApplications({ readOnly }) {
                 <span className={`tag tag-${app.status}`}>{app.status}</span>
               </div>
               <div className="app-details">
+                {app.status === 'approved' && (() => {
+                  const grp = groups.find(g => g.id === app.assigned_group_id)
+                  return (
+                    <>
+                      <Detail label="Group" value={grp?.name || '—'} />
+                      <Detail label="Teacher" value={grp?.teacherName || '—'} />
+                    </>
+                  )
+                })()}
                 <Detail label="Parent/Guardian" value={app.parent_name} />
                 <Detail label="Relationship" value={app.relationship} />
                 <Detail label="Phone" value={app.phone} />
@@ -340,6 +360,9 @@ export default function AdminApplications({ readOnly }) {
                 <span className={`tag tag-${app.status}`}>{app.status}</span>
               </div>
               <div className="app-details">
+                {app.status === 'approved' && (
+                  <Detail label="Group" value={groups.find(g => g.id === app.assigned_group_id)?.name || '—'} />
+                )}
                 <Detail label="Email" value={app.email} />
                 <Detail label="Phone" value={app.phone} />
                 <Detail label="Preferred Group" value={app.preferred_group || '—'} />

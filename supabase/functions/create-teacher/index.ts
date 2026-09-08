@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     // Mark application approved
     if (application_id) {
       await supabaseAdmin.from('teacher_applications')
-        .update({ status: 'approved', reviewed_at: new Date().toISOString() })
+        .update({ status: 'approved', reviewed_at: new Date().toISOString(), assigned_group_id: group_id || null })
         .eq('id', application_id)
     }
 
