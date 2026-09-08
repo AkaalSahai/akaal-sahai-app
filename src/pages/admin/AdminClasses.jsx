@@ -29,6 +29,7 @@ export default function AdminClasses({ readOnly }) {
   const [search, setSearch]     = useState({})
   const [results, setResults]   = useState({})
   const [enrolBusy, setEnrolBusy] = useState(null)
+  const [groupTeacherMap, setGroupTeacherMap] = useState({})  // ANY group_id → teacher_ids via teacher_groups
   const searchTimers            = useRef({})
 
   useEffect(() => { load() }, [])
@@ -41,7 +42,7 @@ export default function AdminClasses({ readOnly }) {
           .select('id, name, class_type, teacher_id')
           .in('class_type', ['gatka', 'kirtan'])
           .order('class_type').order('name'),
-        supabase.from('users').select('id, name').eq('role', 'teacher').order('name'),
+        supabase.from('users').select('id, name, role, extra_roles').order('name'),
         supabase.from('teacher_groups').select('teacher_id, group_id'),
         supabase.from('student_classes').select('group_id'),
       ])
@@ -50,19 +51,38 @@ export default function AdminClasses({ readOnly }) {
         if (!tgMap[r.group_id]) tgMap[r.group_id] = []
         tgMap[r.group_id].push(r.teacher_id)
       })
+      setGroupTeacherMap(tgMap)
       const countMap = {}
       ;(sc || []).forEach(r => { countMap[r.group_id] = (countMap[r.group_id] || 0) + 1 })
-      setGroups((g || []).map(grp => ({
-        ...grp,
-        teacherIds: tgMap[grp.id] || [],
-        studentCount: countMap[grp.id] || 0,
-      })))
-      setTeachers(t || [])
+      setGroups((g || []).map(grp => {
+        // Combine teacher_groups (multi-teacher) with the legacy groups.teacher_id
+        // field — some groups only have the primary field set with no
+        // teacher_groups row to match (see AdminGroups.jsx).
+        const ids = new Set(tgMap[grp.id] || [])
+        if (grp.teacher_id) ids.add(grp.teacher_id)
+        return { ...grp, teacherIds: [...ids], studentCount: countMap[grp.id] || 0 }
+      }))
+      setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
     } catch (err) {
       console.error('AdminClasses load error:', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Resolves the teacher for a student's *Punjabi* group (s.groups), checking
+  // both the legacy groups.teacher_id field and the teacher_groups junction —
+  // a group can be assigned via either.
+  function teacherNameForGroup(grp) {
+    if (!grp) return null
+    const primary = teachers.find(t => t.id === grp.teacher_id)?.name
+    if (primary) return primary
+    const viaJunction = groupTeacherMap[grp.id] || []
+    for (const tid of viaJunction) {
+      const name = teachers.find(t => t.id === tid)?.name
+      if (name) return name
+    }
+    return null
   }
 
   async function loadEnrolled(groupId) {
@@ -303,7 +323,7 @@ export default function AdminClasses({ readOnly }) {
                           <tbody>
                             {enrolledList.map((s, idx) => {
                               const age         = calcAge(s.date_of_birth)
-                              const teacherName = teachers.find(t => t.id === s.groups?.teacher_id)?.name
+                              const teacherName = teacherNameForGroup(s.groups)
                               return (
                                 <tr key={s.id} style={{ borderTop: '1px solid var(--border)',
                                   background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
@@ -365,7 +385,7 @@ export default function AdminClasses({ readOnly }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 460 }}>
                           {searchRes.map(s => {
                             const age         = calcAge(s.date_of_birth)
-                            const teacherName = teachers.find(t => t.id === s.groups?.teacher_id)?.name
+                            const teacherName = teacherNameForGroup(s.groups)
                             const key         = s.id + g.id
                             const busy        = enrolBusy === key
                             return (
