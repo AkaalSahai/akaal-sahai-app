@@ -25,16 +25,52 @@ export default function AdminSettings() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]     = useState(false)
   const [saved, setSaved]   = useState(false)
+  const [ackReport, setAckReport] = useState(null)   // null = not loaded yet
+  const [ackLoading, setAckLoading] = useState(false)
+  const [ackError, setAckError] = useState(null)
+  // Last-saved message/active values, so we only mint a fresh broadcast_id
+  // (which resets everyone's read-report) when the broadcast itself actually
+  // changes — not on every unrelated settings save.
+  const [savedBroadcast, setSavedBroadcast] = useState({ message: '', active: 'false' })
 
   useEffect(() => {
     supabase.from('site_settings').select('key, value').then(({ data, error }) => {
       if (!error && data?.length) {
         const s = Object.fromEntries(data.map(r => [r.key, r.value]))
         setForm(f => ({ ...f, ...s }))
+        setSavedBroadcast({ message: s.broadcast_message || '', active: s.broadcast_active || 'false' })
+        if (s.broadcast_id) loadAckReport(s.broadcast_id)
       }
       setLoading(false)
     })
   }, [])
+
+  async function loadAckReport(broadcastId) {
+    if (!broadcastId) return
+    setAckLoading(true)
+    setAckError(null)
+    try {
+      const [{ data: teachers, error: tErr }, { data: acks, error: aErr }] = await Promise.all([
+        supabase.from('users').select('id, name').eq('role', 'teacher').order('name'),
+        supabase.from('broadcast_acknowledgments').select('acknowledged_by, acknowledged_at').eq('broadcast_id', broadcastId),
+      ])
+      if (tErr) throw tErr
+      if (aErr) throw aErr
+      const ackMap = Object.fromEntries((acks || []).map(a => [a.acknowledged_by, a.acknowledged_at]))
+      const rows = (teachers || []).map(t => ({ ...t, acknowledgedAt: ackMap[t.id] || null }))
+        .sort((a, b) => {
+          if (!!a.acknowledgedAt === !!b.acknowledgedAt) return a.name.localeCompare(b.name)
+          return a.acknowledgedAt ? 1 : -1  // not-yet-acknowledged first
+        })
+      setAckReport(rows)
+    } catch (err) {
+      setAckError(err.message?.includes('broadcast_acknowledgments')
+        ? 'Run the add-broadcast-acknowledgments.sql migration to enable this report.'
+        : 'Could not load report: ' + err.message)
+    } finally {
+      setAckLoading(false)
+    }
+  }
 
   function set(k) { return e => { setForm(f => ({ ...f, [k]: e.target.value })); setSaved(false) } }
 
@@ -153,8 +189,13 @@ export default function AdminSettings() {
           </div>
 
           <button className="btn btn-primary" onClick={async () => {
-            // Generate a new broadcast_id on save so dismissed teachers see it again
-            const newId = String(Date.now())
+            // Only mint a fresh broadcast_id — which resets every teacher's
+            // read-report back to "not yet acknowledged" — when the message
+            // text or active flag actually changed. An unrelated settings
+            // save (e.g. fixing the phone number) shouldn't re-trigger it.
+            const broadcastChanged = form.broadcast_message !== savedBroadcast.message
+              || form.broadcast_active !== savedBroadcast.active
+            const newId = broadcastChanged ? String(Date.now()) : form.broadcast_id
             setForm(f => ({ ...f, broadcast_id: newId }))
             setBusy(true)
             const rows = Object.entries({ ...form, broadcast_id: newId }).map(([key, value]) => ({ key, value }))
@@ -164,9 +205,62 @@ export default function AdminSettings() {
             logAction(profile, 'Updated site settings', form.broadcast_active === 'true' ? 'Broadcast message updated (active)' : 'Broadcast message updated').catch(() => {})
             setSaved(true)
             setTimeout(() => setSaved(false), 3000)
+            setSavedBroadcast({ message: form.broadcast_message, active: form.broadcast_active })
+            loadAckReport(newId)
           }} disabled={busy}>
             {busy ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
           </button>
+
+          {form.broadcast_id && (
+            <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: '.88rem', color: 'var(--primary)' }}>
+                  Read Report — Current Message
+                </div>
+                <button className="btn btn-outline btn-sm" disabled={ackLoading}
+                  onClick={() => loadAckReport(form.broadcast_id)}>
+                  {ackLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </div>
+
+              {ackError && (
+                <div style={{ fontSize: '.8rem', color: 'var(--danger)', marginBottom: 8 }}>⚠ {ackError}</div>
+              )}
+
+              {!ackError && ackReport && (() => {
+                const total = ackReport.length
+                const done  = ackReport.filter(r => r.acknowledgedAt).length
+                return (
+                  <>
+                    <div style={{ fontSize: '.82rem', color: 'var(--muted)', marginBottom: 10 }}>
+                      <strong style={{ color: done === total && total > 0 ? '#16a34a' : 'var(--text)' }}>
+                        {done} of {total}
+                      </strong> teachers have acknowledged this message
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      {ackReport.length === 0 ? (
+                        <div style={{ padding: 16, fontSize: '.82rem', color: 'var(--muted)', textAlign: 'center' }}>
+                          No teacher accounts found.
+                        </div>
+                      ) : ackReport.map(r => (
+                        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '9px 14px', borderBottom: '1px solid #f1f5f9', fontSize: '.84rem' }}>
+                          <span style={{ fontWeight: 600 }}>{r.name}</span>
+                          {r.acknowledgedAt ? (
+                            <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '.78rem' }}>
+                              ✓ {new Date(r.acknowledgedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#d97706', fontWeight: 600, fontSize: '.78rem' }}>Not yet</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </div>
       </div>
     </div>
