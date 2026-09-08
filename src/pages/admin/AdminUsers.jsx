@@ -40,7 +40,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
       supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, last_seen, group_id').order('role').order('name'),
-      supabase.from('groups').select('id, name'),
+      supabase.from('groups').select('id, name, teacher_id'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
     const groupMap = {}
@@ -50,16 +50,30 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
       if (!tgMap[r.teacher_id]) tgMap[r.teacher_id] = []
       if (r.groups) tgMap[r.teacher_id].push(r.groups.name)
     })
+    // A teacher can be attached to a group via the legacy groups.teacher_id
+    // field or via the teacher_groups junction (multi-teacher groups) — combine
+    // both so a teacher assigned only through the older field still shows here.
+    const primaryMap = {}
+    ;(groupData || []).forEach(g => {
+      if (!g.teacher_id) return
+      if (!primaryMap[g.teacher_id]) primaryMap[g.teacher_id] = []
+      primaryMap[g.teacher_id].push(g.name)
+    })
+    function namesForTeacher(u) {
+      const names = new Set([...(tgMap[u.id] || []), ...(primaryMap[u.id] || [])])
+      if (names.size === 0 && u.group_id && groupMap[u.group_id]) names.add(groupMap[u.group_id])
+      return [...names]
+    }
     if (userErr) {
       if (userErr.message?.includes('can_edit_students')) {
         const { data: fallback } = await supabase
           .from('users').select('id, name, email, phone, role, extra_roles, last_login, last_seen, group_id').order('role').order('name')
-        setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
+        setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupNames: namesForTeacher(u) })))
         setLoadError('⚠ Run the teacher-edit-permission.txt SQL to enable the Edit Students toggle.')
       } else if (userErr.message?.includes('last_seen')) {
         const { data: fallback } = await supabase
           .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, group_id').order('role').order('name')
-        setUsers((fallback || []).map(u => ({ ...u, last_seen: null, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
+        setUsers((fallback || []).map(u => ({ ...u, last_seen: null, groupNames: namesForTeacher(u) })))
         setLoadError('⚠ Run the fix-add-last-seen.sql migration to enable the Last Seen column.')
       } else {
         setLoadError('Error loading users: ' + userErr.message)
@@ -67,7 +81,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
       setLoading(false)
       return
     }
-    setUsers((userData || []).map(u => ({ ...u, groupNames: tgMap[u.id] || (u.group_id ? [groupMap[u.group_id]] : []) })))
+    setUsers((userData || []).map(u => ({ ...u, groupNames: namesForTeacher(u) })))
     setLoading(false)
   }
 

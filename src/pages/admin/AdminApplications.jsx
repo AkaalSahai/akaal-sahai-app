@@ -35,20 +35,25 @@ export default function AdminApplications({ readOnly }) {
 
   async function load() {
     try {
-      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }] = await Promise.all([
+      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }, { data: tg }] = await Promise.all([
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
         supabase.from('users').select('id, name, role, extra_roles'),
+        supabase.from('teacher_groups').select('teacher_id, group_id'),
       ])
       const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
       const tMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
       setTeacherMap(tMap)
+      // A group's teacher can be set via the legacy groups.teacher_id field or
+      // via the teacher_groups junction (multi-teacher groups) — check both.
+      const tgGroupMap = {}
+      ;(tg || []).forEach(r => { if (!tgGroupMap[r.group_id] && tMap[r.teacher_id]) tgGroupMap[r.group_id] = tMap[r.teacher_id] })
       setStudentApps(sa || [])
       setTeacherApps(ta || [])
-      setGroups((gr || []).map(g => ({ ...g, teacherName: tMap[g.teacher_id] || null })))
+      setGroups((gr || []).map(g => ({ ...g, teacherName: tMap[g.teacher_id] || tgGroupMap[g.id] || null })))
       setTransfers(tr || [])
     } catch (err) {
       console.error('Applications load error:', err)

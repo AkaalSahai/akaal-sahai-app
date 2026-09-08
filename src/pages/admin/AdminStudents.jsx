@@ -51,25 +51,92 @@ export default function AdminStudents({ readOnly }) {
   const [sortDir, setSortDir] = useState('asc')
   const [removalRequests, setRemovalRequests] = useState([])
   const [removalBusy, setRemovalBusy] = useState(null)
+  const [editingStudentId, setEditingStudentId] = useState(null)
+  const [editForm, setEditForm] = useState(null)
+  const [savingStudent, setSavingStudent] = useState(false)
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }] = await Promise.all([
       supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
       supabase.from('transfer_requests').select('*')
         .eq('request_type', 'removal').eq('status', 'pending'),
-      supabase.from('users').select('id, name').eq('role', 'teacher'),
+      supabase.from('users').select('id, name, role, extra_roles'),
+      supabase.from('teacher_groups').select('teacher_id, group_id'),
     ])
-    const teacherMap = Object.fromEntries((us || []).map(u => [u.id, u.name]))
+    const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
+    const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
+    // A group's teacher can be set via the legacy groups.teacher_id field or via
+    // the teacher_groups junction (multi-teacher groups) — check both, same as
+    // AdminGroups.jsx.
+    const tgGroupMap = {}
+    ;(tg || []).forEach(r => { if (!tgGroupMap[r.group_id] && teacherMap[r.teacher_id]) tgGroupMap[r.group_id] = teacherMap[r.teacher_id] })
     const noteMap = {}
     ;(n || []).forEach(note => { noteMap[note.student_id] = note })
     setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
-    setGroups((g || []).map(grp => ({ ...grp, teacherName: teacherMap[grp.teacher_id] || null })))
+    setGroups((g || []).map(grp => ({ ...grp, teacherName: teacherMap[grp.teacher_id] || tgGroupMap[grp.id] || null })))
     setRemovalRequests(removals || [])
     setLoading(false)
+  }
+
+  function startEditStudent(s) {
+    if (readOnly) return
+    setExpanded(s.id)
+    setEditForm({
+      first_name: s.first_name || '', middle_name: s.middle_name || '', last_name: s.last_name || '',
+      date_of_birth: s.date_of_birth || '',
+      parent_name: s.parent_name || '', relationship: s.relationship || '',
+      phone: s.phone || '', secondary_phone: s.secondary_phone || '',
+      email: s.email || '', house_no: s.house_no || '', street_name: s.street_name || '',
+      town: s.town || '', postcode: s.postcode || '',
+      medical_notes: s.medical_notes || '', photo_consent: s.photo_consent || false,
+    })
+    setEditingStudentId(s.id)
+  }
+
+  function cancelEditStudent() {
+    setEditingStudentId(null)
+    setEditForm(null)
+  }
+
+  function setEdit(k) { return e => setEditForm(f => ({ ...f, [k]: e.target.value })) }
+  function setEditCheck(k) { return e => setEditForm(f => ({ ...f, [k]: e.target.checked })) }
+
+  async function saveEditStudent(studentId) {
+    if (readOnly) return
+    if (!editForm.first_name.trim() || !editForm.last_name.trim()) {
+      alert('First name and last name are required'); return
+    }
+    setSavingStudent(true)
+    try {
+      const payload = {
+        first_name: editForm.first_name.trim(),
+        middle_name: editForm.middle_name.trim() || null,
+        last_name: editForm.last_name.trim(),
+        date_of_birth: editForm.date_of_birth || null,
+        parent_name: editForm.parent_name.trim() || null,
+        relationship: editForm.relationship.trim() || null,
+        phone: editForm.phone.trim() || null,
+        secondary_phone: editForm.secondary_phone.trim() || null,
+        email: editForm.email.trim() || null,
+        house_no: editForm.house_no.trim() || null,
+        street_name: editForm.street_name.trim() || null,
+        town: editForm.town.trim() || null,
+        postcode: editForm.postcode.trim() || null,
+        medical_notes: editForm.medical_notes.trim() || null,
+        photo_consent: editForm.photo_consent,
+      }
+      const { error } = await supabase.from('students').update(payload).eq('id', studentId)
+      if (error) throw error
+      logAction(profile, 'Updated student details', `${payload.first_name} ${payload.last_name}`).catch(() => {})
+      setEditingStudentId(null)
+      setEditForm(null)
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setSavingStudent(false) }
   }
 
   async function loadAttendHistory(studentId) {
@@ -351,7 +418,10 @@ export default function AdminStudents({ readOnly }) {
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button className="btn btn-outline btn-xs"
-                          onClick={() => setExpanded(expanded === s.id ? null : s.id)}>
+                          onClick={() => {
+                            if (editingStudentId === s.id) cancelEditStudent()
+                            setExpanded(expanded === s.id ? null : s.id)
+                          }}>
                           {expanded === s.id ? 'Less' : 'Details'}
                         </button>
                         {!readOnly && (
@@ -363,6 +433,9 @@ export default function AdminStudents({ readOnly }) {
                           </button>
                         )}
                         {!readOnly && (
+                          <button className="btn btn-outline btn-xs" onClick={() => startEditStudent(s)}>Edit</button>
+                        )}
+                        {!readOnly && (
                           <button className="btn btn-danger btn-xs" onClick={() => deactivate(s.id)}>Remove</button>
                         )}
                       </div>
@@ -372,49 +445,142 @@ export default function AdminStudents({ readOnly }) {
                   {expanded === s.id && (
                     <tr key={s.id + '-exp'}>
                       <td colSpan={7} style={{ background: '#f8fafc', padding: '12px 16px' }}>
-                        <div className="app-details">
-                          <Detail label="Parent/Guardian" value={s.parent_name} />
-                          <Detail label="Relationship" value={s.relationship} />
-                          <Detail label="Phone" value={s.phone} />
-                          <Detail label="Secondary Phone" value={s.secondary_phone || '—'} />
-                          <Detail label="Email" value={s.email || '—'} />
-                          <Detail label="Address" value={[s.house_no, s.street_name, s.town, s.postcode].filter(Boolean).join(', ')} />
-                          {s.medical_notes && <Detail label="Medical Notes" value={s.medical_notes} />}
-                          <Detail label="Photo Consent" value={s.photo_consent ? 'Yes' : 'No'} />
-                          {s.note?.progress_level && (
-                            <Detail label="Teacher Assessment"
-                              value={PROGRESS[s.note.progress_level]?.label || s.note.progress_level} />
-                          )}
-                          {s.note?.comments && <Detail label="Teacher Comments" value={s.note.comments} />}
-                          {s.note?.updated_at && (
-                            <Detail label="Notes Last Updated"
-                              value={fmtDate(s.note.updated_at)} />
-                          )}
-                        </div>
-                        {!readOnly && (
-                          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Move to group:</label>
-                            <select value={s.group_id || ''} onChange={e => e.target.value && e.target.value !== s.group_id && moveGroup(s.id, e.target.value)}
-                              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }}>
-                              <option value="">— select —</option>
-                              {groups.map(g => {
-                                const t = g.teacher
-                                const teacher = t ? `${t.first_name} ${t.last_name}` : 'No teacher'
-                                return <option key={g.id} value={g.id}>{g.name} — {teacher}</option>
-                              })}
-                            </select>
+                        {!readOnly && editingStudentId === s.id && editForm ? (
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '.85rem', marginBottom: 12, color: 'var(--primary)' }}>
+                              Edit Student Details
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Student Details</div>
+                            <div className="form-grid" style={{ marginBottom: 12 }}>
+                              <div className="form-group">
+                                <label>First Name *</label>
+                                <input value={editForm.first_name} onChange={setEdit('first_name')} />
+                              </div>
+                              <div className="form-group">
+                                <label>Middle Name</label>
+                                <input value={editForm.middle_name} onChange={setEdit('middle_name')} placeholder="Optional" />
+                              </div>
+                              <div className="form-group">
+                                <label>Last Name *</label>
+                                <input value={editForm.last_name} onChange={setEdit('last_name')} />
+                              </div>
+                              <div className="form-group">
+                                <label>Date of Birth</label>
+                                <input type="date" value={editForm.date_of_birth} onChange={setEdit('date_of_birth')} />
+                              </div>
+                            </div>
+
+                            <div style={{ fontWeight: 600, fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Parent / Guardian</div>
+                            <div className="form-grid" style={{ marginBottom: 12 }}>
+                              <div className="form-group">
+                                <label>Parent Name</label>
+                                <input value={editForm.parent_name} onChange={setEdit('parent_name')} />
+                              </div>
+                              <div className="form-group">
+                                <label>Relationship</label>
+                                <select value={editForm.relationship} onChange={setEdit('relationship')}>
+                                  <option value="">Select…</option>
+                                  {['Mother','Father','Guardian','Grandparent','Sibling','Other'].map(r => (
+                                    <option key={r} value={r}>{r}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-group">
+                                <label>Phone</label>
+                                <input value={editForm.phone} onChange={setEdit('phone')} placeholder="+447700000000" />
+                              </div>
+                              <div className="form-group">
+                                <label>Secondary Phone</label>
+                                <input value={editForm.secondary_phone} onChange={setEdit('secondary_phone')} placeholder="Optional" />
+                              </div>
+                              <div className="form-group">
+                                <label>Email</label>
+                                <input type="email" value={editForm.email} onChange={setEdit('email')} />
+                              </div>
+                            </div>
+
+                            <div style={{ fontWeight: 600, fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Address</div>
+                            <div className="form-grid" style={{ marginBottom: 12 }}>
+                              <div className="form-group">
+                                <label>House No.</label>
+                                <input value={editForm.house_no} onChange={setEdit('house_no')} />
+                              </div>
+                              <div className="form-group">
+                                <label>Street</label>
+                                <input value={editForm.street_name} onChange={setEdit('street_name')} />
+                              </div>
+                              <div className="form-group">
+                                <label>Town</label>
+                                <input value={editForm.town} onChange={setEdit('town')} />
+                              </div>
+                              <div className="form-group">
+                                <label>Postcode</label>
+                                <input value={editForm.postcode} onChange={setEdit('postcode')} />
+                              </div>
+                            </div>
+
+                            <div style={{ fontWeight: 600, fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Medical & Consent</div>
+                            <div className="form-group" style={{ marginBottom: 10 }}>
+                              <label>Medical Notes / Conditions</label>
+                              <textarea value={editForm.medical_notes} onChange={setEdit('medical_notes')} rows={3} />
+                            </div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.85rem', marginBottom: 16, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={editForm.photo_consent} onChange={setEditCheck('photo_consent')} style={{ width: 'auto' }} />
+                              Photo consent given
+                            </label>
+
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button className="btn btn-success" disabled={savingStudent} onClick={() => saveEditStudent(s.id)}>
+                                {savingStudent ? 'Saving…' : 'Save Changes'}
+                              </button>
+                              <button className="btn btn-outline" onClick={cancelEditStudent}>Cancel</button>
+                            </div>
                           </div>
-                        )}
-                        {!readOnly && (
-                          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Date joined:</label>
-                            <input type="date" defaultValue={s.date_joined || ''}
-                              onBlur={e => e.target.value && e.target.value !== s.date_joined && updateDateJoined(s.id, e.target.value)}
-                              style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }} />
-                            <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>
-                              Correct this if it was set automatically on import rather than their real join date
-                            </span>
-                          </div>
+                        ) : (
+                          <>
+                            <div className="app-details">
+                              <Detail label="Parent/Guardian" value={s.parent_name} />
+                              <Detail label="Relationship" value={s.relationship} />
+                              <Detail label="Phone" value={s.phone} />
+                              <Detail label="Secondary Phone" value={s.secondary_phone || '—'} />
+                              <Detail label="Email" value={s.email || '—'} />
+                              <Detail label="Address" value={[s.house_no, s.street_name, s.town, s.postcode].filter(Boolean).join(', ')} />
+                              {s.medical_notes && <Detail label="Medical Notes" value={s.medical_notes} />}
+                              <Detail label="Photo Consent" value={s.photo_consent ? 'Yes' : 'No'} />
+                              {s.note?.progress_level && (
+                                <Detail label="Teacher Assessment"
+                                  value={PROGRESS[s.note.progress_level]?.label || s.note.progress_level} />
+                              )}
+                              {s.note?.comments && <Detail label="Teacher Comments" value={s.note.comments} />}
+                              {s.note?.updated_at && (
+                                <Detail label="Notes Last Updated"
+                                  value={fmtDate(s.note.updated_at)} />
+                              )}
+                            </div>
+                            {!readOnly && (
+                              <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Move to group:</label>
+                                <select value={s.group_id || ''} onChange={e => e.target.value && e.target.value !== s.group_id && moveGroup(s.id, e.target.value)}
+                                  style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }}>
+                                  <option value="">— select —</option>
+                                  {groups.map(g => (
+                                    <option key={g.id} value={g.id}>{g.name} — {g.teacherName || 'No teacher'}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                            {!readOnly && (
+                              <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                                <label style={{ fontSize: '.8rem', marginBottom: 0 }}>Date joined:</label>
+                                <input type="date" defaultValue={s.date_joined || ''}
+                                  onBlur={e => e.target.value && e.target.value !== s.date_joined && updateDateJoined(s.id, e.target.value)}
+                                  style={{ padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: '.83rem' }} />
+                                <span style={{ fontSize: '.72rem', color: 'var(--muted)' }}>
+                                  Correct this if it was set automatically on import rather than their real join date
+                                </span>
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
