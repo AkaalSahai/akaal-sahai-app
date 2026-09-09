@@ -7,6 +7,7 @@ import AdminApplications from '../admin/AdminApplications'
 import AdminStudents from '../admin/AdminStudents'
 import AdminGroups from '../admin/AdminGroups'
 import AdminUsers from '../admin/AdminUsers'
+import AdminTeacherRegister from '../admin/AdminTeacherRegister'
 import TeacherStudents from './TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
@@ -149,6 +150,7 @@ export default function TeacherLayout() {
 
   const showAdminTabs = isRegistrar || isAdminView
   const showUserTab   = isAdmin
+  const canManageTeacherRegister = !!myProfile?.can_manage_teacher_register
 
   const tabs = [
     { id: 'register',    label: 'Daily Register' },
@@ -158,6 +160,7 @@ export default function TeacherLayout() {
     ...(showAdminTabs ? [{ id: 'students',     label: 'All Students' }] : []),
     ...(showAdminTabs ? [{ id: 'groups',       label: 'Groups'       }] : []),
     ...(showUserTab   ? [{ id: 'users',        label: 'Teachers'     }] : []),
+    ...(canManageTeacherRegister ? [{ id: 'teacherregister', label: 'Teacher Register' }] : []),
     { id: 'message', label: 'Message Admin' },
   ]
 
@@ -204,6 +207,7 @@ export default function TeacherLayout() {
         {tab === 'students'     && <AdminStudents readOnly={adminReadOnly} />}
         {tab === 'groups'       && <AdminGroups readOnly={adminReadOnly} />}
         {tab === 'users'        && <AdminUsers readOnly={usersReadOnly} />}
+        {tab === 'teacherregister' && <AdminTeacherRegister />}
         {tab === 'message'      && <TeacherMessage />}
       </div>
     </div>
