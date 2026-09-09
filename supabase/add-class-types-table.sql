@@ -39,8 +39,13 @@ create policy "class_types_admin_manage" on public.class_types for all using (
 
 -- Seed the two existing extra classes so nothing changes for current
 -- Gatka/Kirtan groups - exact same label/color/day values as the old
--- hardcoded CLASS_META.
-insert into public.class_types (key, label, color, bg, days, day_names) values
-  ('gatka',  'Gatka',  '#15803d', '#f0fdf4', '{0}', 'Sundays'),
-  ('kirtan', 'Kirtan', '#7c3aed', '#f5f3ff', '{3}', 'Wednesdays')
+-- hardcoded CLASS_META. Two separate statements (rather than one
+-- multi-row insert) so no single line is long enough to get cut off
+-- when copying into the SQL editor.
+insert into public.class_types (key, label, color, bg, days, day_names)
+values ('gatka', 'Gatka', '#15803d', '#f0fdf4', '{0}', 'Sundays')
+on conflict (key) do nothing;
+
+insert into public.class_types (key, label, color, bg, days, day_names)
+values ('kirtan', 'Kirtan', '#7c3aed', '#f5f3ff', '{3}', 'Wednesdays')
 on conflict (key) do nothing;
