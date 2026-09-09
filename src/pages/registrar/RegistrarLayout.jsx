@@ -6,6 +6,7 @@ import AdminStudents from '../admin/AdminStudents'
 import AdminGroups from '../admin/AdminGroups'
 import AdminClasses from '../admin/AdminClasses'
 import AdminUsers from '../admin/AdminUsers'
+import AdminTeacherRegister from '../admin/AdminTeacherRegister'
 import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
@@ -13,8 +14,9 @@ import { useAuth } from '../../hooks/useAuth'
 
 export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
-  const { hasRole }   = useAuth()
+  const { hasRole, profile } = useAuth()
   const isTeacher     = hasRole('teacher')
+  const canManageTeacherRegister = !!profile?.can_manage_teacher_register
 
   const tabs = [
     { id: 'dashboard',    label: 'Dashboard'    },
@@ -26,6 +28,7 @@ export default function RegistrarLayout() {
     ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
     ...(isTeacher ? [{ id: 'reports',     label: 'My Reports'   }] : []),
     ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
+    ...(canManageTeacherRegister ? [{ id: 'teacherregister', label: 'Teacher Register' }] : []),
   ]
 
   return (
@@ -48,6 +51,7 @@ export default function RegistrarLayout() {
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}
+        {tab === 'teacherregister' && <AdminTeacherRegister />}
       </div>
     </div>
   )

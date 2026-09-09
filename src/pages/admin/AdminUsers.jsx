@@ -41,7 +41,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   async function load() {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, last_seen, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, last_login, last_seen, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name, teacher_id'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
@@ -67,7 +67,12 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
       return [...names]
     }
     if (userErr) {
-      if (userErr.message?.includes('can_edit_students')) {
+      if (userErr.message?.includes('can_manage_teacher_register')) {
+        const { data: fallback } = await supabase
+          .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, last_seen, group_id').order('role').order('name')
+        setUsers((fallback || []).map(u => ({ ...u, can_manage_teacher_register: false, groupNames: namesForTeacher(u) })))
+        setLoadError('⚠ Run the add-teacher-register-manager-permission.sql migration to enable the Register Manager toggle.')
+      } else if (userErr.message?.includes('can_edit_students')) {
         const { data: fallback } = await supabase
           .from('users').select('id, name, email, phone, role, extra_roles, last_login, last_seen, group_id').order('role').order('name')
         setUsers((fallback || []).map(u => ({ ...u, can_edit_students: false, groupNames: namesForTeacher(u) })))
@@ -224,6 +229,17 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  async function toggleRegisterManager(userId, current) {
+    const updated = !current
+    try {
+      const { error } = await supabase.from('users').update({ can_manage_teacher_register: updated }).eq('id', userId)
+      if (error) throw error
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Toggled Teacher Register manager permission', `${u?.name}: ${updated ? 'enabled' : 'disabled'}`).catch(() => {})
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, can_manage_teacher_register: updated } : u))
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
   function openEdit(u) {
     setEditPanel(prev => ({ ...prev, [u.id]: { name: u.name || '', email: u.email || '', phone: u.phone || '' } }))
   }
@@ -275,6 +291,10 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     return 0
   }
 
+  function registerManagerRank(u) {
+    return u.can_manage_teacher_register ? 1 : 0
+  }
+
   const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
   const sorted = sortCol
     ? [...users].sort((a, b) => {
@@ -284,6 +304,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         else if (sortCol === 'email') { va = (a.email || '').toLowerCase(); vb = (b.email || '').toLowerCase() }
         else if (sortCol === 'group') { va = (a.groupNames?.[0] || '').toLowerCase(); vb = (b.groupNames?.[0] || '').toLowerCase() }
         else if (sortCol === 'edit_students') { va = editStudentsRank(a); vb = editStudentsRank(b) }
+        else if (sortCol === 'register_manager') { va = registerManagerRank(a); vb = registerManagerRank(b) }
         else if (sortCol === 'last_login') { va = a.last_login || ''; vb = b.last_login || '' }
         else if (sortCol === 'last_seen') { va = a.last_seen || ''; vb = b.last_seen || '' }
         else return 0
@@ -353,6 +374,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th onClick={() => toggleSort('email')} style={{ cursor: 'pointer', userSelect: 'none' }}>Email{sortIcon('email')}</th>
               <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
               <th onClick={() => toggleSort('edit_students')} style={{ cursor: 'pointer', userSelect: 'none' }}>Edit Students{sortIcon('edit_students')}</th>
+              <th onClick={() => toggleSort('register_manager')} style={{ cursor: 'pointer', userSelect: 'none' }}>Register Manager{sortIcon('register_manager')}</th>
               <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
               <th onClick={() => toggleSort('last_seen')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Seen{sortIcon('last_seen')}</th>
               {!readOnly && <th>Actions</th>}
@@ -459,6 +481,27 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                     <span style={{ fontSize: '.75rem', color: '#cbd5e1' }}>—</span>
                   )}
                 </td>
+                <td>
+                  {!readOnly ? (
+                    <button onClick={() => toggleRegisterManager(u.id, u.can_manage_teacher_register)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
+                        border: 'none', cursor: 'pointer', transition: 'all .15s',
+                        background: u.can_manage_teacher_register ? '#dcfce7' : '#f1f5f9',
+                        color: u.can_manage_teacher_register ? '#15803d' : '#94a3b8' }}>
+                      <span style={{ width: 28, height: 16, borderRadius: 8, position: 'relative', display: 'inline-block',
+                        background: u.can_manage_teacher_register ? '#22c55e' : '#cbd5e1', transition: 'background .15s', flexShrink: 0 }}>
+                        <span style={{ position: 'absolute', top: 2, left: u.can_manage_teacher_register ? 14 : 2,
+                          width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+                      </span>
+                      {u.can_manage_teacher_register ? 'Enabled' : 'Disabled'}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: '.75rem', color: u.can_manage_teacher_register ? '#15803d' : '#94a3b8', fontWeight: 600 }}>
+                      {u.can_manage_teacher_register ? 'Enabled' : 'Disabled'}
+                    </span>
+                  )}
+                </td>
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
@@ -486,7 +529,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
-                  <td colSpan={8} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={9} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       Edit Details — {u.name}
                     </div>
@@ -523,7 +566,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={readOnly ? 7 : 8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 8 : 9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
