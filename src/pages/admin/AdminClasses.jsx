@@ -116,6 +116,11 @@ export default function AdminClasses({ readOnly }) {
       .from('students')
       .select('id, first_name, last_name, date_of_birth, groups(id, name, teacher_id)')
       .eq('active', true)
+      // Gatka/Kirtan are extra classes only open to students already
+      // enrolled in a Punjabi class — group_id is that Punjabi group, so
+      // excluding students without one keeps this search to eligible
+      // students only.
+      .not('group_id', 'is', null)
       .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
       .limit(12)
     const enrolledIds = new Set((enrolled[groupId] || []).map(s => s.id))
@@ -366,9 +371,12 @@ export default function AdminClasses({ readOnly }) {
                         textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
                         Add Students
                       </div>
+                      <div style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8 }}>
+                        Only students already enrolled in a Punjabi class can be added to {meta.label}.
+                      </div>
                       <input
                         type="text"
-                        placeholder={enrolledLoading[g.id] ? 'Loading enrolled list…' : 'Type a name to search all active students…'}
+                        placeholder={enrolledLoading[g.id] ? 'Loading enrolled list…' : 'Type a name to search Punjabi-class students…'}
                         value={searchVal}
                         disabled={!!enrolledLoading[g.id]}
                         onChange={e => handleSearch(g.id, e.target.value)}
@@ -377,7 +385,7 @@ export default function AdminClasses({ readOnly }) {
 
                       {searchVal.trim() && searchRes.length === 0 && (
                         <div style={{ fontSize: '.83rem', color: 'var(--muted)' }}>
-                          No matching students found, or all are already enrolled.
+                          No matching Punjabi-class students found, or all are already enrolled.
                         </div>
                       )}
 
