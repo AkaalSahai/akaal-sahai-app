@@ -5,6 +5,7 @@ import AdminApplications from './AdminApplications'
 import AdminStudents from './AdminStudents'
 import AdminUsers from './AdminUsers'
 import AdminGroups from './AdminGroups'
+import AdminClasses from './AdminClasses'
 import AdminImport from './AdminImport'
 import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
@@ -40,6 +41,7 @@ export default function AdminLayout() {
     { id: 'applications', label: 'Applications' },
     { id: 'students',     label: 'Students'     },
     { id: 'groups',       label: 'Groups'       },
+    { id: 'classes',      label: 'Classes'      },
     { id: 'users',        label: 'Teachers'     },
     ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
     ...(isTeacher ? [{ id: 'myreports',   label: 'My Reports'   }] : []),
@@ -74,6 +76,7 @@ export default function AdminLayout() {
         {tab === 'applications' && <AdminApplications readOnly={readOnly} />}
         {tab === 'students'     && <AdminStudents readOnly={readOnly} />}
         {tab === 'groups'       && <AdminGroups readOnly={readOnly} />}
+        {tab === 'classes'      && <AdminClasses readOnly={readOnly} />}
         {tab === 'users'        && <AdminUsers readOnly={readOnly} />}
         {tab === 'import'       && <AdminImport readOnly={readOnly} />}
         {tab === 'register'     && <TeacherRegister />}
