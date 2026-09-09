@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { isAnyClassDay } from '../../lib/classTypes'
+import { CLASS_META, isAnyClassDay, loadClassTypes } from '../../lib/classTypes'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
@@ -9,6 +9,9 @@ export default function AdminRegisterStatus() {
   const [loading, setLoading]   = useState(true)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [filterMissing, setFilterMissing] = useState(false)
+  const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
+
+  useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
   const load = useCallback(async () => {
     const today = todayISO()
@@ -69,7 +72,7 @@ export default function AdminRegisterStatus() {
 
   if (loading) return <div className="spinner" />
 
-  const classDay  = isAnyClassDay()
+  const classDay  = isAnyClassDay(classTypesMeta)
   const submitted = (data || []).filter(g => g.submitted)
   const missing   = (data || []).filter(g => !g.submitted)
   const displayed = filterMissing ? missing : (data || [])
