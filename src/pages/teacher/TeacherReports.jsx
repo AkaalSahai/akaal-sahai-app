@@ -85,11 +85,13 @@ export default function TeacherReports() {
     ])
 
     const statMap = {}
-    ;(studentData || []).forEach(s => { statMap[s.id] = { present: 0, late: 0, absent: 0, total: 0 } })
+    ;(studentData || []).forEach(s => { statMap[s.id] = { present: 0, late: 0, absent: 0, holiday: 0, total: 0 } })
     ;(records || []).forEach(r => {
       if (!statMap[r.student_id]) return
-      statMap[r.student_id][r.status]++
-      statMap[r.student_id].total++
+      statMap[r.student_id][r.status] = (statMap[r.student_id][r.status] || 0) + 1
+      // Holiday days aren't real class days for attendance-% purposes - don't
+      // count them toward the total (matches AdminDashboard.jsx).
+      if (r.status !== 'holiday') statMap[r.student_id].total++
     })
 
     const noteMap = {}
@@ -225,7 +227,7 @@ export default function TeacherReports() {
 
       <ul className="student-list" style={{ padding: 0 }}>
         {!loading && sorted.map((s, i) => {
-          const st     = stats[s.id] || { present: 0, late: 0, absent: 0, total: 0 }
+          const st     = stats[s.id] || { present: 0, late: 0, absent: 0, holiday: 0, total: 0 }
           const pct    = st.total > 0 ? Math.round(((st.present + st.late) / st.total) * 100) : null
           const pctColor = pct === null ? 'var(--muted)' : pct >= 80 ? '#16a34a' : pct >= 60 ? '#d97706' : '#dc2626'
           const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
@@ -256,7 +258,7 @@ export default function TeacherReports() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-                  {[['P','present','#16a34a'],['L','late','#d97706'],['A','absent','#dc2626']].map(([lbl, key, clr]) => (
+                  {[['P','present','#16a34a'],['L','late','#d97706'],['A','absent','#dc2626'],['H','holiday','#0284c7']].map(([lbl, key, clr]) => (
                     <div key={key} style={{ textAlign: 'center', minWidth: 28 }}>
                       <div style={{ fontSize: '.9rem', fontWeight: 700, color: clr }}>{st[key]}</div>
                       <div style={{ fontSize: '.62rem', color: 'var(--muted)' }}>{lbl}</div>
@@ -329,7 +331,7 @@ export default function TeacherReports() {
                           <tbody>
                             {hist.map((r, idx) => {
                               const d = new Date(r.session_date + 'T12:00:00')
-                              const statusColor = r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : '#dc2626'
+                              const statusColor = r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : r.status === 'holiday' ? '#0284c7' : '#dc2626'
                               return (
                                 <tr key={idx} style={{ borderTop: '1px solid var(--border)' }}>
                                   <td style={{ padding: '7px 12px', fontWeight: 600, whiteSpace: 'nowrap' }}>

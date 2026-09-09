@@ -322,6 +322,7 @@ export default function TeacherRegister() {
   const present = Object.values(attendance).filter(v => v === 'present').length
   const late    = Object.values(attendance).filter(v => v === 'late').length
   const absent  = Object.values(attendance).filter(v => v === 'absent').length
+  const holiday = Object.values(attendance).filter(v => v === 'holiday').length
 
   const saveLabel = saveState === 'saving' ? '⏳ Saving…'
                   : saveState === 'saved'   ? '✓ Saved'
@@ -380,10 +381,10 @@ export default function TeacherRegister() {
         )}
 
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-          {[['present','#16a34a'], ['late','#d97706'], ['absent','#dc2626']].map(([s,c]) => (
+          {[['present','#16a34a'], ['late','#d97706'], ['absent','#dc2626'], ['holiday','#0284c7']].map(([s,c]) => (
             <div key={s} style={{ flex: 1, background: '#f8fafc', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: c }}>
-                {s === 'present' ? present : s === 'late' ? late : absent}
+                {s === 'present' ? present : s === 'late' ? late : s === 'absent' ? absent : holiday}
               </div>
               <div style={{ fontSize: '.7rem', color: 'var(--muted)', textTransform: 'capitalize' }}>{s}</div>
             </div>
@@ -422,7 +423,7 @@ export default function TeacherRegister() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      {[['present','Present'],['late','Late'],['absent','Absent']].map(([st, lbl]) => (
+                      {[['present','Present'],['late','Late'],['absent','Absent'],['holiday','Holiday']].map(([st, lbl]) => (
                         <button key={st}
                           className={`att-btn att-${st}${status === st ? ' active' : ''}`}
                           style={{ padding: '4px 10px', fontSize: '.76rem' }}
@@ -517,7 +518,7 @@ export default function TeacherRegister() {
         {isToday && !loading && students.length > 0 && (
           <div style={{ marginTop: 12, padding: '10px 12px', background: '#f8fafc', borderRadius: 8,
             fontSize: '.78rem', color: 'var(--muted)', textAlign: 'center' }}>
-            {present + late + absent} of {students.length} marked · Unmarked students auto-marked absent at 10pm
+            {present + late + absent + holiday} of {students.length} marked · Unmarked students auto-marked absent at 10pm
           </div>
         )}
       </div>
@@ -535,6 +536,7 @@ export default function TeacherRegister() {
             const p = recs.filter(r => r.status === 'present').length
             const l = recs.filter(r => r.status === 'late').length
             const a = recs.filter(r => r.status === 'absent').length
+            const h = recs.filter(r => r.status === 'holiday').length
             return (
               <div key={session.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0',
                 borderBottom: '1px solid var(--border)', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -545,6 +547,7 @@ export default function TeacherRegister() {
                   <span style={{ color: '#16a34a', fontWeight: 700 }}>{p}P</span>
                   <span style={{ color: '#d97706', fontWeight: 700 }}>{l}L</span>
                   <span style={{ color: '#dc2626', fontWeight: 700 }}>{a}A</span>
+                  {h > 0 && <span style={{ color: '#0284c7', fontWeight: 700 }}>{h}H</span>}
                 </div>
               </div>
             )

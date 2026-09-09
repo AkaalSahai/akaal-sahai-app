@@ -146,6 +146,8 @@ tr:last-child td { border-bottom: none; }
 .att-absent.active  { background: #dc2626; color: white; }
 .att-late    { background: #fffbeb; color: #d97706; border-color: #fde68a; }
 .att-late.active    { background: #d97706; color: white; }
+.att-holiday { background: #f0f9ff; color: #0284c7; border-color: #bae6fd; }
+.att-holiday.active { background: #0284c7; color: white; }
 
 /* ── PUBLIC SCREEN ── */
 .public-screen { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 20px; background: linear-gradient(160deg, #1e1a6e 0%, #2d28a0 60%, #f0a500 200%); }

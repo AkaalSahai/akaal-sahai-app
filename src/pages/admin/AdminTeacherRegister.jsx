@@ -6,10 +6,10 @@ import { logAction } from '../../lib/audit'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
-const STATUS_LABEL = { present: 'Present', absent: 'Absent', late: 'Late' }
-const STATUS_COLOR  = { present: '#16a34a', absent: '#dc2626', late: '#d97706' }
-const STATUS_BG     = { present: '#f0fdf4', absent: '#fef2f2', late: '#fffbeb' }
-const STATUS_BORDER = { present: '#bbf7d0', absent: '#fecaca', late: '#fde68a' }
+const STATUS_LABEL = { present: 'Present', absent: 'Absent', late: 'Late', holiday: 'Holiday' }
+const STATUS_COLOR  = { present: '#16a34a', absent: '#dc2626', late: '#d97706', holiday: '#0284c7' }
+const STATUS_BG     = { present: '#f0fdf4', absent: '#fef2f2', late: '#fffbeb', holiday: '#f0f9ff' }
+const STATUS_BORDER = { present: '#bbf7d0', absent: '#fecaca', late: '#fde68a', holiday: '#bae6fd' }
 
 export default function AdminTeacherRegister({ readOnly }) {
   const { profile } = useAuth()
@@ -130,7 +130,8 @@ export default function AdminTeacherRegister({ readOnly }) {
   const present  = teachers.filter(t => attendance[t.id]?.status === 'present').length
   const absent   = teachers.filter(t => attendance[t.id]?.status === 'absent').length
   const late     = teachers.filter(t => attendance[t.id]?.status === 'late').length
-  const unmarked = teachers.length - present - absent - late
+  const holiday  = teachers.filter(t => attendance[t.id]?.status === 'holiday').length
+  const unmarked = teachers.length - present - absent - late - holiday
 
   if (loading) return <div className="spinner" />
 
@@ -152,6 +153,7 @@ export default function AdminTeacherRegister({ readOnly }) {
           { value: present,  label: 'Present', color: '#16a34a' },
           { value: absent,   label: 'Absent',  color: '#dc2626' },
           { value: late,     label: 'Late',    color: '#d97706' },
+          { value: holiday,  label: 'Holiday', color: '#0284c7' },
           { value: unmarked, label: 'Not marked', color: '#94a3b8' },
         ].map(({ value, label, color }) => (
           <div key={label} className="card" style={{ flex: 1, minWidth: 100, margin: 0,
@@ -221,7 +223,7 @@ export default function AdminTeacherRegister({ readOnly }) {
                       <td>
                         {!readOnly ? (
                           <div style={{ display: 'flex', gap: 5 }}>
-                            {['present', 'absent', 'late'].map(s => (
+                            {['present', 'absent', 'late', 'holiday'].map(s => (
                               <button key={s}
                                 disabled={isBusy}
                                 onClick={() => markStatus(t, s)}
@@ -310,7 +312,7 @@ export default function AdminTeacherRegister({ readOnly }) {
             // Group records by session_date, summarise
             const byDate = {}
             history.forEach(r => {
-              if (!byDate[r.session_date]) byDate[r.session_date] = { present: 0, absent: 0, late: 0 }
+              if (!byDate[r.session_date]) byDate[r.session_date] = { present: 0, absent: 0, late: 0, holiday: 0 }
               byDate[r.session_date][r.status] = (byDate[r.session_date][r.status] || 0) + 1
             })
             const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
@@ -323,19 +325,21 @@ export default function AdminTeacherRegister({ readOnly }) {
                       <th>Present</th>
                       <th>Absent</th>
                       <th>Late</th>
+                      <th>Holiday</th>
                       <th>Total Marked</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dates.map(d => {
                       const row = byDate[d]
-                      const total = (row.present || 0) + (row.absent || 0) + (row.late || 0)
+                      const total = (row.present || 0) + (row.absent || 0) + (row.late || 0) + (row.holiday || 0)
                       return (
                         <tr key={d} style={{ cursor: 'pointer' }} onClick={() => setDate(d)}>
                           <td style={{ fontWeight: 600 }}>{fmtDate(d)}</td>
                           <td style={{ color: '#16a34a', fontWeight: 700 }}>{row.present || 0}</td>
                           <td style={{ color: '#dc2626', fontWeight: 700 }}>{row.absent || 0}</td>
                           <td style={{ color: '#d97706', fontWeight: 700 }}>{row.late || 0}</td>
+                          <td style={{ color: '#0284c7', fontWeight: 700 }}>{row.holiday || 0}</td>
                           <td style={{ color: 'var(--muted)' }}>{total}</td>
                         </tr>
                       )
