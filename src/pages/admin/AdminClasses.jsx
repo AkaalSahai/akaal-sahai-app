@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { CLASS_META } from '../../lib/classTypes'
@@ -30,6 +31,7 @@ export default function AdminClasses({ readOnly }) {
   const [results, setResults]   = useState({})
   const [enrolBusy, setEnrolBusy] = useState(null)
   const [groupTeacherMap, setGroupTeacherMap] = useState({})  // ANY group_id → teacher_ids via teacher_groups
+  const [dialog, setDialog]     = useState(null)
   const searchTimers            = useRef({})
 
   useEffect(() => { load() }, [])
@@ -132,24 +134,72 @@ export default function AdminClasses({ readOnly }) {
 
   async function enrolStudent(student, groupId) {
     const key = student.id + groupId
+    const targetGroup = groups.find(x => x.id === groupId)
     setEnrolBusy(key)
     try {
+      // A student may only be in one Gatka group and one Kirtan group at a
+      // time - check for an existing enrollment in another group of the
+      // SAME class_type (not just this exact group).
+      const { data: existingRows, error: checkErr } = await supabase
+        .from('student_classes')
+        .select('group_id, groups(id, name, class_type)')
+        .eq('student_id', student.id)
+      if (checkErr) throw checkErr
+      const conflict = (existingRows || []).find(r =>
+        r.group_id !== groupId && r.groups?.class_type === targetGroup?.class_type
+      )
+
+      if (conflict) {
+        setEnrolBusy(null)
+        setDialog({
+          message: `${student.first_name} ${student.last_name} is currently in "${conflict.groups.name}". Move them to "${targetGroup?.name}" instead?`,
+          confirmText: 'Move Student',
+          onConfirm: () => {
+            setDialog(null)
+            doEnrol(student, groupId, conflict.group_id)
+          },
+        })
+        return
+      }
+      await doEnrol(student, groupId, null)
+    } catch (err) { alert(err.message); setEnrolBusy(null) }
+  }
+
+  async function doEnrol(student, groupId, removeFromGroupId) {
+    const key = student.id + groupId
+    setEnrolBusy(key)
+    try {
+      if (removeFromGroupId) {
+        const { error: delErr } = await supabase.from('student_classes').delete()
+          .eq('student_id', student.id).eq('group_id', removeFromGroupId)
+        if (delErr) throw delErr
+      }
       const { error } = await supabase.from('student_classes')
         .insert({ student_id: student.id, group_id: groupId })
       if (error) throw error
       const g = groups.find(x => x.id === groupId)
+      const fromGroup = removeFromGroupId ? groups.find(x => x.id === removeFromGroupId) : null
       logAction(profile, 'Enrolled student in class',
-        `${student.first_name} ${student.last_name} → ${g?.name}`).catch(() => {})
-      setEnrolled(prev => ({
-        ...prev,
-        [groupId]: [...(prev[groupId] || []), student],
-      }))
+        fromGroup
+          ? `${student.first_name} ${student.last_name}: ${fromGroup.name} → ${g?.name}`
+          : `${student.first_name} ${student.last_name} → ${g?.name}`
+      ).catch(() => {})
+      setEnrolled(prev => {
+        const next = { ...prev, [groupId]: [...(prev[groupId] || []), student] }
+        if (removeFromGroupId && next[removeFromGroupId]) {
+          next[removeFromGroupId] = next[removeFromGroupId].filter(s => s.id !== student.id)
+        }
+        return next
+      })
       setResults(prev => ({
         ...prev,
         [groupId]: (prev[groupId] || []).filter(s => s.id !== student.id),
       }))
-      setGroups(prev => prev.map(g => g.id === groupId
-        ? { ...g, studentCount: g.studentCount + 1 } : g))
+      setGroups(prev => prev.map(x => {
+        if (x.id === groupId) return { ...x, studentCount: x.studentCount + 1 }
+        if (x.id === removeFromGroupId) return { ...x, studentCount: Math.max(0, x.studentCount - 1) }
+        return x
+      }))
     } catch (err) { alert(err.message) }
     finally { setEnrolBusy(null) }
   }
@@ -198,6 +248,7 @@ export default function AdminClasses({ readOnly }) {
 
   return (
     <div>
+      {dialog && <ConfirmDialog {...dialog} onCancel={() => setDialog(null)} />}
       {/* Class type tabs */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         {['gatka', 'kirtan'].map(type => {
