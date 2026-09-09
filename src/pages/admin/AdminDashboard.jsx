@@ -2,14 +2,13 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
 import { useAuth } from '../../hooks/useAuth'
-import { isAnyClassDay } from '../../lib/classTypes'
+import { CLASS_META, isAnyClassDay, loadClassTypes } from '../../lib/classTypes'
 import { getVerificationStatus } from '../../lib/verification'
 import AdminRegisterStatus from './AdminRegisterStatus'
 import AdminVerificationStatus from './AdminVerificationStatus'
 import html2canvas from 'html2canvas'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
-function isClassDay() { return isAnyClassDay() }
 
 function getLastWeekend() {
   const d = new Date()
@@ -43,7 +42,7 @@ function attColor(p) {
 }
 
 
-function LiveAttendanceWidget() {
+function LiveAttendanceWidget({ classTypesMeta }) {
   const [date,        setDate]        = useState(todayISO)
   const [groups,      setGroups]      = useState(null)
   const [totals,      setTotals]      = useState(null)
@@ -115,7 +114,7 @@ function LiveAttendanceWidget() {
   }
 
   const isToday  = date === todayISO()
-  const classDay = isClassDay()
+  const classDay = isAnyClassDay(classTypesMeta || CLASS_META)
 
   return (
     <div className="card" style={{ margin: 0 }}>
@@ -272,9 +271,11 @@ export default function AdminDashboard({ setTab }) {
   const [showVerify, setShowVerify] = useState(false)
   const [reportBusy, setReportBusy] = useState(false)
   const [reportData, setReportData] = useState(null)
+  const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const reportRef = useRef(null)
 
   useEffect(() => { load() }, [])
+  useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
   async function loadData() {
     if (_dashCache && Date.now() - _dashCacheAt < DASH_CACHE_TTL) {
@@ -541,7 +542,7 @@ export default function AdminDashboard({ setTab }) {
     groupsFullyVerified, groupsWithStudentsCount } = data
 
   const notDoneGroups = enrichedGroups.filter(g => !g.doneToday)
-  const classDay      = isClassDay()
+  const classDay      = isAnyClassDay(classTypesMeta)
   const totalPending  = (pendingStudents || 0) + (pendingTeachers || 0)
 
   return (
@@ -761,7 +762,7 @@ export default function AdminDashboard({ setTab }) {
       )}
 
       {/* Live attendance widget */}
-      <LiveAttendanceWidget />
+      <LiveAttendanceWidget classTypesMeta={classTypesMeta} />
 
       {/* Group health grid */}
       <div>

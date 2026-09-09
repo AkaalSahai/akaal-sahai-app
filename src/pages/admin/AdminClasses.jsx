@@ -3,8 +3,11 @@ import { supabase } from '../../lib/supabase'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
-import { CLASS_META } from '../../lib/classTypes'
+import { loadClassTypes, formatDayNames } from '../../lib/classTypes'
 import { fmtDate } from '../../lib/dates'
+
+const COLOR_PRESETS = ['#15803d', '#7c3aed', '#0284c7', '#ea580c', '#dc2626', '#0d9488', '#db2777', '#4f46e5']
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function calcAge(dob) {
   if (!dob) return null
@@ -16,7 +19,8 @@ function calcAge(dob) {
 
 export default function AdminClasses({ readOnly }) {
   const { profile } = useAuth()
-  const [classTab, setClassTab]   = useState('gatka')
+  const [classTab, setClassTab]   = useState(null)
+  const [classTypes, setClassTypes] = useState({})  // admin-managed extra class types (Gatka, Kirtan, ...)
   const [groups, setGroups]       = useState([])
   const [teachers, setTeachers]   = useState([])
   const [loading, setLoading]     = useState(true)
@@ -32,6 +36,8 @@ export default function AdminClasses({ readOnly }) {
   const [enrolBusy, setEnrolBusy] = useState(null)
   const [groupTeacherMap, setGroupTeacherMap] = useState({})  // ANY group_id → teacher_ids via teacher_groups
   const [dialog, setDialog]     = useState(null)
+  const [manageOpen, setManageOpen] = useState(false)
+  const [classTypeForm, setClassTypeForm] = useState(null)  // null = closed; {key, label, days, color} - key is null when adding new
   const searchTimers            = useRef({})
 
   useEffect(() => { load() }, [])
@@ -39,15 +45,20 @@ export default function AdminClasses({ readOnly }) {
   async function load() {
     setLoading(true)
     try {
-      const [{ data: g }, { data: t }, { data: tg }, { data: sc }] = await Promise.all([
+      const [{ data: g }, { data: t }, { data: tg }, { data: sc }, extraTypes] = await Promise.all([
         supabase.from('groups')
           .select('id, name, class_type, teacher_id')
-          .in('class_type', ['gatka', 'kirtan'])
+          // Any class type other than Punjabi - so a newly admin-added type
+          // (e.g. GCSE Punjabi) shows up here with no code change needed.
+          .neq('class_type', 'punjabi')
           .order('class_type').order('name'),
         supabase.from('users').select('id, name, role, extra_roles').order('name'),
         supabase.from('teacher_groups').select('teacher_id, group_id'),
         supabase.from('student_classes').select('group_id'),
+        loadClassTypes(),
       ])
+      setClassTypes(extraTypes)
+      setClassTab(prev => (prev && extraTypes[prev]) ? prev : (Object.keys(extraTypes)[0] || null))
       const tgMap = {}
       ;(tg || []).forEach(r => {
         if (!tgMap[r.group_id]) tgMap[r.group_id] = []
@@ -70,6 +81,67 @@ export default function AdminClasses({ readOnly }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  function openAddClassType() {
+    setClassTypeForm({ key: null, label: '', days: [], color: COLOR_PRESETS[0] })
+  }
+
+  function openEditClassType(key) {
+    const ct = classTypes[key]
+    if (!ct) return
+    setClassTypeForm({ key, label: ct.label, days: ct.days, color: ct.color })
+  }
+
+  async function saveClassType() {
+    const form = classTypeForm
+    const label = form.label.trim()
+    if (!label) { alert('Please enter a name.'); return }
+    if (form.days.length === 0) { alert('Please pick at least one day.'); return }
+    const dayNames = formatDayNames(form.days)
+    const bg = form.color + '18'  // ~9% opacity tint of the chosen color, as a light background
+
+    if (form.key) {
+      // Editing an existing class type
+      const { error } = await supabase.from('class_types')
+        .update({ label, days: form.days, day_names: dayNames, color: form.color, bg })
+        .eq('key', form.key)
+      if (error) { alert('Error: ' + error.message); return }
+      logAction(profile, 'Updated class type', label).catch(() => {})
+    } else {
+      // Adding a new one - derive a stable key from the label
+      const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+      if (!key || classTypes[key]) { alert('A class type with this name already exists.'); return }
+      const { error } = await supabase.from('class_types')
+        .insert({ key, label, days: form.days, day_names: dayNames, color: form.color, bg })
+      if (error) { alert('Error: ' + error.message); return }
+      logAction(profile, 'Added class type', label).catch(() => {})
+    }
+
+    setClassTypeForm(null)
+    const extra = await loadClassTypes()
+    setClassTypes(extra)
+    if (!form.key) setClassTab(Object.keys(extra).find(k => extra[k].label === label) || classTab)
+  }
+
+  function deleteClassType(key) {
+    const inUse = groups.some(g => g.class_type === key)
+    if (inUse) { alert('Cannot delete — this class type still has groups. Delete or reassign those groups first.'); return }
+    const label = classTypes[key]?.label || key
+    setDialog({
+      message: `Delete the "${label}" class type? This cannot be undone.`,
+      confirmText: 'Delete Class Type',
+      danger: true,
+      onConfirm: async () => {
+        setDialog(null)
+        const { error } = await supabase.from('class_types').delete().eq('key', key)
+        if (error) { alert('Error: ' + error.message); return }
+        logAction(profile, 'Deleted class type', label).catch(() => {})
+        const extra = await loadClassTypes()
+        setClassTypes(extra)
+        setClassTab(prev => (prev === key ? (Object.keys(extra)[0] || null) : prev))
+      },
+    })
   }
 
   // Resolves the teacher for a student's *Punjabi* group (s.groups), checking
@@ -243,19 +315,19 @@ export default function AdminClasses({ readOnly }) {
 
   if (loading) return <div className="spinner" />
 
+  const hasTypes = Object.keys(classTypes).length > 0
   const visibleGroups = groups.filter(g => g.class_type === classTab)
-  const meta = CLASS_META[classTab]
+  const meta = classTab ? classTypes[classTab] : null
 
   return (
     <div>
       {dialog && <ConfirmDialog {...dialog} onCancel={() => setDialog(null)} />}
-      {/* Class type tabs */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-        {['gatka', 'kirtan'].map(type => {
-          const m = CLASS_META[type]
-          const active = classTab === type
+      {/* Class type tabs + management controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {Object.entries(classTypes).map(([key, m]) => {
+          const active = classTab === key
           return (
-            <button key={type} onClick={() => { setClassTab(type); setOpenGroup(null) }}
+            <button key={key} onClick={() => { setClassTab(key); setOpenGroup(null) }}
               style={{ padding: '10px 24px', borderRadius: 10, fontWeight: 700,
                 fontSize: '.92rem', cursor: 'pointer', transition: 'all .15s',
                 border: `2px solid ${active ? m.color : 'var(--border)'}`,
@@ -264,13 +336,108 @@ export default function AdminClasses({ readOnly }) {
               {m.label}
               <span style={{ marginLeft: 8, fontSize: '.75rem', fontWeight: 500,
                 opacity: active ? 0.85 : 0.5 }}>
-                {type === 'gatka' ? 'Sundays' : 'Wednesdays'}
+                {m.dayNames}
               </span>
             </button>
           )
         })}
+        {!readOnly && (
+          <div style={{ display: 'flex', gap: 8, marginLeft: hasTypes ? 'auto' : 0 }}>
+            <button onClick={openAddClassType} className="btn btn-outline btn-sm">+ Add Class Type</button>
+            {hasTypes && (
+              <button onClick={() => setManageOpen(o => !o)} className="btn btn-outline btn-sm">
+                {manageOpen ? 'Done' : '⚙ Manage Classes'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
+      {/* Manage class types panel — inline edit/delete for existing types */}
+      {manageOpen && !readOnly && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-title">Class Types</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Object.entries(classTypes).map(([key, m]) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                <span style={{ width: 14, height: 14, borderRadius: 4, background: m.color, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700 }}>{m.label}</div>
+                  <div style={{ fontSize: '.76rem', color: 'var(--muted)' }}>{m.dayNames}</div>
+                </div>
+                <button onClick={() => openEditClassType(key)} className="btn btn-outline btn-xs">Edit</button>
+                <button onClick={() => deleteClassType(key)} className="btn btn-danger btn-xs">Delete</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add / edit class type form */}
+      {classTypeForm && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-title">{classTypeForm.key ? 'Edit Class Type' : 'Add Class Type'}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 420 }}>
+            <div>
+              <label style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                Name
+              </label>
+              <input type="text" value={classTypeForm.label}
+                onChange={e => setClassTypeForm(f => ({ ...f, label: e.target.value }))}
+                placeholder="e.g. GCSE Punjabi" style={{ width: '100%', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                Day(s)
+              </label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {DAY_LABELS.map((d, i) => {
+                  const on = classTypeForm.days.includes(i)
+                  return (
+                    <button key={i} type="button"
+                      onClick={() => setClassTypeForm(f => ({
+                        ...f,
+                        days: on ? f.days.filter(x => x !== i) : [...f.days, i].sort((a, b) => a - b),
+                      }))}
+                      style={{ padding: '6px 10px', borderRadius: 6, fontSize: '.8rem', fontWeight: 700,
+                        border: `1.5px solid ${on ? classTypeForm.color : 'var(--border)'}`,
+                        background: on ? classTypeForm.color : 'white',
+                        color: on ? 'white' : '#64748b', cursor: 'pointer' }}>
+                      {d}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                Color
+              </label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {COLOR_PRESETS.map(c => (
+                  <button key={c} type="button" onClick={() => setClassTypeForm(f => ({ ...f, color: c }))}
+                    style={{ width: 26, height: 26, borderRadius: '50%', background: c, cursor: 'pointer',
+                      border: classTypeForm.color === c ? '3px solid #1e293b' : '1px solid var(--border)' }} />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={saveClassType} className="btn btn-primary btn-sm">Save</button>
+              <button onClick={() => setClassTypeForm(null)} className="btn btn-outline btn-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!hasTypes ? (
+        <div className="card">
+          <div className="empty-state">
+            <div className="icon">📚</div>
+            No class types yet. {!readOnly && 'Click "+ Add Class Type" above to create the first one.'}
+          </div>
+        </div>
+      ) : (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {visibleGroups.map(g => {
           const isOpen       = openGroup === g.id
@@ -500,12 +667,13 @@ export default function AdminClasses({ readOnly }) {
         {visibleGroups.length === 0 && (
           <div className="card">
             <div className="empty-state">
-              <div className="icon">{classTab === 'gatka' ? '🥋' : '🎵'}</div>
-              No {CLASS_META[classTab]?.label} groups found. Add them in the Groups page.
+              <div className="icon">📚</div>
+              No {meta?.label} groups found. Add them in the Groups page.
             </div>
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 export default function AdminGroups({ readOnly }) {
   const { profile, hasRole } = useAuth()
@@ -9,6 +10,8 @@ export default function AdminGroups({ readOnly }) {
   const [teachers, setTeachers] = useState([])
   const [loading, setLoading]   = useState(true)
   const [newGroup, setNewGroup]  = useState('')
+  const [newGroupType, setNewGroupType] = useState('punjabi')
+  const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)  // Punjabi + every admin-added extra class type
   const [busy, setBusy]         = useState(false)
   const [showMerge, setShowMerge]     = useState(false)
   const [mergeA, setMergeA]           = useState('')
@@ -19,6 +22,7 @@ export default function AdminGroups({ readOnly }) {
   const [mergeBusy, setMergeBusy]     = useState(false)
 
   useEffect(() => { load() }, [])
+  useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
   async function load() {
     const [{ data: g }, { data: t }, { data: tg }] = await Promise.all([
@@ -99,9 +103,14 @@ export default function AdminGroups({ readOnly }) {
   async function addGroup() {
     if (!newGroup.trim()) return
     setBusy(true)
-    const { error } = await supabase.from('groups').insert({ name: newGroup.trim() })
+    const { error } = await supabase.from('groups').insert({ name: newGroup.trim(), class_type: newGroupType })
     if (error) alert(error.message)
-    else { logAction(profile, 'Created group', newGroup.trim()).catch(() => {}); setNewGroup(''); load() }
+    else {
+      const typeLabel = classTypesMeta[newGroupType]?.label || newGroupType
+      logAction(profile, 'Created group', `${newGroup.trim()} (${typeLabel})`).catch(() => {})
+      setNewGroup('')
+      load()
+    }
     setBusy(false)
   }
 
@@ -152,9 +161,16 @@ export default function AdminGroups({ readOnly }) {
       <div className="card-title">Groups ({groups.length})</div>
 
       {!readOnly && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           <input type="text" placeholder="New group name…" value={newGroup} onChange={e => setNewGroup(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addGroup()} style={{ flex: 1 }} />
+            onKeyDown={e => e.key === 'Enter' && addGroup()} style={{ flex: 1, minWidth: 160 }} />
+          <select value={newGroupType} onChange={e => setNewGroupType(e.target.value)}
+            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <option value="punjabi">Punjabi</option>
+            {Object.entries(classTypesMeta).filter(([key]) => key !== 'punjabi').map(([key, m]) => (
+              <option key={key} value={key}>{m.label}</option>
+            ))}
+          </select>
           <button className="btn btn-primary" disabled={busy || !newGroup.trim()} onClick={addGroup}>Add Group</button>
         </div>
       )}
@@ -234,6 +250,7 @@ export default function AdminGroups({ readOnly }) {
           <thead>
             <tr>
               <th>Group Name</th>
+              <th>Type</th>
               <th>Teachers</th>
               <th>Students</th>
               <th>Age Range</th>
@@ -241,9 +258,18 @@ export default function AdminGroups({ readOnly }) {
             </tr>
           </thead>
           <tbody>
-            {groups.map(g => (
+            {groups.map(g => {
+              const typeMeta = classTypesMeta[g.class_type || 'punjabi']
+              return (
               <tr key={g.id}>
                 <td style={{ fontWeight: 600 }}>{g.name}</td>
+                <td>
+                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6,
+                    fontSize: '.76rem', fontWeight: 600,
+                    color: typeMeta?.color || '#475569', background: typeMeta?.bg || '#f1f5f9' }}>
+                    {typeMeta?.label || g.class_type || 'Punjabi'}
+                  </span>
+                </td>
                 <td>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                     {(g.teacherIds || []).map(tid => {
@@ -289,9 +315,10 @@ export default function AdminGroups({ readOnly }) {
                   </td>
                 )}
               </tr>
-            ))}
+              )
+            })}
             {groups.length === 0 && (
-              <tr><td colSpan={readOnly ? 4 : 5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No groups yet</td></tr>
+              <tr><td colSpan={readOnly ? 5 : 6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No groups yet</td></tr>
             )}
           </tbody>
         </table>
