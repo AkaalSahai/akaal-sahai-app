@@ -35,7 +35,7 @@ const PROGRESS = {
   awaiting_assessment: { label: 'Awaiting Assessment',  color: '#6b7280' },
 }
 
-const STATUS_COLOR = { present: '#16a34a', late: '#d97706', absent: '#dc2626' }
+const STATUS_COLOR = { present: '#16a34a', late: '#d97706', absent: '#dc2626', holiday: '#0284c7' }
 
 export default function AdminStudents({ readOnly }) {
   const { profile } = useAuth()
@@ -676,7 +676,7 @@ export default function AdminStudents({ readOnly }) {
                                       </td>
                                       <td style={{ padding: '7px 12px' }}>
                                         <div style={{ display: 'flex', gap: 4 }}>
-                                          {['present', 'late', 'absent'].map(st => (
+                                          {['present', 'late', 'absent', 'holiday'].map(st => (
                                             <button key={st}
                                               className={`att-btn att-${st}${r.status === st ? ' active' : ''}`}
                                               style={{ fontSize: '.7rem', padding: '3px 8px' }}
