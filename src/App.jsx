@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { AuthProvider } from './components/AuthProvider'
+import OfflineBanner from './components/OfflineBanner'
+import InstallPrompt from './components/InstallPrompt'
 
 // Public pages
 import LoginPage from './pages/LoginPage'
@@ -61,6 +63,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <OfflineBanner />
+        <InstallPrompt />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>
