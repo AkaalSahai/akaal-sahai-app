@@ -15,12 +15,20 @@ import AdminLayout from './pages/admin/AdminLayout'
 import RegistrarLayout from './pages/registrar/RegistrarLayout'
 import TeacherLayout from './pages/teacher/TeacherLayout'
 
+// A profile matches an allowed role if it's their primary role OR one of
+// their extra_roles — same rule as hasRole() elsewhere in the app, so e.g.
+// a teacher who's also been given "adminView" as an extra role can reach
+// /admin (read-only) without it replacing their normal /teacher access.
+function matchesRole(profile, role) {
+  const allowed = Array.isArray(role) ? role : [role]
+  return allowed.some(r => profile.role === r || (profile.extra_roles || []).includes(r))
+}
+
 function RequireAuth({ role, children }) {
   const { user, profile, loading } = useAuth()
   if (loading) return <div className="spinner" style={{ marginTop: 100 }} />
   if (!user || !profile) return <Navigate to="/login" replace />
-  if (role && profile.role !== role && !(Array.isArray(role) && role.includes(profile.role)))
-    return <Navigate to="/login" replace />
+  if (role && !matchesRole(profile, role)) return <Navigate to="/login" replace />
   return children
 }
 

@@ -1,8 +1,13 @@
 import { useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
+const PRIMARY_HOME = { registrar: '/registrar', teacher: '/teacher', admin: '/admin', adminView: '/admin' }
+
 export default function Topbar({ title }) {
-  const { profile, logout, changePassword } = useAuth()
+  const { profile, logout, changePassword, hasRole } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [showMenu, setShowMenu] = useState(false)
   const [showPw, setShowPw]     = useState(false)
   const [current, setCurrent]   = useState('')
@@ -30,7 +35,14 @@ export default function Topbar({ title }) {
     } finally { setBusy(false) }
   }
 
-  const roleLabel = { admin: 'Admin', registrar: 'Registrar', teacher: 'Teacher' }[profile?.role] || ''
+  const roleLabel = { admin: 'Admin', registrar: 'Registrar', teacher: 'Teacher', adminView: 'Admin View' }[profile?.role] || ''
+
+  // Someone whose PRIMARY role isn't admin/adminView but who's been given
+  // adminView as an extra role (e.g. a teacher who's also a trustee) can
+  // reach /admin read-only without it replacing their normal home page —
+  // these two links are how they get there and back.
+  const hasExtraAdminView = profile && profile.role !== 'admin' && profile.role !== 'adminView' && hasRole('adminView')
+  const onAdminPath       = location.pathname.startsWith('/admin')
 
   return (
     <>
@@ -39,6 +51,22 @@ export default function Topbar({ title }) {
           <img src="/logo.png" alt="Akaal Sahai" style={{ height: 36 }} />
           <span style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--primary)' }}>{title}</span>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {hasExtraAdminView && (
+          onAdminPath ? (
+            <button onClick={() => navigate(PRIMARY_HOME[profile.role] || '/')}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer',
+                padding: '6px 12px', fontWeight: 600, fontSize: '.8rem', color: 'var(--muted)' }}>
+              ← Back to my {roleLabel} view
+            </button>
+          ) : (
+            <button onClick={() => navigate('/admin')}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer',
+                padding: '6px 12px', fontWeight: 600, fontSize: '.8rem', color: 'var(--primary)' }}>
+              Admin View (read-only)
+            </button>
+          )
+        )}
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setShowMenu(m => !m)}
@@ -63,6 +91,7 @@ export default function Topbar({ title }) {
             </div>
           )}
           {showMenu && <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setShowMenu(false)} />}
+        </div>
         </div>
       </div>
 
