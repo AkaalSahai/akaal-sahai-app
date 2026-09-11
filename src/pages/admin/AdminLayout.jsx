@@ -21,9 +21,14 @@ import { supabase } from '../../lib/supabase'
 
 export default function AdminLayout() {
   const [tab, setTab]   = useState('dashboard')
-  const { profile, hasRole } = useAuth()
-  const readOnly        = profile?.role === 'adminView'
-  const isPrimaryAdmin  = profile?.role === 'admin'
+  const { hasRole } = useAuth()
+  // hasRole() checks primary role OR extra_roles, so this correctly covers
+  // someone who reaches /admin via adminView as an EXTRA role (e.g. a
+  // teacher who's also a trustee) - not just adminView as their primary
+  // role. Checking profile.role alone would wrongly give such a person
+  // full write access instead of the read-only view they were granted.
+  const isFullAdmin     = hasRole('admin')
+  const readOnly        = !isFullAdmin
   const isTeacher       = hasRole('teacher')
   const [unread, setUnread] = useState(0)
 
@@ -42,17 +47,17 @@ export default function AdminLayout() {
     { id: 'students',     label: 'Students'     },
     { id: 'groups',       label: 'Groups'       },
     { id: 'classes',      label: 'Classes'      },
-    { id: 'users',        label: 'Teachers'     },
+    ...(!readOnly ? [{ id: 'users', label: 'Teachers' }] : []),
     ...(isTeacher ? [{ id: 'register',    label: 'My Register'  }] : []),
     ...(isTeacher ? [{ id: 'myreports',   label: 'My Reports'   }] : []),
     ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
-    { id: 'registerstatus',    label: 'Register Status'    },
-    { id: 'teacherregister',   label: 'Teacher Register'   },
-    ...(!readOnly       ? [{ id: 'import',   label: 'Import Data' }] : []),
-    ...(isPrimaryAdmin  ? [{ id: 'activity', label: 'Activity'    }] : []),
-    ...(isPrimaryAdmin  ? [{ id: 'archive',  label: 'Archive'     }] : []),
-    { id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' },
-    ...(isPrimaryAdmin  ? [{ id: 'settings', label: 'Settings'    }] : []),
+    ...(!readOnly ? [{ id: 'registerstatus',  label: 'Register Status'  }] : []),
+    ...(!readOnly ? [{ id: 'teacherregister', label: 'Teacher Register' }] : []),
+    ...(!readOnly  ? [{ id: 'import',   label: 'Import Data' }] : []),
+    ...(isFullAdmin ? [{ id: 'activity', label: 'Activity'    }] : []),
+    ...(isFullAdmin ? [{ id: 'archive',  label: 'Archive'     }] : []),
+    ...(!readOnly ? [{ id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' }] : []),
+    ...(isFullAdmin ? [{ id: 'settings', label: 'Settings'    }] : []),
   ]
 
   return (
@@ -77,17 +82,17 @@ export default function AdminLayout() {
         {tab === 'students'     && <AdminStudents readOnly={readOnly} />}
         {tab === 'groups'       && <AdminGroups readOnly={readOnly} />}
         {tab === 'classes'      && <AdminClasses readOnly={readOnly} />}
-        {tab === 'users'        && <AdminUsers readOnly={readOnly} />}
+        {tab === 'users'        && !readOnly && <AdminUsers readOnly={readOnly} />}
         {tab === 'import'       && <AdminImport readOnly={readOnly} />}
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'myreports'    && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}
-        {tab === 'registerstatus'  && <AdminRegisterStatus />}
-        {tab === 'teacherregister' && <AdminTeacherRegister readOnly={readOnly} />}
-        {tab === 'activity'     && <AdminActivity />}
-        {tab === 'archive'      && <AdminArchive />}
-        {tab === 'messages'     && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
-        {tab === 'settings'     && <AdminSettings />}
+        {tab === 'registerstatus'  && !readOnly && <AdminRegisterStatus />}
+        {tab === 'teacherregister' && !readOnly && <AdminTeacherRegister readOnly={readOnly} />}
+        {tab === 'activity'     && isFullAdmin && <AdminActivity />}
+        {tab === 'archive'      && isFullAdmin && <AdminArchive />}
+        {tab === 'messages'     && !readOnly && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
+        {tab === 'settings'     && isFullAdmin && <AdminSettings />}
       </div>
     </div>
   )
