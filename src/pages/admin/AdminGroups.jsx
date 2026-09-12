@@ -25,20 +25,34 @@ export default function AdminGroups({ readOnly }) {
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
   async function load() {
-    const [{ data: g }, { data: t }, { data: tg }] = await Promise.all([
+    const [{ data: g }, { data: t }, { data: tg }, { data: sc }] = await Promise.all([
       supabase.from('groups').select('id, name, teacher_id, class_type, students(date_of_birth)').order('name'),
       supabase.from('users').select('id, name, role, extra_roles').order('name'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
+      // Extra-class (Gatka/Kirtan/any admin-added type) enrollment lives in
+      // student_classes, not students.group_id - the embedded
+      // groups(...).students(...) above only ever follows a student's
+      // PRIMARY group_id, so it's always empty for any other class type
+      // without this second query to fall back on.
+      supabase.from('student_classes').select('group_id, students(date_of_birth)'),
     ])
     const tgMap = {}
     ;(tg || []).forEach(r => {
       if (!tgMap[r.group_id]) tgMap[r.group_id] = []
       tgMap[r.group_id].push(r.teacher_id)
     })
+    const scMap = {}
+    ;(sc || []).forEach(r => {
+      if (!r.students) return
+      if (!scMap[r.group_id]) scMap[r.group_id] = []
+      scMap[r.group_id].push(r.students)
+    })
     setGroups((g || []).map(grp => {
       const ids = tgMap[grp.id] || []
       const teacherIds = grp.teacher_id && !ids.includes(grp.teacher_id) ? [grp.teacher_id, ...ids] : ids
-      return { ...grp, teacherIds }
+      const isPunjabi = !grp.class_type || grp.class_type === 'punjabi'
+      const students = isPunjabi ? (grp.students || []) : (scMap[grp.id] || [])
+      return { ...grp, teacherIds, students }
     }))
     setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
     setLoading(false)
