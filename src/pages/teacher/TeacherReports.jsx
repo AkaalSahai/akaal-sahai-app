@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
+import { loadGroupStudents } from '../../lib/classRoster'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -52,7 +53,7 @@ export default function TeacherReports() {
   async function loadMyGroups() {
     const { data: tg } = await supabase
       .from('teacher_groups')
-      .select('group_id, groups(id, name)')
+      .select('group_id, groups(id, name, class_type)')
       .eq('teacher_id', profile.id)
     if (tg && tg.length > 0) {
       const grps = tg.map(r => r.groups).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
@@ -60,7 +61,7 @@ export default function TeacherReports() {
       const def = grps.find(g => g.id === profile.group_id) || grps[0]
       setSelectedGroupId(def.id)
     } else if (profile.group_id) {
-      const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
+      const { data: g } = await supabase.from('groups').select('id, name, class_type').eq('id', profile.group_id).single()
       setMyGroups(g ? [g] : [])
       setSelectedGroupId(profile.group_id)
     } else {
@@ -73,16 +74,22 @@ export default function TeacherReports() {
 
   async function load() {
     setLoading(true)
-    const [{ data: studentData }, { data: records }, { data: noteData }] = await Promise.all([
-      supabase.from('students')
-        .select('id, first_name, middle_name, last_name, date_of_birth, medical_notes')
-        .eq('group_id', selectedGroupId).eq('active', true).order('first_name').order('last_name'),
+    const grp = myGroups.find(g => g.id === selectedGroupId)
+    const [studentData, { data: records }, { data: noteData }] = await Promise.all([
+      loadGroupStudents(
+        selectedGroupId, grp?.class_type,
+        'id, first_name, middle_name, last_name, date_of_birth, medical_notes'
+      ).catch(err => { console.error('loadGroupStudents error:', err); return [] }),
       supabase.from('attendance_records')
         .select('student_id, status, session_date')
         .eq('group_id', selectedGroupId),
       supabase.from('student_notes')
         .select('student_id, progress_level, comments'),
     ])
+    studentData.sort((a, b) =>
+      (a.first_name || '').localeCompare(b.first_name || '') ||
+      (a.last_name  || '').localeCompare(b.last_name  || '')
+    )
 
     const statMap = {}
     ;(studentData || []).forEach(s => { statMap[s.id] = { present: 0, late: 0, absent: 0, holiday: 0, total: 0 } })

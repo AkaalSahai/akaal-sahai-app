@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
+import { loadGroupStudents } from '../../lib/classRoster'
+import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -38,6 +40,7 @@ export default function TeacherRegister() {
   const [transferBusy, setTransferBusy] = useState(null)
   const [removeOpen, setRemoveOpen]     = useState({})
   const [removeBusy, setRemoveBusy]     = useState(null)
+  const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
   const notesRef     = useRef({})
@@ -45,13 +48,27 @@ export default function TeacherRegister() {
   useEffect(() => { notesRef.current = notes }, [notes])
   useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
   useEffect(() => { loadAllGroups() }, [])
+  useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
 
   const isReadOnly = date < todayISO()
   const isToday    = date === todayISO()
   const dayOfWeek  = new Date(date + 'T12:00:00').getDay()
-  const isClassDay = dayOfWeek === 5 || dayOfWeek === 6
+  const selectedGroup = myGroups.find(g => g.id === selectedGroupId)
+  // Falls back to Punjabi's own schedule if the group's class type hasn't
+  // loaded yet, or isn't one of the admin-managed extra types - each class
+  // type now carries its own days rather than every group being assumed to
+  // run Fri/Sat (Gatka runs Sundays, Kirtan Wednesdays, and so on).
+  const classMeta  = classTypesMeta[selectedGroup?.class_type || 'punjabi'] || CLASS_META.punjabi
+  const isClassDay = classMeta.days.includes(dayOfWeek)
+  // Transfer moves a student's PRIMARY Punjabi group (students.group_id),
+  // and Remove archives their entire record system-wide, not just this one
+  // class - neither makes sense from an extra class (Gatka/Kirtan/etc)
+  // roster, so both are Punjabi-group-only actions here. Un-enrolling a
+  // student from just an extra class stays an admin/registrar action via
+  // the Classes tab.
+  const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
 
   async function loadAllGroups() {
     const { data } = await supabase.from('groups').select('id, name').order('name')
@@ -65,8 +82,8 @@ export default function TeacherRegister() {
       // and a co-teacher (teacher_groups) on another; checking only one left
       // the other group invisible here.
       const [{ data: tg }, { data: primaryGroups }] = await Promise.all([
-        supabase.from('teacher_groups').select('group_id, groups(id, name)').eq('teacher_id', profile.id),
-        supabase.from('groups').select('id, name').eq('teacher_id', profile.id),
+        supabase.from('teacher_groups').select('group_id, groups(id, name, class_type)').eq('teacher_id', profile.id),
+        supabase.from('groups').select('id, name, class_type').eq('teacher_id', profile.id),
       ])
       const grpMap = new Map()
       ;(tg || []).forEach(r => { if (r.groups) grpMap.set(r.groups.id, r.groups) })
@@ -74,7 +91,7 @@ export default function TeacherRegister() {
       let grps = [...grpMap.values()].sort((a, b) => a.name.localeCompare(b.name))
 
       if (grps.length === 0 && profile.group_id) {
-        const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
+        const { data: g } = await supabase.from('groups').select('id, name, class_type').eq('id', profile.group_id).single()
         if (g) grps = [g]
       }
 
@@ -116,15 +133,22 @@ export default function TeacherRegister() {
 
   async function loadStudents() {
     setLoading(true)
-    const { data: studentData } = await supabase
-      .from('students')
-      .select('id, first_name, middle_name, last_name, date_of_birth, medical_notes')
-      .eq('group_id', selectedGroupId)
-      .eq('active', true)
-      .order('first_name')
-      .order('last_name')
-    setStudents(studentData || [])
-    setLoading(false)
+    try {
+      const grp = myGroups.find(g => g.id === selectedGroupId)
+      const data = await loadGroupStudents(
+        selectedGroupId, grp?.class_type,
+        'id, first_name, middle_name, last_name, date_of_birth, medical_notes'
+      )
+      setStudents(data.slice().sort((a, b) =>
+        (a.first_name || '').localeCompare(b.first_name || '') ||
+        (a.last_name  || '').localeCompare(b.last_name  || '')
+      ))
+    } catch (err) {
+      console.error('loadStudents error:', err)
+      setStudents([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadSession() {
@@ -370,7 +394,7 @@ export default function TeacherRegister() {
 
         {isToday && !isClassDay && (
           <div className="alert" style={{ background: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
-            No class scheduled today — Punjabi classes are on Fridays and Saturdays, 6:30pm – 8:30pm.
+            No class scheduled today — {classMeta.label} runs on {classMeta.dayNames}.
           </div>
         )}
 
@@ -446,7 +470,7 @@ export default function TeacherRegister() {
                       onBlur={e => saveNote(s.id, e.target.value)}
                     />
 
-                    {!isReadOnly && (
+                    {!isReadOnly && isPunjabiGroup && (
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                         <button onClick={() => toggleTransfer(s.id)}
                           style={{ padding: '4px 10px', fontSize: '.76rem', borderRadius: 8,
@@ -466,7 +490,7 @@ export default function TeacherRegister() {
                     )}
                   </div>
 
-                  {transferOpen[s.id] !== undefined && (
+                  {transferOpen[s.id] !== undefined && isPunjabiGroup && (
                     <div style={{ marginBottom: 10, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
                         Transfer request — {[s.first_name, s.last_name].join(' ')}
@@ -492,7 +516,7 @@ export default function TeacherRegister() {
                     </div>
                   )}
 
-                  {removeOpen[s.id] !== undefined && (
+                  {removeOpen[s.id] !== undefined && isPunjabiGroup && (
                     <div style={{ marginBottom: 10, padding: '12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
                       <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#991b1b', marginBottom: 6 }}>
                         Removal request — {[s.first_name, s.last_name].join(' ')}
