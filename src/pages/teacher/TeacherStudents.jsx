@@ -6,7 +6,7 @@ import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_LABEL } from '../../lib/verification'
-import { loadGroupStudents } from '../../lib/classRoster'
+import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -35,8 +35,10 @@ export default function TeacherStudents() {
   const [requiredReason, setRequiredReason] = useState(null)
   const [verifyingId, setVerifyingId]     = useState(null)
   const [verifyBusy, setVerifyBusy]       = useState(false)
+  const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
 
   useEffect(() => { load() }, [user])
+  useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
 
   async function load() {
     if (!user) return
@@ -72,7 +74,7 @@ export default function TeacherStudents() {
   }
 
   async function loadStudentsForGroup(gid, classType) {
-    const data = await loadGroupStudents(gid, classType, '*')
+    const data = await loadGroupStudents(gid, classType, '*, groups(id, name, teacher_id)')
     const sorted = data.slice().sort((a, b) =>
       (a.last_name  || '').localeCompare(b.last_name  || '') ||
       (a.first_name || '').localeCompare(b.first_name || '')
@@ -446,6 +448,7 @@ export default function TeacherStudents() {
           <thead>
             <tr>
               <th onClick={() => toggleSort('name')}   style={{ cursor: 'pointer', userSelect: 'none' }}>Student{sortIcon('name')}</th>
+              {!isPunjabiGroup && <th>Punjabi Group</th>}
               <th onClick={() => toggleSort('age')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Age{sortIcon('age')}</th>
               <th onClick={() => toggleSort('dob')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Date of Birth{sortIcon('dob')}</th>
               <th onClick={() => toggleSort('parent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Parent{sortIcon('parent')}</th>
@@ -467,6 +470,16 @@ export default function TeacherStudents() {
                       <MedicalBadge notes={s.medical_notes} studentName={fullName} />
                     </div>
                   </td>
+                  {!isPunjabiGroup && (
+                    <td style={{ fontSize: '.85rem' }}>
+                      {s.groups?.name || '—'}
+                      {s.groups && (
+                        <div style={{ fontSize: '.76rem', color: 'var(--muted)' }}>
+                          {resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}
+                        </div>
+                      )}
+                    </td>
+                  )}
                   <td style={{ fontSize: '.85rem', fontWeight: 600 }}>{calcAge(s.date_of_birth) ?? '—'}</td>
                   <td className="date" style={{ fontSize: '.85rem' }}>{fmtDate(s.date_of_birth)}</td>
                   <td style={{ fontSize: '.85rem' }}>
@@ -506,7 +519,7 @@ export default function TeacherStudents() {
                 </tr>
                 {verifyingId === s.id && (
                   <tr>
-                    <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                    <td colSpan={isPunjabiGroup ? 7 : 8} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                       {requiredReason && !status.verified && status.reason === 'admin_required' && (
                         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
                           padding: '8px 12px', marginBottom: 12, fontSize: '.8rem', color: '#92400e' }}>
@@ -541,7 +554,7 @@ export default function TeacherStudents() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
+              <tr><td colSpan={isPunjabiGroup ? 7 : 8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {search ? 'No students match your search' : 'No students in your group yet'}
               </td></tr>
             )}

@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
-import { loadGroupStudents } from '../../lib/classRoster'
+import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
@@ -41,6 +41,7 @@ export default function TeacherRegister() {
   const [removeOpen, setRemoveOpen]     = useState({})
   const [removeBusy, setRemoveBusy]     = useState(null)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
+  const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
   const notesRef     = useRef({})
@@ -49,6 +50,7 @@ export default function TeacherRegister() {
   useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
   useEffect(() => { loadAllGroups() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
+  useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
 
@@ -137,7 +139,7 @@ export default function TeacherRegister() {
       const grp = myGroups.find(g => g.id === selectedGroupId)
       const data = await loadGroupStudents(
         selectedGroupId, grp?.class_type,
-        'id, first_name, middle_name, last_name, date_of_birth, medical_notes'
+        'id, first_name, middle_name, last_name, date_of_birth, medical_notes, groups(id, name, teacher_id)'
       )
       setStudents(data.slice().sort((a, b) =>
         (a.first_name || '').localeCompare(b.first_name || '') ||
@@ -444,6 +446,16 @@ export default function TeacherRegister() {
                         )}
                         <MedicalBadge notes={s.medical_notes} studentName={fullName} />
                       </div>
+                      {/* Only relevant when marking an extra class - shows
+                          which Punjabi group/teacher this student normally
+                          belongs to, since that's a different group than
+                          the one being marked here. */}
+                      {!isPunjabiGroup && (
+                        <div style={{ fontSize: '.7rem', color: '#64748b', marginTop: 2 }}>
+                          Punjabi: {s.groups?.name || '—'}
+                          {s.groups && ` · ${resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}`}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>

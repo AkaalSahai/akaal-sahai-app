@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
-import { loadGroupStudents } from '../../lib/classRoster'
+import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -43,11 +43,13 @@ export default function TeacherReports() {
   const [saving, setSaving]      = useState({})
   const [sortCol, setSortCol]    = useState('name')
   const [sortDir, setSortDir]    = useState('asc')
+  const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
   const debounceRef              = useRef({})
   const notesRef                 = useRef({})
 
   useEffect(() => { notesRef.current = notes }, [notes])
   useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
+  useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
   useEffect(() => { if (selectedGroupId) load() }, [selectedGroupId])
 
   async function loadMyGroups() {
@@ -78,7 +80,7 @@ export default function TeacherReports() {
     const [studentData, { data: records }, { data: noteData }] = await Promise.all([
       loadGroupStudents(
         selectedGroupId, grp?.class_type,
-        'id, first_name, middle_name, last_name, date_of_birth, medical_notes'
+        'id, first_name, middle_name, last_name, date_of_birth, medical_notes, groups(id, name, teacher_id)'
       ).catch(err => { console.error('loadGroupStudents error:', err); return [] }),
       supabase.from('attendance_records')
         .select('student_id, status, session_date')
@@ -193,6 +195,9 @@ export default function TeacherReports() {
     </div>
   )
 
+  const selectedGroup = myGroups.find(g => g.id === selectedGroupId)
+  const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
+
   return (
     <div className="card">
       <div className="card-title">
@@ -263,6 +268,12 @@ export default function TeacherReports() {
                       <span style={{ fontSize: '.7rem', color: 'var(--danger)', fontWeight: 600 }}>⚕ Medical</span>
                     )}
                   </div>
+                  {!isPunjabiGroup && (
+                    <div style={{ fontSize: '.72rem', color: '#64748b', marginTop: 2 }}>
+                      Punjabi: {s.groups?.name || '—'}
+                      {s.groups && ` · ${resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}`}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
                   {[['P','present','#16a34a'],['L','late','#d97706'],['A','absent','#dc2626'],['H','holiday','#0284c7']].map(([lbl, key, clr]) => (
