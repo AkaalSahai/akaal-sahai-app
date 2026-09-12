@@ -31,8 +31,13 @@ export async function loadGroupStudents(groupId, classType, select = '*') {
   // student_classes has no active column of its own to filter on server-side
   // the way the primary-group path above does - the check has to happen
   // after the join instead, which means `active` must always be part of the
-  // embedded select, even if the caller's field list didn't ask for it.
-  const fields = select === '*' || /(^|,)\s*active\s*(,|$)/.test(select) ? select : `${select}, active`
+  // embedded select, even if the caller's field list didn't ask for it. A
+  // bare `*` anywhere in the list already covers every column (including
+  // active), so only append it when neither is already present - appending
+  // a duplicate `active` alongside `*` would otherwise be invalid.
+  const hasStar   = /(^|,)\s*\*\s*(,|$)/.test(select)
+  const hasActive = /(^|,)\s*active\s*(,|$)/.test(select)
+  const fields = (hasStar || hasActive) ? select : `${select}, active`
   const { data, error } = await supabase
     .from('student_classes')
     .select(`students(${fields})`)
@@ -41,4 +46,43 @@ export async function loadGroupStudents(groupId, classType, select = '*') {
   return (data || [])
     .map(r => r.students)
     .filter(s => s && s.active)
+}
+
+// Resolves the teacher name for a student's PRIMARY Punjabi group - used
+// wherever an extra-class roster (Gatka/Kirtan/etc) shows students who
+// belong to a *different* group day-to-day, so the teacher marking that
+// extra class can see who each student's Punjabi teacher is. Checks both
+// the legacy groups.teacher_id field and the teacher_groups junction, the
+// same two-mechanism check AdminClasses.jsx already uses - fetches once
+// and returns a resolver function rather than querying per student row.
+//
+// Degrades gracefully (resolver always returns null) rather than breaking
+// the whole roster if either query fails for any reason.
+export async function loadPunjabiTeacherResolver() {
+  try {
+    const [{ data: users }, { data: tg }] = await Promise.all([
+      supabase.from('users').select('id, name, role, extra_roles'),
+      supabase.from('teacher_groups').select('group_id, teacher_id'),
+    ])
+    const teachers = (users || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
+    const nameById = new Map(teachers.map(t => [t.id, t.name]))
+    const groupTeacherMap = {}
+    ;(tg || []).forEach(r => {
+      if (!groupTeacherMap[r.group_id]) groupTeacherMap[r.group_id] = []
+      groupTeacherMap[r.group_id].push(r.teacher_id)
+    })
+    return function resolvePunjabiTeacher(grp) {
+      if (!grp) return null
+      const primary = nameById.get(grp.teacher_id)
+      if (primary) return primary
+      for (const tid of (groupTeacherMap[grp.id] || [])) {
+        const name = nameById.get(tid)
+        if (name) return name
+      }
+      return null
+    }
+  } catch (err) {
+    console.error('loadPunjabiTeacherResolver error:', err)
+    return () => null
+  }
 }
