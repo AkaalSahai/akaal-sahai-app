@@ -54,7 +54,6 @@ function parseDateToISO(raw) {
 
 export default function AdminImport({ readOnly }) {
   const { profile } = useAuth()
-  const [csv, setCsv]     = useState(null)
   const [rows, setRows]   = useState([])
   const [errors, setErrors] = useState([])
   const [busy, setBusy]   = useState(false)
@@ -72,7 +71,6 @@ export default function AdminImport({ readOnly }) {
   function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
-    setCsv(file)
     const reader = new FileReader()
     reader.onload = (ev) => parseCSV(ev.target.result)
     reader.readAsText(file)
@@ -168,7 +166,7 @@ export default function AdminImport({ readOnly }) {
 
       if (toInsert.length === 0) {
         setResult({ success: true, count: 0, skipped, groups: Object.keys(groupMap).length })
-        setRows([]); setCsv(null)
+        setRows([])
         logAction(profile, 'Imported students', `0 imported, ${skipped} skipped (duplicates), ${groupNames.length} group(s)`).catch(() => {})
         return
       }
@@ -176,7 +174,7 @@ export default function AdminImport({ readOnly }) {
       const { data: inserted, error } = await supabase.from('students').insert(toInsert).select('id')
       if (error) throw error
       setResult({ success: true, count: inserted.length, skipped, groups: Object.keys(groupMap).length })
-      setRows([]); setCsv(null)
+      setRows([])
       logAction(profile, 'Imported students', `${inserted.length} imported, ${skipped} skipped (duplicates), ${groupNames.length} group(s)`).catch(() => {})
     } catch (err) {
       setResult({ success: false, message: err.message })
