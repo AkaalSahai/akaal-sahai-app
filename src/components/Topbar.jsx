@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import MfaSetup from './MfaSetup'
 
 const PRIMARY_HOME = { registrar: '/registrar', teacher: '/teacher', admin: '/admin', adminView: '/admin' }
 
@@ -16,6 +17,7 @@ export default function Topbar({ title }) {
   const [pwError, setPwError]   = useState('')
   const [pwSuccess, setPwSuccess] = useState(false)
   const [busy, setBusy]         = useState(false)
+  const [showMfa, setShowMfa]   = useState(false)
 
   async function handleLogout() {
     await logout()
@@ -83,6 +85,12 @@ export default function Topbar({ title }) {
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
                 Change Password
               </button>
+              {(hasRole('admin') || hasRole('registrar')) && (
+                <button onClick={() => { setShowMenu(false); setShowMfa(true) }}
+                  style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
+                  Two-Factor Authentication
+                </button>
+              )}
               <hr style={{ margin: '4px 12px', border: 'none', borderTop: '1px solid var(--border)' }} />
               <button onClick={handleLogout}
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--danger)', fontWeight: 600, fontSize: '.86rem' }}>
@@ -127,6 +135,8 @@ export default function Topbar({ title }) {
           </div>
         </div>
       )}
+
+      {showMfa && <MfaSetup onClose={() => setShowMfa(false)} />}
     </>
   )
 }

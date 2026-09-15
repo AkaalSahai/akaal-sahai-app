@@ -7,6 +7,12 @@ export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  // Authenticator Assurance Level - 'aal1' means password-only, 'aal2' means
+  // a second factor has also been verified this session. nextLevel is what
+  // the account is CAPABLE of (aal2 only if they've enrolled a factor at
+  // all) - comparing the two is how we know whether someone who HAS 2FA
+  // enrolled still needs to complete that challenge before proceeding.
+  const [mfaLevel, setMfaLevel] = useState(null)
 
   async function fetchProfile(userId) {
     const { data } = await supabase
@@ -18,12 +24,18 @@ export function AuthProvider({ children }) {
     return data
   }
 
+  async function refreshMfaLevel() {
+    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (!error) setMfaLevel(data)
+  }
+
   useEffect(() => {
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         setUser(session?.user ?? null)
         if (session?.user) {
           fetchProfile(session.user.id).finally(() => setLoading(false))
+          refreshMfaLevel()
           supabase.from('users').update({ last_seen: new Date().toISOString() }).eq('id', session.user.id)
             .then(({ error }) => { if (error) console.error('last_seen update failed:', error.message) })
         } else setLoading(false)
@@ -32,8 +44,8 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else setProfile(null)
+      if (session?.user) { fetchProfile(session.user.id); refreshMfaLevel() }
+      else { setProfile(null); setMfaLevel(null) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -89,8 +101,17 @@ export function AuthProvider({ children }) {
     return profile.role === r || (profile.extra_roles || []).includes(r)
   }
 
+  // True once someone has enrolled a second factor but hasn't yet verified
+  // it in THIS session - the login form's password check alone leaves them
+  // at aal1, and they need to clear the code-entry gate before anything
+  // else in the app is safe to show them.
+  const mfaChallengePending = !!mfaLevel && mfaLevel.nextLevel === 'aal2' && mfaLevel.currentLevel !== 'aal2'
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, logout, changePassword, requestPasswordReset, hasRole }}>
+    <AuthContext.Provider value={{
+      user, profile, loading, login, logout, changePassword, requestPasswordReset, hasRole,
+      mfaLevel, refreshMfaLevel, mfaChallengePending,
+    }}>
       {children}
     </AuthContext.Provider>
   )
