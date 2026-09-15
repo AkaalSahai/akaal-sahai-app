@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth'
 import { AuthProvider } from './components/AuthProvider'
 import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
+import MfaChallenge from './components/MfaChallenge'
 
 // Public pages
 import LoginPage from './pages/LoginPage'
@@ -25,9 +26,13 @@ function matchesRole(profile, role) {
 }
 
 function RequireAuth({ role, children }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, mfaChallengePending } = useAuth()
   if (loading) return <div className="spinner" style={{ marginTop: 100 }} />
   if (!user || !profile) return <Navigate to="/login" replace />
+  // A verified authenticator is enrolled but hasn't been cleared this
+  // session yet - password sign-in alone only gets someone to aal1, and
+  // nothing past this point should render until that's resolved.
+  if (mfaChallengePending) return <MfaChallenge />
   if (role && !matchesRole(profile, role)) return <Navigate to="/login" replace />
   return children
 }
