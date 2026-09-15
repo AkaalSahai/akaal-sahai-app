@@ -69,7 +69,7 @@ export default function AdminLayout() {
           View Only — you can see all data but cannot make changes
         </div>
       )}
-      <div className="nav-tabs">
+      <div className="nav-tabs nav-tabs-main">
         {TABS.map(t => (
           <button key={t.id} className={`nav-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
             {t.label}
