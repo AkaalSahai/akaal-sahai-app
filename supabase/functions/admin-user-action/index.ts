@@ -69,6 +69,32 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'list-mfa-status') {
+      // listUsers() already returns each user's factors embedded - one call
+      // covers everyone, instead of listFactors() per user (which needs a
+      // userId anyway, and MFA client-side APIs only ever see your OWN
+      // factors regardless).
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 })
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
+      const status = {}
+      for (const u of data.users) {
+        status[u.id] = (u.factors || []).some(f => f.factor_type === 'totp' && f.status === 'verified')
+      }
+      return new Response(JSON.stringify({ success: true, status }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'reset-mfa') {
+      const { userId } = body
+      const { data, error: listErr } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId })
+      if (listErr) return new Response(JSON.stringify({ error: listErr.message }), { status: 400, headers: corsHeaders })
+      const factors = (data?.factors || []).filter((f) => f.factor_type === 'totp')
+      for (const f of factors) {
+        const { error } = await supabaseAdmin.auth.admin.mfa.deleteFactor({ userId, id: f.id })
+        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
+      }
+      return new Response(JSON.stringify({ success: true, removed: factors.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
