@@ -36,21 +36,24 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const [sortDir, setSortDir]       = useState('asc')
   const [dialog, setDialog]         = useState(null)
   const [mfaStatus, setMfaStatus]   = useState({})  // userId -> has a verified 2FA factor
+  const [mfaStatusError, setMfaStatusError] = useState(null)
   const [mfaBusy, setMfaBusy]       = useState(null)
 
   useEffect(() => { load() }, [])
   useEffect(() => { if (!readOnly) loadMfaStatus() }, [readOnly])
 
   async function loadMfaStatus() {
+    setMfaStatusError(null)
     try {
       const token = await getToken()
       const result = await callAdminAction({ action: 'list-mfa-status' }, token)
       setMfaStatus(result.status || {})
-    } catch {
-      // Best-effort - e.g. an admin-via-extra-role account the edge
-      // function doesn't recognise yet. The 2FA column just shows "—"
-      // for everyone rather than breaking the rest of the page.
+    } catch (err) {
+      // Surfaced rather than silently defaulted to empty - an empty result
+      // looks identical to "everyone has 2FA off", which hid a real bug
+      // here once already.
       setMfaStatus({})
+      setMfaStatusError(err.message || 'Could not load 2FA status.')
     }
   }
 
@@ -369,6 +372,14 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         </div>
       )}
 
+      {mfaStatusError && (
+        <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 16, fontSize: '.84rem', color: '#92400e' }}>
+          ⚠ Could not load 2FA status: {mfaStatusError}
+          <button className="btn btn-outline btn-xs" style={{ marginLeft: 10 }} onClick={loadMfaStatus}>Retry</button>
+        </div>
+      )}
+
       {showCreate && !readOnly && (
         <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16, marginBottom: 16 }}>
           <div className="form-grid">
@@ -542,7 +553,9 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 </td>
                 {!readOnly && (
                   <td>
-                    {mfaStatus[u.id] ? (
+                    {mfaStatusError ? (
+                      <span style={{ fontSize: '.75rem', color: '#94a3b8' }}>—</span>
+                    ) : mfaStatus[u.id] ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '.75rem', color: '#15803d', fontWeight: 700 }}>✓ On</span>
                         <button className="btn btn-outline btn-xs" disabled={mfaBusy === u.id}

@@ -70,16 +70,18 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'list-mfa-status') {
-      // listUsers() already returns each user's factors embedded - one call
-      // covers everyone, instead of listFactors() per user (which needs a
-      // userId anyway, and MFA client-side APIs only ever see your OWN
-      // factors regardless).
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 })
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
+      // listUsers()'s embedded `factors` field turned out unreliable in
+      // practice - it's typed as possibly present, but a real enrolled
+      // account still came back with no factors on it. Falling back to the
+      // dedicated per-user endpoint instead (the same one reset-mfa already
+      // uses successfully), fetched in parallel to stay fast.
+      const { data: usersData, error: usersErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 })
+      if (usersErr) return new Response(JSON.stringify({ error: usersErr.message }), { status: 400, headers: corsHeaders })
       const status = {}
-      for (const u of data.users) {
-        status[u.id] = (u.factors || []).some(f => f.factor_type === 'totp' && f.status === 'verified')
-      }
+      await Promise.all(usersData.users.map(async (u) => {
+        const { data } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId: u.id })
+        status[u.id] = (data?.factors || []).some((f) => f.factor_type === 'totp' && f.status === 'verified')
+      }))
       return new Response(JSON.stringify({ success: true, status }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
