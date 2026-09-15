@@ -5,6 +5,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -18,11 +25,19 @@ Deno.serve(async (req) => {
     )
 
     // Verify caller is admin
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
+    const { data: { user } } = await supabaseAdmin.auth.getUser(
+      authHeader.replace('Bearer ', ''),
+    )
     if (!user) return new Response('Unauthorized', { status: 401, headers: corsHeaders })
 
-    const { data: profile } = await supabaseAdmin.from('users').select('role').eq('id', user.id).single()
-    if (profile?.role !== 'admin') return new Response('Forbidden', { status: 403, headers: corsHeaders })
+    const { data: profile } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    if (profile?.role !== 'admin') {
+      return new Response('Forbidden', { status: 403, headers: corsHeaders })
+    }
 
     const body = await req.json()
     const { action } = body
@@ -31,75 +46,104 @@ Deno.serve(async (req) => {
       const { name, email, role } = body
       const tempPw = Math.random().toString(36).slice(-10) + 'A1!'
       const { data: authData, error: authErr } = await supabaseAdmin.auth.admin.createUser({
-        email, password: tempPw, email_confirm: true,
+        email,
+        password: tempPw,
+        email_confirm: true,
       })
-      if (authErr) return new Response(JSON.stringify({ error: authErr.message }), { status: 400, headers: corsHeaders })
-      const { error: dbErr } = await supabaseAdmin.from('users').insert({
-        id: authData.user.id, name, email, role,
-      })
+      if (authErr) return jsonResponse({ error: authErr.message }, 400)
+
+      const { error: dbErr } = await supabaseAdmin
+        .from('users')
+        .insert({ id: authData.user.id, name, email, role })
       if (dbErr) {
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-        return new Response(JSON.stringify({ error: dbErr.message }), { status: 400, headers: corsHeaders })
+        return jsonResponse({ error: dbErr.message }, 400)
       }
-      return new Response(JSON.stringify({ success: true, tempPw }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return jsonResponse({ success: true, tempPw })
     }
 
     if (action === 'reset-password') {
       const { userId, email } = body
       const tempPw = Math.random().toString(36).slice(-10) + 'A1!'
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { password: tempPw })
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
-      await supabaseAdmin.from('users').update({ pw_changed_at: null }).eq('id', userId)
-      return new Response(JSON.stringify({ success: true, tempPw }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: tempPw,
+      })
+      if (error) return jsonResponse({ error: error.message }, 400)
+
+      await supabaseAdmin
+        .from('users')
+        .update({ pw_changed_at: null })
+        .eq('id', userId)
+      return jsonResponse({ success: true, tempPw })
     }
 
     if (action === 'update-email') {
       const { userId, newEmail } = body
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { email: newEmail })
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
-      await supabaseAdmin.from('users').update({ email: newEmail }).eq('id', userId)
-      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        email: newEmail,
+      })
+      if (error) return jsonResponse({ error: error.message }, 400)
+
+      await supabaseAdmin
+        .from('users')
+        .update({ email: newEmail })
+        .eq('id', userId)
+      return jsonResponse({ success: true })
     }
 
     if (action === 'delete') {
       const { userId } = body
       await supabaseAdmin.from('users').delete().eq('id', userId)
       const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
-      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
-      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      if (error) return jsonResponse({ error: error.message }, 400)
+      return jsonResponse({ success: true })
     }
 
     if (action === 'list-mfa-status') {
       // listUsers()'s embedded `factors` field turned out unreliable in
       // practice - it's typed as possibly present, but a real enrolled
-      // account still came back with no factors on it. Falling back to the
-      // dedicated per-user endpoint instead (the same one reset-mfa already
-      // uses successfully), fetched in parallel to stay fast.
-      const { data: usersData, error: usersErr } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 500 })
-      if (usersErr) return new Response(JSON.stringify({ error: usersErr.message }), { status: 400, headers: corsHeaders })
+      // account still came back with no factors on it. Falling back to
+      // the dedicated per-user endpoint instead (the same one reset-mfa
+      // already uses successfully), fetched in parallel to stay fast.
+      const { data: usersData, error: usersErr } = await supabaseAdmin.auth.admin.listUsers({
+        page: 1,
+        perPage: 500,
+      })
+      if (usersErr) return jsonResponse({ error: usersErr.message }, 400)
+
       const status = {}
-      await Promise.all(usersData.users.map(async (u) => {
-        const { data } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId: u.id })
-        status[u.id] = (data?.factors || []).some((f) => f.factor_type === 'totp' && f.status === 'verified')
-      }))
-      return new Response(JSON.stringify({ success: true, status }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await Promise.all(
+        usersData.users.map(async (u) => {
+          const { data } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId: u.id })
+          status[u.id] = (data?.factors || []).some(
+            (f) => f.factor_type === 'totp' && f.status === 'verified',
+          )
+        }),
+      )
+      return jsonResponse({ success: true, status })
     }
 
     if (action === 'reset-mfa') {
       const { userId } = body
-      const { data, error: listErr } = await supabaseAdmin.auth.admin.mfa.listFactors({ userId })
-      if (listErr) return new Response(JSON.stringify({ error: listErr.message }), { status: 400, headers: corsHeaders })
+      const { data, error: listErr } = await supabaseAdmin.auth.admin.mfa.listFactors({
+        userId,
+      })
+      if (listErr) return jsonResponse({ error: listErr.message }, 400)
+
       const factors = (data?.factors || []).filter((f) => f.factor_type === 'totp')
       for (const f of factors) {
-        const { error } = await supabaseAdmin.auth.admin.mfa.deleteFactor({ userId, id: f.id })
-        if (error) return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders })
+        const { error } = await supabaseAdmin.auth.admin.mfa.deleteFactor({
+          userId,
+          id: f.id,
+        })
+        if (error) return jsonResponse({ error: error.message }, 400)
       }
-      return new Response(JSON.stringify({ success: true, removed: factors.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return jsonResponse({ success: true, removed: factors.length })
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
+    return jsonResponse({ error: 'Unknown action' }, 400)
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders })
+    return jsonResponse({ error: err.message }, 500)
   }
 })
