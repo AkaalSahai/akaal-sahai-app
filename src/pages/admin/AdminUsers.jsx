@@ -75,7 +75,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   async function load() {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, last_login, last_seen, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, last_login, last_seen, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name, teacher_id'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
@@ -101,7 +101,12 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
       return [...names]
     }
     if (userErr) {
-      if (userErr.message?.includes('can_manage_teacher_register')) {
+      if (userErr.message?.includes('mfa_required')) {
+        const { data: fallback } = await supabase
+          .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, last_login, last_seen, group_id').order('role').order('name')
+        setUsers((fallback || []).map(u => ({ ...u, mfa_required: false, groupNames: namesForTeacher(u) })))
+        setLoadError('⚠ Run the add-per-user-mfa-required.sql migration to enable the Require 2FA toggle.')
+      } else if (userErr.message?.includes('can_manage_teacher_register')) {
         const { data: fallback } = await supabase
           .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, last_login, last_seen, group_id').order('role').order('name')
         setUsers((fallback || []).map(u => ({ ...u, can_manage_teacher_register: false, groupNames: namesForTeacher(u) })))
@@ -274,6 +279,17 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  async function toggleMfaRequired(userId, current) {
+    const updated = !current
+    try {
+      const { error } = await supabase.from('users').update({ mfa_required: updated }).eq('id', userId)
+      if (error) throw error
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Toggled per-person 2FA requirement', `${u?.name}: ${updated ? 'required' : 'not required'}`).catch(() => {})
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, mfa_required: updated } : u))
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
   function openEdit(u) {
     setEditPanel(prev => ({ ...prev, [u.id]: { name: u.name || '', email: u.email || '', phone: u.phone || '' } }))
   }
@@ -420,6 +436,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
               <th onClick={() => toggleSort('last_seen')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Seen{sortIcon('last_seen')}</th>
               {!readOnly && <th>2FA</th>}
+              {!readOnly && <th>Require 2FA</th>}
               {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
@@ -570,6 +587,23 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 )}
                 {!readOnly && (
                   <td>
+                    <button onClick={() => toggleMfaRequired(u.id, u.mfa_required)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
+                        border: 'none', cursor: 'pointer', transition: 'all .15s',
+                        background: u.mfa_required ? '#dcfce7' : '#f1f5f9',
+                        color: u.mfa_required ? '#15803d' : '#94a3b8' }}>
+                      <span style={{ width: 28, height: 16, borderRadius: 8, position: 'relative', display: 'inline-block',
+                        background: u.mfa_required ? '#22c55e' : '#cbd5e1', transition: 'background .15s', flexShrink: 0 }}>
+                        <span style={{ position: 'absolute', top: 2, left: u.mfa_required ? 14 : 2,
+                          width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+                      </span>
+                      {u.mfa_required ? 'Required' : 'Optional'}
+                    </button>
+                  </td>
+                )}
+                {!readOnly && (
+                  <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-xs"
                         style={{ borderColor: editPanel[u.id] ? 'var(--primary)' : undefined, color: editPanel[u.id] ? 'var(--primary)' : undefined }}
@@ -589,7 +623,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
-                  <td colSpan={10} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={11} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       Edit Details — {u.name}
                     </div>
@@ -626,7 +660,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={readOnly ? 8 : 10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 8 : 11} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>

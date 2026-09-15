@@ -85,12 +85,14 @@ export default function Topbar({ title }) {
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
                 Change Password
               </button>
-              {(hasRole('admin') || hasRole('registrar')) && (
-                <button onClick={() => { setShowMenu(false); setShowMfa(true) }}
-                  style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
-                  Two-Factor Authentication
-                </button>
-              )}
+              {/* Available to any account now that a per-person "Require
+                  2FA" toggle can apply to any role, not just admin/
+                  registrar - everyone needs a way to set it up whether
+                  it's required for them or they just want it. */}
+              <button onClick={() => { setShowMenu(false); setShowMfa(true) }}
+                style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
+                Two-Factor Authentication
+              </button>
               <hr style={{ margin: '4px 12px', border: 'none', borderTop: '1px solid var(--border)' }} />
               <button onClick={handleLogout}
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--danger)', fontWeight: 600, fontSize: '.86rem' }}>

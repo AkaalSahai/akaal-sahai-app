@@ -117,13 +117,17 @@ export function AuthProvider({ children }) {
   // at aal1, and they need to clear the code-entry gate before anything
   // else in the app is safe to show them.
   const mfaChallengePending = !!mfaLevel && mfaLevel.nextLevel === 'aal2' && mfaLevel.currentLevel !== 'aal2'
-  // True when admin has switched on requiring 2FA, this account is one of
-  // the roles that applies to, and they haven't enrolled a factor at all
-  // yet (nextLevel never reaches 'aal2' without a verified factor to reach
-  // it with) - distinct from mfaChallengePending, which is for someone who
-  // already enrolled but hasn't cleared this session's code prompt yet.
-  const mfaEnrollmentRequired = !!mfaRequiredSince && !!mfaLevel && mfaLevel.nextLevel !== 'aal2'
-    && (hasRole('admin') || hasRole('registrar'))
+  // True when 2FA is required for this account and they haven't enrolled a
+  // factor at all yet (nextLevel never reaches 'aal2' without a verified
+  // factor to reach it with) - distinct from mfaChallengePending, which is
+  // for someone who already enrolled but hasn't cleared this session's
+  // code prompt yet. Two independent ways to end up required: the global
+  // Settings toggle (admin/registrar only) or a per-person override on
+  // their own profile (any role, set from Teachers & Staff).
+  const mfaEnrollmentRequired = !!mfaLevel && mfaLevel.nextLevel !== 'aal2' && (
+    profile?.mfa_required === true
+    || (!!mfaRequiredSince && (hasRole('admin') || hasRole('registrar')))
+  )
 
   return (
     <AuthContext.Provider value={{
