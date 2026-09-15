@@ -173,7 +173,7 @@ export default function TeacherLayout() {
           Admin View
         </div>
       )}
-      <div className="nav-tabs" style={{ alignItems: 'center' }}>
+      <div className="nav-tabs nav-tabs-main" style={{ alignItems: 'center' }}>
         {tabs.map(t => {
           const isMessage = t.id === 'message'
           const isActive  = tab === t.id

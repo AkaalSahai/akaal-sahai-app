@@ -49,10 +49,12 @@ export default function Topbar({ title }) {
   return (
     <>
       <div className="topbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button onClick={() => navigate(PRIMARY_HOME[profile?.role] || '/')}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
+            padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
           <img src="/logo.png" alt="Akaal Sahai" style={{ height: 36 }} />
           <span style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--primary)' }}>{title}</span>
-        </div>
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {hasExtraAdminView && (
           onAdminPath ? (
