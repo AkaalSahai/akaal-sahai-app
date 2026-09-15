@@ -5,7 +5,7 @@ import MfaSetup from './MfaSetup'
 
 const PRIMARY_HOME = { registrar: '/registrar', teacher: '/teacher', admin: '/admin', adminView: '/admin' }
 
-export default function Topbar({ title }) {
+export default function Topbar({ title, onLogoClick }) {
   const { profile, logout, changePassword, hasRole } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -49,7 +49,16 @@ export default function Topbar({ title }) {
   return (
     <>
       <div className="topbar">
-        <button onClick={() => navigate(PRIMARY_HOME[profile?.role] || '/')}
+        <button onClick={() => {
+            // Each layout (Admin/Registrar/Teacher) keeps its own local
+            // "which tab" state rather than encoding it in the URL, so
+            // navigating to a path you're already on is a no-op - nothing
+            // visibly happens. onLogoClick lets the current layout reset
+            // its own tab state back to its home tab; navigate() still
+            // handles actually crossing into a different role's layout.
+            onLogoClick?.()
+            navigate(PRIMARY_HOME[profile?.role] || '/')
+          }}
           style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
             padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
           <img src="/logo.png" alt="Akaal Sahai" style={{ height: 36 }} />
