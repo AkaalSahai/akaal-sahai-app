@@ -17,10 +17,11 @@ const DEFAULTS = {
   broadcast_message: '',
   broadcast_active:  'false',
   broadcast_id:      '',
+  mfa_required_since: '',
 }
 
 export default function AdminSettings() {
-  const { profile } = useAuth()
+  const { profile, refreshMfaRequiredSetting } = useAuth()
   const [form, setForm]     = useState(DEFAULTS)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]     = useState(false)
@@ -166,6 +167,26 @@ export default function AdminSettings() {
             Leave any social field blank to hide that button from parents.
           </div>
 
+          <div className="section-label" style={{ marginTop: 8 }}>Two-Factor Authentication</div>
+
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 400, cursor: 'pointer' }}>
+              <input type="checkbox"
+                checked={!!form.mfa_required_since}
+                onChange={e => {
+                  setForm(f => ({ ...f, mfa_required_since: e.target.checked ? new Date().toISOString() : '' }))
+                  setSaved(false)
+                }}
+                style={{ width: 'auto' }} />
+              Require two-factor authentication for admin &amp; registrar accounts
+            </label>
+            <div style={{ fontSize: '.73rem', color: 'var(--muted)', marginTop: 4 }}>
+              {form.mfa_required_since
+                ? `Required since ${new Date(form.mfa_required_since).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}. Anyone in these roles without it set up will be asked to set it up the next time they sign in.`
+                : "Off by default — admin and registrar can still turn it on for themselves from their own account menu, but it isn't required."}
+            </div>
+          </div>
+
           <div className="section-label" style={{ marginTop: 8 }}>Teacher Broadcast Message</div>
 
           <div className="form-group">
@@ -207,6 +228,7 @@ export default function AdminSettings() {
             setTimeout(() => setSaved(false), 3000)
             setSavedBroadcast({ message: form.broadcast_message, active: form.broadcast_active })
             loadAckReport(newId)
+            refreshMfaRequiredSetting()
           }} disabled={busy}>
             {busy ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
           </button>

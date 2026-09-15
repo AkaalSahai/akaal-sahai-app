@@ -13,6 +13,11 @@ export function AuthProvider({ children }) {
   // all) - comparing the two is how we know whether someone who HAS 2FA
   // enrolled still needs to complete that challenge before proceeding.
   const [mfaLevel, setMfaLevel] = useState(null)
+  // site_settings.mfa_required_since - empty/missing means 2FA stays
+  // opt-in; a timestamp means admin has switched on requiring it for
+  // admin/registrar accounts. Public data (same table broadcast messages
+  // live in), so this is safe to fetch before anyone's even logged in.
+  const [mfaRequiredSince, setMfaRequiredSince] = useState(null)
 
   async function fetchProfile(userId) {
     const { data } = await supabase
@@ -29,7 +34,13 @@ export function AuthProvider({ children }) {
     if (!error) setMfaLevel(data)
   }
 
+  async function refreshMfaRequiredSetting() {
+    const { data } = await supabase.from('site_settings').select('value').eq('key', 'mfa_required_since').maybeSingle()
+    setMfaRequiredSince(data?.value || null)
+  }
+
   useEffect(() => {
+    refreshMfaRequiredSetting()
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         setUser(session?.user ?? null)
@@ -106,11 +117,19 @@ export function AuthProvider({ children }) {
   // at aal1, and they need to clear the code-entry gate before anything
   // else in the app is safe to show them.
   const mfaChallengePending = !!mfaLevel && mfaLevel.nextLevel === 'aal2' && mfaLevel.currentLevel !== 'aal2'
+  // True when admin has switched on requiring 2FA, this account is one of
+  // the roles that applies to, and they haven't enrolled a factor at all
+  // yet (nextLevel never reaches 'aal2' without a verified factor to reach
+  // it with) - distinct from mfaChallengePending, which is for someone who
+  // already enrolled but hasn't cleared this session's code prompt yet.
+  const mfaEnrollmentRequired = !!mfaRequiredSince && !!mfaLevel && mfaLevel.nextLevel !== 'aal2'
+    && (hasRole('admin') || hasRole('registrar'))
 
   return (
     <AuthContext.Provider value={{
       user, profile, loading, login, logout, changePassword, requestPasswordReset, hasRole,
       mfaLevel, refreshMfaLevel, mfaChallengePending,
+      mfaRequiredSince, refreshMfaRequiredSetting, mfaEnrollmentRequired,
     }}>
       {children}
     </AuthContext.Provider>
