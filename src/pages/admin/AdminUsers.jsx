@@ -35,8 +35,39 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const [sortCol, setSortCol]       = useState(null)
   const [sortDir, setSortDir]       = useState('asc')
   const [dialog, setDialog]         = useState(null)
+  const [mfaStatus, setMfaStatus]   = useState({})  // userId -> has a verified 2FA factor
+  const [mfaBusy, setMfaBusy]       = useState(null)
 
   useEffect(() => { load() }, [])
+  useEffect(() => { if (!readOnly) loadMfaStatus() }, [readOnly])
+
+  async function loadMfaStatus() {
+    try {
+      const token = await getToken()
+      const result = await callAdminAction({ action: 'list-mfa-status' }, token)
+      setMfaStatus(result.status || {})
+    } catch {
+      // Best-effort - e.g. an admin-via-extra-role account the edge
+      // function doesn't recognise yet. The 2FA column just shows "—"
+      // for everyone rather than breaking the rest of the page.
+      setMfaStatus({})
+    }
+  }
+
+  async function resetMfa(userId, name) {
+    if (!confirm(`Reset two-factor authentication for ${name}? They'll need to set it up again from scratch.`)) return
+    setMfaBusy(userId)
+    try {
+      const token = await getToken()
+      await callAdminAction({ action: 'reset-mfa', userId }, token)
+      logAction(myProfile, 'Reset two-factor authentication', name).catch(() => {})
+      setMfaStatus(prev => ({ ...prev, [userId]: false }))
+    } catch (err) {
+      alert('Error: ' + err.message)
+    } finally {
+      setMfaBusy(null)
+    }
+  }
 
   async function load() {
     setLoadError(null)
@@ -377,6 +408,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th onClick={() => toggleSort('register_manager')} style={{ cursor: 'pointer', userSelect: 'none' }}>Register Manager{sortIcon('register_manager')}</th>
               <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
               <th onClick={() => toggleSort('last_seen')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Seen{sortIcon('last_seen')}</th>
+              {!readOnly && <th>2FA</th>}
               {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
@@ -510,6 +542,21 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 </td>
                 {!readOnly && (
                   <td>
+                    {mfaStatus[u.id] ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '.75rem', color: '#15803d', fontWeight: 700 }}>✓ On</span>
+                        <button className="btn btn-outline btn-xs" disabled={mfaBusy === u.id}
+                          onClick={() => resetMfa(u.id, u.name)}>
+                          {mfaBusy === u.id ? '…' : 'Reset'}
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '.75rem', color: '#94a3b8' }}>Off</span>
+                    )}
+                  </td>
+                )}
+                {!readOnly && (
+                  <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <button className="btn btn-outline btn-xs"
                         style={{ borderColor: editPanel[u.id] ? 'var(--primary)' : undefined, color: editPanel[u.id] ? 'var(--primary)' : undefined }}
@@ -529,7 +576,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
-                  <td colSpan={9} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={10} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       Edit Details — {u.name}
                     </div>
@@ -566,7 +613,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={readOnly ? 8 : 9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 8 : 10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
