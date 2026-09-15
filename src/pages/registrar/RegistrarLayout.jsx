@@ -33,7 +33,7 @@ export default function RegistrarLayout() {
 
   return (
     <div>
-      <Topbar title="Registrar — Akaal Sahai Southall" />
+      <Topbar title="Registrar — Akaal Sahai Southall" onLogoClick={() => setTab('dashboard')} />
       <div className="nav-tabs nav-tabs-main">
         {tabs.map(t => (
           <button key={t.id} className={`nav-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>

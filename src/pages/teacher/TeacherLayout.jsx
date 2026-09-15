@@ -166,7 +166,7 @@ export default function TeacherLayout() {
 
   return (
     <div>
-      <Topbar title="Akaal Sahai Southall" />
+      <Topbar title="Akaal Sahai Southall" onLogoClick={() => setTab('register')} />
       {isAdminView && !isAdmin && !isRegistrar && (
         <div style={{ background: '#fef3c7', borderBottom: '2px solid #f59e0b', padding: '6px 20px',
           fontSize: '.8rem', fontWeight: 600, color: '#92400e', textAlign: 'center' }}>

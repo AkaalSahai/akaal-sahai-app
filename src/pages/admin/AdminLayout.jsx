@@ -62,7 +62,7 @@ export default function AdminLayout() {
 
   return (
     <div>
-      <Topbar title="Admin — Akaal Sahai Southall" />
+      <Topbar title="Admin — Akaal Sahai Southall" onLogoClick={() => setTab('dashboard')} />
       {readOnly && (
         <div style={{ background: '#fef3c7', borderBottom: '2px solid #f59e0b', padding: '6px 20px',
           fontSize: '.8rem', fontWeight: 600, color: '#92400e', textAlign: 'center' }}>
