@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 const DEFAULTS = {
   class_schedule:    'Every Friday & Saturday, 6:15PM – 8:30PM',
@@ -33,6 +34,9 @@ export default function AdminSettings() {
   // (which resets everyone's read-report) when the broadcast itself actually
   // changes — not on every unrelated settings save.
   const [savedBroadcast, setSavedBroadcast] = useState({ message: '', active: 'false' })
+  const [resetPreview, setResetPreview] = useState(null)   // {removed, groups} once loaded, opens the confirm dialog
+  const [resetBusy, setResetBusy]       = useState(false)
+  const [resetDone, setResetDone]       = useState(null)   // {removed, groups} briefly, after a successful reset
 
   useEffect(() => {
     supabase.from('site_settings').select('key, value').then(({ data, error }) => {
@@ -85,6 +89,31 @@ export default function AdminSettings() {
     logAction(profile, 'Updated site settings').catch(() => {})
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
+  }
+
+  async function openResetPreview() {
+    const { data, error } = await supabase.from('teacher_groups').select('group_id').eq('role', 'covering')
+    if (error) { alert(error.message); return }
+    const removed = (data || []).length
+    if (removed === 0) { alert("Every group already only has its primary teacher — nothing to reset."); return }
+    setResetPreview({ removed, groups: new Set((data || []).map(r => r.group_id)).size })
+  }
+
+  async function confirmReset() {
+    setResetBusy(true)
+    const { error } = await supabase.from('teacher_groups').delete().eq('role', 'covering')
+    setResetBusy(false)
+    const preview = resetPreview
+    setResetPreview(null)
+    if (error) {
+      logAction(profile, 'Reset teacher assignments', error.message, false).catch(() => {})
+      alert('Reset failed: ' + error.message)
+      return
+    }
+    logAction(profile, 'Reset teacher assignments',
+      `Removed ${preview.removed} covering teacher(s) across ${preview.groups} group(s)`).catch(() => {})
+    setResetDone(preview)
+    setTimeout(() => setResetDone(null), 6000)
   }
 
   if (loading) return <div className="empty-state">Loading settings…</div>
@@ -285,6 +314,34 @@ export default function AdminSettings() {
           )}
         </div>
       </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="card-title">Teacher Assignments</div>
+        <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginTop: -6, marginBottom: 14 }}>
+          Every group can have one primary teacher and any number of covering
+          teachers. If covering assignments have built up over time, use this
+          to bring every group back down to just its primary teacher.
+        </p>
+        <button className="btn btn-danger btn-sm" onClick={openResetPreview}>
+          Reset to Primary Teachers Only
+        </button>
+        {resetDone && (
+          <div style={{ marginTop: 10, fontSize: '.82rem', color: '#16a34a', fontWeight: 600 }}>
+            ✓ Removed {resetDone.removed} covering teacher{resetDone.removed === 1 ? '' : 's'} across{' '}
+            {resetDone.groups} group{resetDone.groups === 1 ? '' : 's'}.
+          </div>
+        )}
+      </div>
+
+      {resetPreview && (
+        <ConfirmDialog
+          danger
+          message={`This removes ${resetPreview.removed} covering teacher${resetPreview.removed === 1 ? '' : 's'} across ${resetPreview.groups} group${resetPreview.groups === 1 ? '' : 's'}, leaving only each group's primary teacher. Anyone removed loses access to that group's register until re-added.`}
+          confirmText={resetBusy ? 'Resetting…' : 'Reset'}
+          onConfirm={confirmReset}
+          onCancel={() => setResetPreview(null)}
+        />
+      )}
     </div>
   )
 }
