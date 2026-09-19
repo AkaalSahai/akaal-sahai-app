@@ -297,6 +297,12 @@ export default function AdminClasses({ readOnly }) {
       .insert({ teacher_id: teacherId, group_id: groupId })
     if (error) { alert(error.message); return }
     const g = groups.find(x => x.id === groupId)
+    // Keep groups.teacher_id in sync the same way AdminGroups.jsx does -
+    // otherwise a group staffed only through this tab never gets a primary
+    // teacher, which several other checks (RLS, notifications) still rely on.
+    if (!g?.teacher_id) {
+      await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
+    }
     const t = teachers.find(x => x.id === teacherId)
     logAction(profile, 'Assigned teacher to group', `${t?.name} → ${g?.name}`).catch(() => {})
     load()
@@ -308,6 +314,12 @@ export default function AdminClasses({ readOnly }) {
       .eq('teacher_id', teacherId).eq('group_id', groupId)
     if (error) { alert(error.message); return }
     const g = groups.find(x => x.id === groupId)
+    // Same sync as above, in reverse - a removed teacher must not stay the
+    // primary teacher_id, or they'd keep access despite being "removed".
+    if (g?.teacher_id === teacherId) {
+      const remaining = (g.teacherIds || []).filter(id => id !== teacherId)
+      await supabase.from('groups').update({ teacher_id: remaining[0] || null }).eq('id', groupId)
+    }
     const t = teachers.find(x => x.id === teacherId)
     logAction(profile, 'Removed teacher from group', `${t?.name} ← ${g?.name}`).catch(() => {})
     load()
