@@ -53,19 +53,29 @@ export default function TeacherReports() {
   useEffect(() => { if (selectedGroupId) load() }, [selectedGroupId])
 
   async function loadMyGroups() {
-    const { data: tg } = await supabase
-      .from('teacher_groups')
-      .select('group_id, groups(id, name, class_type)')
-      .eq('teacher_id', profile.id)
-    if (tg && tg.length > 0) {
-      const grps = tg.map(r => r.groups).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+    // Query both assignment methods and merge, matching TeacherStudents.jsx /
+    // TeacherRegister.jsx - a teacher set only via the group's primary
+    // teacher_id (not teacher_groups) was otherwise invisible on this page.
+    const [{ data: tgRows }, { data: primaryRows }] = await Promise.all([
+      supabase.from('teacher_groups').select('group_id, groups(id, name, class_type)').eq('teacher_id', profile.id),
+      supabase.from('groups').select('id, name, class_type').eq('teacher_id', profile.id),
+    ])
+
+    const grpMap = new Map()
+    ;(tgRows || []).forEach(r => { if (r.groups) grpMap.set(r.groups.id, r.groups) })
+    ;(primaryRows || []).forEach(g => { if (!grpMap.has(g.id)) grpMap.set(g.id, g) })
+
+    let grps = [...grpMap.values()].sort((a, b) => a.name.localeCompare(b.name))
+
+    if (grps.length === 0 && profile.group_id) {
+      const { data: g } = await supabase.from('groups').select('id, name, class_type').eq('id', profile.group_id).single()
+      if (g) grps = [g]
+    }
+
+    if (grps.length > 0) {
       setMyGroups(grps)
       const def = grps.find(g => g.id === profile.group_id) || grps[0]
       setSelectedGroupId(def.id)
-    } else if (profile.group_id) {
-      const { data: g } = await supabase.from('groups').select('id, name, class_type').eq('id', profile.group_id).single()
-      setMyGroups(g ? [g] : [])
-      setSelectedGroupId(profile.group_id)
     } else {
       setMyGroups([])
       setGroupsLoading(false)
