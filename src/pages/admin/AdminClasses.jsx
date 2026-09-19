@@ -53,16 +53,23 @@ export default function AdminClasses({ readOnly }) {
           .neq('class_type', 'punjabi')
           .order('class_type').order('name'),
         supabase.from('users').select('id, name, role, extra_roles').order('name'),
-        supabase.from('teacher_groups').select('teacher_id, group_id'),
+        supabase.from('teacher_groups').select('teacher_id, group_id, role'),
         supabase.from('student_classes').select('group_id'),
         loadClassTypes(),
       ])
       setClassTypes(extraTypes)
       setClassTab(prev => (prev && extraTypes[prev]) ? prev : (Object.keys(extraTypes)[0] || null))
+      // tgMap stays a plain group_id -> [teacher_id, ...] map - teacherNameForGroup
+      // below (used for a student's *Punjabi* group, not these extra-class
+      // groups) already expects that exact shape. Role info goes in a
+      // separate map instead of changing tgMap's shape.
       const tgMap = {}
+      const roleMap = {}
       ;(tg || []).forEach(r => {
         if (!tgMap[r.group_id]) tgMap[r.group_id] = []
         tgMap[r.group_id].push(r.teacher_id)
+        if (!roleMap[r.group_id]) roleMap[r.group_id] = {}
+        roleMap[r.group_id][r.teacher_id] = r.role
       })
       setGroupTeacherMap(tgMap)
       const countMap = {}
@@ -73,7 +80,9 @@ export default function AdminClasses({ readOnly }) {
         // teacher_groups row to match (see AdminGroups.jsx).
         const ids = new Set(tgMap[grp.id] || [])
         if (grp.teacher_id) ids.add(grp.teacher_id)
-        return { ...grp, teacherIds: [...ids], studentCount: countMap[grp.id] || 0 }
+        const teacherRoles = { ...(roleMap[grp.id] || {}) }
+        if (grp.teacher_id && !teacherRoles[grp.teacher_id]) teacherRoles[grp.teacher_id] = 'primary'
+        return { ...grp, teacherIds: [...ids], teacherRoles, studentCount: countMap[grp.id] || 0 }
       }))
       setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
     } catch (err) {
@@ -291,20 +300,25 @@ export default function AdminClasses({ readOnly }) {
       ? { ...g, studentCount: Math.max(0, g.studentCount - 1) } : g))
   }
 
+  // A group's first-ever teacher becomes primary automatically; every
+  // teacher added after that is covering by default. Use makePrimary
+  // below to promote a covering teacher (or replace the primary) later.
   async function addTeacher(groupId, teacherId) {
     if (!teacherId || readOnly) return
-    const { error } = await supabase.from('teacher_groups')
-      .insert({ teacher_id: teacherId, group_id: groupId })
-    if (error) { alert(error.message); return }
     const g = groups.find(x => x.id === groupId)
+    const hasPrimary = (g?.teacherIds || []).some(id => g.teacherRoles?.[id] === 'primary')
+    const role = hasPrimary ? 'covering' : 'primary'
+    const { error } = await supabase.from('teacher_groups')
+      .insert({ teacher_id: teacherId, group_id: groupId, role })
+    if (error) { alert(error.message); return }
     // Keep groups.teacher_id in sync the same way AdminGroups.jsx does -
     // otherwise a group staffed only through this tab never gets a primary
     // teacher, which several other checks (RLS, notifications) still rely on.
-    if (!g?.teacher_id) {
+    if (role === 'primary') {
       await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
     }
     const t = teachers.find(x => x.id === teacherId)
-    logAction(profile, 'Assigned teacher to group', `${t?.name} → ${g?.name}`).catch(() => {})
+    logAction(profile, 'Assigned teacher to group', `${t?.name} → ${g?.name} (${role})`).catch(() => {})
     load()
   }
 
@@ -316,12 +330,40 @@ export default function AdminClasses({ readOnly }) {
     const g = groups.find(x => x.id === groupId)
     // Same sync as above, in reverse - a removed teacher must not stay the
     // primary teacher_id, or they'd keep access despite being "removed".
+    // Removing the primary promotes a remaining covering teacher instead
+    // of leaving the group with no primary at all.
     if (g?.teacher_id === teacherId) {
       const remaining = (g.teacherIds || []).filter(id => id !== teacherId)
-      await supabase.from('groups').update({ teacher_id: remaining[0] || null }).eq('id', groupId)
+      const nextPrimary = remaining[0] || null
+      if (nextPrimary) {
+        await supabase.from('teacher_groups').update({ role: 'primary' })
+          .eq('group_id', groupId).eq('teacher_id', nextPrimary)
+      }
+      await supabase.from('groups').update({ teacher_id: nextPrimary }).eq('id', groupId)
     }
     const t = teachers.find(x => x.id === teacherId)
     logAction(profile, 'Removed teacher from group', `${t?.name} ← ${g?.name}`).catch(() => {})
+    load()
+  }
+
+  // Promotes a covering teacher to primary, demoting whoever held it
+  // before - also how admin "adds a teacher as primary": add normally
+  // (covering by default), then promote.
+  async function makePrimary(groupId, teacherId) {
+    if (readOnly) return
+    const g = groups.find(x => x.id === groupId)
+    const prevPrimaryId = (g?.teacherIds || []).find(id => g.teacherRoles?.[id] === 'primary')
+    if (prevPrimaryId === teacherId) return
+    if (prevPrimaryId) {
+      await supabase.from('teacher_groups').update({ role: 'covering' })
+        .eq('group_id', groupId).eq('teacher_id', prevPrimaryId)
+    }
+    const { error } = await supabase.from('teacher_groups').update({ role: 'primary' })
+      .eq('group_id', groupId).eq('teacher_id', teacherId)
+    if (error) { alert(error.message); return }
+    await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
+    const t = teachers.find(x => x.id === teacherId)
+    logAction(profile, 'Set primary teacher', `${t?.name} → ${g?.name}`).catch(() => {})
     load()
   }
 
@@ -472,15 +514,30 @@ export default function AdminClasses({ readOnly }) {
                     {(g.teacherIds || []).map(tid => {
                       const t = teachers.find(x => x.id === tid)
                       if (!t) return null
+                      const isPrimary = g.teacherRoles?.[tid] === 'primary'
                       return (
                         <span key={tid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-                          background: '#e0e7ff', color: '#3730a3', borderRadius: 6,
-                          padding: '2px 8px', fontSize: '.78rem', fontWeight: 600 }}>
+                          background: isPrimary ? '#e0e7ff' : '#f1f5f9',
+                          color: isPrimary ? '#3730a3' : '#475569',
+                          border: isPrimary ? '1px solid #c7d2fe' : '1px solid var(--border)',
+                          borderRadius: 6, padding: '2px 8px', fontSize: '.78rem', fontWeight: 600 }}>
                           {t.name}
+                          <span style={{ fontSize: '.66rem', fontWeight: 700, opacity: .7 }}>
+                            {isPrimary ? '· Primary' : '· Covering'}
+                          </span>
+                          {!readOnly && !isPrimary && (
+                            <button onClick={() => makePrimary(g.id, tid)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#3730a3', padding: '0 2px', fontSize: '.68rem', fontWeight: 700,
+                                textDecoration: 'underline' }}>
+                              Make Primary
+                            </button>
+                          )}
                           {!readOnly && (
                             <button onClick={() => removeTeacher(g.id, tid)}
                               style={{ background: 'none', border: 'none', cursor: 'pointer',
-                                color: '#3730a3', padding: 0, lineHeight: 1, fontSize: '1rem' }}>
+                                color: isPrimary ? '#3730a3' : '#475569', padding: 0,
+                                lineHeight: 1, fontSize: '1rem' }}>
                               ×
                             </button>
                           )}
