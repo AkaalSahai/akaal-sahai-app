@@ -30,6 +30,7 @@ export default function AdminApplications({ readOnly }) {
   const [teacherMap, setTeacherMap] = useState({})
   const [loading, setLoading]       = useState(true)
   const [busy, setBusy]             = useState(null)
+  const [showGroupsSidebar, setShowGroupsSidebar] = useState(false)  // mobile only — desktop always shows it
 
   useEffect(() => { load() }, [])
 
@@ -218,13 +219,21 @@ export default function AdminApplications({ readOnly }) {
   if (loading) return <div className="spinner" />
 
   const GroupsSidebar = () => (
-    <div style={{ width: 280, flexShrink: 0, position: 'sticky', top: 16, alignSelf: 'flex-start',
+    <div className={`groups-sidebar ${showGroupsSidebar ? 'open' : ''}`}
+      style={{ width: 280, flexShrink: 0, position: 'sticky', top: 16, alignSelf: 'flex-start',
       maxHeight: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column',
       background: 'white', borderRadius: 12, border: '1px solid var(--border)',
       boxShadow: '0 4px 20px rgba(30,26,110,.08)', overflow: 'hidden' }}>
       <div style={{ padding: '11px 14px', borderBottom: '1px solid var(--border)',
-        fontWeight: 800, fontSize: '.82rem', color: 'var(--primary)', flexShrink: 0 }}>
+        fontWeight: 800, fontSize: '.82rem', color: 'var(--primary)', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Groups Reference
+        <button className={`groups-sidebar-close-btn ${showGroupsSidebar ? 'open' : ''}`}
+          onClick={() => setShowGroupsSidebar(false)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer',
+            color: 'var(--primary)', fontSize: '1.1rem', lineHeight: 1, padding: 0 }}>
+          ×
+        </button>
       </div>
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.78rem', fontVariantNumeric: 'tabular-nums' }}>
@@ -279,6 +288,12 @@ export default function AdminApplications({ readOnly }) {
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
+      <button className="groups-sidebar-toggle-btn btn btn-outline btn-sm"
+        onClick={() => setShowGroupsSidebar(true)}>
+        📋 Groups Reference
+      </button>
+      <div className={`groups-sidebar-backdrop ${showGroupsSidebar ? 'open' : ''}`}
+        onClick={() => setShowGroupsSidebar(false)} />
       <div className="screen-toggle">
         <button className={`toggle-btn ${tab === 'students' ? 'active' : ''}`} onClick={() => setTab('students')}>
           Student Applications {pending.students > 0 && <span className="badge">{pending.students}</span>}
