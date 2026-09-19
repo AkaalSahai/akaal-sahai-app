@@ -25,20 +25,42 @@ export default function AdminGroups({ readOnly }) {
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
   async function load() {
-    const [{ data: g }, { data: t }, { data: tg }] = await Promise.all([
+    const [{ data: g }, { data: t }, { data: tg }, { data: sc }] = await Promise.all([
       supabase.from('groups').select('id, name, teacher_id, class_type, students(date_of_birth)').order('name'),
       supabase.from('users').select('id, name, role, extra_roles').order('name'),
-      supabase.from('teacher_groups').select('teacher_id, group_id'),
+      supabase.from('teacher_groups').select('teacher_id, group_id, role'),
+      // Extra-class (Gatka/Kirtan/any admin-added type) enrollment lives in
+      // student_classes, not students.group_id - the embedded
+      // groups(...).students(...) above only ever follows a student's
+      // PRIMARY group_id, so it's always empty for any other class type
+      // without this second query to fall back on.
+      supabase.from('student_classes').select('group_id, students(date_of_birth)'),
     ])
     const tgMap = {}
     ;(tg || []).forEach(r => {
       if (!tgMap[r.group_id]) tgMap[r.group_id] = []
-      tgMap[r.group_id].push(r.teacher_id)
+      tgMap[r.group_id].push(r)
+    })
+    const scMap = {}
+    ;(sc || []).forEach(r => {
+      if (!r.students) return
+      if (!scMap[r.group_id]) scMap[r.group_id] = []
+      scMap[r.group_id].push(r.students)
     })
     setGroups((g || []).map(grp => {
-      const ids = tgMap[grp.id] || []
+      const rows = tgMap[grp.id] || []
+      const teacherRoles = {}
+      rows.forEach(r => { teacherRoles[r.teacher_id] = r.role })
+      // teacher_id should already match whichever row holds 'primary' -
+      // addTeacherToGroup/removeTeacherFromGroup/makePrimary below keep it
+      // that way - but fall back to it directly for any row that predates
+      // the role column.
+      if (grp.teacher_id && !teacherRoles[grp.teacher_id]) teacherRoles[grp.teacher_id] = 'primary'
+      const ids = rows.map(r => r.teacher_id)
       const teacherIds = grp.teacher_id && !ids.includes(grp.teacher_id) ? [grp.teacher_id, ...ids] : ids
-      return { ...grp, teacherIds }
+      const isPunjabi = !grp.class_type || grp.class_type === 'punjabi'
+      const students = isPunjabi ? (grp.students || []) : (scMap[grp.id] || [])
+      return { ...grp, teacherIds, teacherRoles, students }
     }))
     setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
     setLoading(false)
@@ -114,17 +136,22 @@ export default function AdminGroups({ readOnly }) {
     setBusy(false)
   }
 
+  // A group's first-ever teacher becomes primary automatically; every
+  // teacher added after that is covering by default. Use makePrimary
+  // below to promote a covering teacher (or replace the primary) later.
   async function addTeacherToGroup(groupId, teacherId) {
     if (!teacherId) return
     try {
-      const { error } = await supabase.from('teacher_groups').insert({ teacher_id: teacherId, group_id: groupId })
-      if (error) { alert(error.message); return }
       const g = groups.find(x => x.id === groupId)
-      if (!g?.teacher_id) {
+      const hasPrimary = (g?.teacherIds || []).some(id => g.teacherRoles?.[id] === 'primary')
+      const role = hasPrimary ? 'covering' : 'primary'
+      const { error } = await supabase.from('teacher_groups').insert({ teacher_id: teacherId, group_id: groupId, role })
+      if (error) { alert(error.message); return }
+      if (role === 'primary') {
         await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
       }
       const teacherName = teachers.find(t => t.id === teacherId)?.name
-      logAction(profile, 'Assigned teacher to group', `${teacherName} → ${g?.name}`).catch(() => {})
+      logAction(profile, 'Assigned teacher to group', `${teacherName} → ${g?.name} (${role})`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
   }
@@ -135,11 +162,40 @@ export default function AdminGroups({ readOnly }) {
       if (error) { alert(error.message); return }
       const g = groups.find(x => x.id === groupId)
       if (g?.teacher_id === teacherId) {
+        // Removing the primary promotes a remaining covering teacher (if
+        // any) rather than leaving the group with no primary at all.
         const remaining = (g.teacherIds || []).filter(id => id !== teacherId)
-        await supabase.from('groups').update({ teacher_id: remaining[0] || null }).eq('id', groupId)
+        const nextPrimary = remaining[0] || null
+        if (nextPrimary) {
+          await supabase.from('teacher_groups').update({ role: 'primary' })
+            .eq('group_id', groupId).eq('teacher_id', nextPrimary)
+        }
+        await supabase.from('groups').update({ teacher_id: nextPrimary }).eq('id', groupId)
       }
       const teacherName = teachers.find(t => t.id === teacherId)?.name
       logAction(profile, 'Removed teacher from group', `${teacherName} ← ${g?.name}`).catch(() => {})
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
+  // Promotes a covering teacher to primary, demoting whoever held it
+  // before - this is also how admin "adds a teacher as primary": add them
+  // normally (covering by default), then promote.
+  async function makePrimary(groupId, teacherId) {
+    try {
+      const g = groups.find(x => x.id === groupId)
+      const prevPrimaryId = (g?.teacherIds || []).find(id => g.teacherRoles?.[id] === 'primary')
+      if (prevPrimaryId === teacherId) return
+      if (prevPrimaryId) {
+        await supabase.from('teacher_groups').update({ role: 'covering' })
+          .eq('group_id', groupId).eq('teacher_id', prevPrimaryId)
+      }
+      const { error } = await supabase.from('teacher_groups').update({ role: 'primary' })
+        .eq('group_id', groupId).eq('teacher_id', teacherId)
+      if (error) { alert(error.message); return }
+      await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
+      const teacherName = teachers.find(t => t.id === teacherId)?.name
+      logAction(profile, 'Set primary teacher', `${teacherName} → ${g?.name}`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
   }
@@ -275,15 +331,30 @@ export default function AdminGroups({ readOnly }) {
                     {(g.teacherIds || []).map(tid => {
                       const t = teachers.find(x => x.id === tid)
                       if (!t) return null
+                      const isPrimary = g.teacherRoles?.[tid] === 'primary'
                       return (
                         <span key={tid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-                          background: '#e0e7ff', color: '#3730a3', borderRadius: 6,
-                          padding: '2px 8px', fontSize: '.78rem', fontWeight: 600 }}>
+                          background: isPrimary ? '#e0e7ff' : '#f1f5f9',
+                          color: isPrimary ? '#3730a3' : '#475569',
+                          border: isPrimary ? '1px solid #c7d2fe' : '1px solid var(--border)',
+                          borderRadius: 6, padding: '2px 8px', fontSize: '.78rem', fontWeight: 600 }}>
                           {t.name}
+                          <span style={{ fontSize: '.66rem', fontWeight: 700, opacity: .7 }}>
+                            {isPrimary ? '· Primary' : '· Covering'}
+                          </span>
+                          {!readOnly && !isPrimary && (
+                            <button onClick={() => makePrimary(g.id, tid)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#3730a3', padding: '0 2px', fontSize: '.68rem', fontWeight: 700,
+                                textDecoration: 'underline' }}>
+                              Make Primary
+                            </button>
+                          )}
                           {!readOnly && (
                             <button onClick={() => removeTeacherFromGroup(g.id, tid)}
                               style={{ background: 'none', border: 'none', cursor: 'pointer',
-                                color: '#3730a3', padding: '0 0 0 2px', lineHeight: 1, fontSize: '1rem' }}>
+                                color: isPrimary ? '#3730a3' : '#475569', padding: '0 0 0 2px',
+                                lineHeight: 1, fontSize: '1rem' }}>
                               ×
                             </button>
                           )}

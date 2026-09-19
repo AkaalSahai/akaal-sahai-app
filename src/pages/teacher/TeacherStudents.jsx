@@ -6,6 +6,7 @@ import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_LABEL } from '../../lib/verification'
+import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -34,16 +35,18 @@ export default function TeacherStudents() {
   const [requiredReason, setRequiredReason] = useState(null)
   const [verifyingId, setVerifyingId]     = useState(null)
   const [verifyBusy, setVerifyBusy]       = useState(false)
+  const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
 
   useEffect(() => { load() }, [user])
+  useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
 
   async function load() {
     if (!user) return
     try {
       // Query both assignment methods and merge to handle all teacher setups
       const [{ data: tgRows }, { data: primaryRows }] = await Promise.all([
-        supabase.from('teacher_groups').select('group_id, groups(id, name)').eq('teacher_id', user.id),
-        supabase.from('groups').select('id, name').eq('teacher_id', user.id),
+        supabase.from('teacher_groups').select('group_id, groups(id, name, class_type)').eq('teacher_id', user.id),
+        supabase.from('groups').select('id, name, class_type').eq('teacher_id', user.id),
       ])
 
       const grpMap = new Map()
@@ -53,7 +56,7 @@ export default function TeacherStudents() {
       let grps = [...grpMap.values()].sort((a, b) => a.name.localeCompare(b.name))
 
       if (grps.length === 0 && profile?.group_id) {
-        const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
+        const { data: g } = await supabase.from('groups').select('id, name, class_type').eq('id', profile.group_id).single()
         if (g) grps = [g]
       }
 
@@ -61,7 +64,7 @@ export default function TeacherStudents() {
       if (grps.length > 0) {
         const gid = grps[0].id
         setGroupId(gid)
-        await loadStudentsForGroup(gid)
+        await loadStudentsForGroup(gid, grps[0].class_type)
       }
     } catch (err) {
       console.error('TeacherStudents load error:', err)
@@ -70,13 +73,14 @@ export default function TeacherStudents() {
     }
   }
 
-  async function loadStudentsForGroup(gid) {
-    const { data } = await supabase
-      .from('students').select('*')
-      .eq('group_id', gid).eq('active', true)
-      .order('last_name').order('first_name')
-    setStudents(data || [])
-    await loadVerifications((data || []).map(s => s.id))
+  async function loadStudentsForGroup(gid, classType) {
+    const data = await loadGroupStudents(gid, classType, '*, groups(id, name, teacher_id)')
+    const sorted = data.slice().sort((a, b) =>
+      (a.last_name  || '').localeCompare(b.last_name  || '') ||
+      (a.first_name || '').localeCompare(b.first_name || '')
+    )
+    setStudents(sorted)
+    await loadVerifications(sorted.map(s => s.id))
   }
 
   async function loadVerifications(studentIds) {
@@ -128,8 +132,15 @@ export default function TeacherStudents() {
     setVerifyingId(null)
     setSearch('')
     setLoading(true)
-    try { await loadStudentsForGroup(gid) }
-    finally { setLoading(false) }
+    try {
+      const grp = myGroups.find(g => g.id === gid)
+      await loadStudentsForGroup(gid, grp?.class_type)
+    } catch (err) {
+      console.error('switchGroup error:', err)
+      setStudents([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   function startEdit(s) {
@@ -270,6 +281,18 @@ export default function TeacherStudents() {
     return name.includes(search.toLowerCase())
   }).length
 
+  const selectedGroup = myGroups.find(g => g.id === groupId)
+  // Adding/editing a student's core profile, and verifying it's up to
+  // date, only make sense from their PRIMARY Punjabi group - a brand new
+  // student added from an extra class (Gatka/Kirtan/etc) would get that
+  // extra class set as their group_id, which breaks the Punjabi-only
+  // enrollment rule those classes are built around, and editing/verifying
+  // a student's home address etc isn't something every extra-class
+  // teacher should be able to do.
+  const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
+  const canEditHere = canEdit && isPunjabiGroup
+  const punjabiGroups = myGroups.filter(g => !g.class_type || g.class_type === 'punjabi')
+
   return (
     <>
     {myGroups.length > 1 && (
@@ -283,28 +306,36 @@ export default function TeacherStudents() {
     <div className="card">
       <div className="card-title">
         My Students ({search ? filtered_count : students.length})
-        {canEdit && <button className="btn btn-primary btn-sm" onClick={startNew}>+ Add Student</button>}
+        {canEditHere && <button className="btn btn-primary btn-sm" onClick={startNew}>+ Add Student</button>}
       </div>
 
-      {!canEdit && (
+      {!canEdit && isPunjabiGroup && (
         <div style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 8,
           padding: '10px 14px', marginBottom: 16, fontSize: '.84rem', color: '#64748b' }}>
           Viewing only — your admin has not enabled student editing for your account.
         </div>
       )}
 
+      {!isPunjabiGroup && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 16, fontSize: '.84rem', color: '#1e40af' }}>
+          Viewing only — {selectedGroup?.name || 'this class'}'s roster is shown here, but adding, editing, or
+          verifying a student's details is done from their Punjabi group.
+        </div>
+      )}
+
       {/* Add / Edit form */}
-      {editing && canEdit && (
+      {editing && canEditHere && (
         <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
           <div style={{ fontWeight: 700, fontSize: '.95rem', marginBottom: 16, color: 'var(--primary)' }}>
             {editing === 'new' ? 'Add New Student' : 'Edit Student'}
           </div>
 
-          {editing === 'new' && myGroups.length > 1 && (
+          {editing === 'new' && punjabiGroups.length > 1 && (
             <div className="form-group" style={{ marginBottom: 16, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 14px' }}>
               <label style={{ fontWeight: 700, color: 'var(--primary)' }}>Add to Group *</label>
               <select value={newStudentGroupId || ''} onChange={e => setNewStudentGroupId(e.target.value)}>
-                {myGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                {punjabiGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </div>
           )}
@@ -417,6 +448,7 @@ export default function TeacherStudents() {
           <thead>
             <tr>
               <th onClick={() => toggleSort('name')}   style={{ cursor: 'pointer', userSelect: 'none' }}>Student{sortIcon('name')}</th>
+              {!isPunjabiGroup && <th>Punjabi Group</th>}
               <th onClick={() => toggleSort('age')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Age{sortIcon('age')}</th>
               <th onClick={() => toggleSort('dob')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Date of Birth{sortIcon('dob')}</th>
               <th onClick={() => toggleSort('parent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Parent{sortIcon('parent')}</th>
@@ -438,6 +470,16 @@ export default function TeacherStudents() {
                       <MedicalBadge notes={s.medical_notes} studentName={fullName} />
                     </div>
                   </td>
+                  {!isPunjabiGroup && (
+                    <td style={{ fontSize: '.85rem' }}>
+                      {s.groups?.name || '—'}
+                      {s.groups && (
+                        <div style={{ fontSize: '.76rem', color: 'var(--muted)' }}>
+                          {resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}
+                        </div>
+                      )}
+                    </td>
+                  )}
                   <td style={{ fontSize: '.85rem', fontWeight: 600 }}>{calcAge(s.date_of_birth) ?? '—'}</td>
                   <td className="date" style={{ fontSize: '.85rem' }}>{fmtDate(s.date_of_birth)}</td>
                   <td style={{ fontSize: '.85rem' }}>
@@ -461,13 +503,15 @@ export default function TeacherStudents() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      <button className="btn btn-outline btn-xs"
-                        style={{ borderColor: verifyingId === s.id ? 'var(--primary)' : undefined,
-                          color: verifyingId === s.id ? 'var(--primary)' : undefined }}
-                        onClick={() => toggleVerify(s.id)}>
-                        {verifyingId === s.id ? 'Close' : status.verified ? 'Re-check' : 'Verify'}
-                      </button>
-                      {canEdit && (
+                      {isPunjabiGroup && (
+                        <button className="btn btn-outline btn-xs"
+                          style={{ borderColor: verifyingId === s.id ? 'var(--primary)' : undefined,
+                            color: verifyingId === s.id ? 'var(--primary)' : undefined }}
+                          onClick={() => toggleVerify(s.id)}>
+                          {verifyingId === s.id ? 'Close' : status.verified ? 'Re-check' : 'Verify'}
+                        </button>
+                      )}
+                      {canEditHere && (
                         <button className="btn btn-outline btn-xs" onClick={() => startEdit(s)}>Edit</button>
                       )}
                     </div>
@@ -475,7 +519,7 @@ export default function TeacherStudents() {
                 </tr>
                 {verifyingId === s.id && (
                   <tr>
-                    <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                    <td colSpan={isPunjabiGroup ? 7 : 8} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                       {requiredReason && !status.verified && status.reason === 'admin_required' && (
                         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
                           padding: '8px 12px', marginBottom: 12, fontSize: '.8rem', color: '#92400e' }}>
@@ -510,7 +554,7 @@ export default function TeacherStudents() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
+              <tr><td colSpan={isPunjabiGroup ? 7 : 8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {search ? 'No students match your search' : 'No students in your group yet'}
               </td></tr>
             )}

@@ -3,6 +3,8 @@ import { useAuth } from './hooks/useAuth'
 import { AuthProvider } from './components/AuthProvider'
 import OfflineBanner from './components/OfflineBanner'
 import InstallPrompt from './components/InstallPrompt'
+import MfaChallenge from './components/MfaChallenge'
+import MfaRequiredSetup from './components/MfaRequiredSetup'
 
 // Public pages
 import LoginPage from './pages/LoginPage'
@@ -15,12 +17,27 @@ import AdminLayout from './pages/admin/AdminLayout'
 import RegistrarLayout from './pages/registrar/RegistrarLayout'
 import TeacherLayout from './pages/teacher/TeacherLayout'
 
+// A profile matches an allowed role if it's their primary role OR one of
+// their extra_roles — same rule as hasRole() elsewhere in the app, so e.g.
+// a teacher who's also been given "adminView" as an extra role can reach
+// /admin (read-only) without it replacing their normal /teacher access.
+function matchesRole(profile, role) {
+  const allowed = Array.isArray(role) ? role : [role]
+  return allowed.some(r => profile.role === r || (profile.extra_roles || []).includes(r))
+}
+
 function RequireAuth({ role, children }) {
-  const { user, profile, loading } = useAuth()
+  const { user, profile, loading, mfaChallengePending, mfaEnrollmentRequired } = useAuth()
   if (loading) return <div className="spinner" style={{ marginTop: 100 }} />
   if (!user || !profile) return <Navigate to="/login" replace />
-  if (role && profile.role !== role && !(Array.isArray(role) && role.includes(profile.role)))
-    return <Navigate to="/login" replace />
+  // A verified authenticator is enrolled but hasn't been cleared this
+  // session yet - password sign-in alone only gets someone to aal1, and
+  // nothing past this point should render until that's resolved.
+  if (mfaChallengePending) return <MfaChallenge />
+  // Admin has switched on requiring 2FA and this account hasn't enrolled a
+  // factor at all yet - distinct from the challenge case above.
+  if (mfaEnrollmentRequired) return <MfaRequiredSetup />
+  if (role && !matchesRole(profile, role)) return <Navigate to="/login" replace />
   return children
 }
 

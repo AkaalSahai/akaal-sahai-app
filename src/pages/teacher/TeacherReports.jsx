@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
+import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -42,27 +43,39 @@ export default function TeacherReports() {
   const [saving, setSaving]      = useState({})
   const [sortCol, setSortCol]    = useState('name')
   const [sortDir, setSortDir]    = useState('asc')
+  const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
   const debounceRef              = useRef({})
   const notesRef                 = useRef({})
 
   useEffect(() => { notesRef.current = notes }, [notes])
   useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
+  useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
   useEffect(() => { if (selectedGroupId) load() }, [selectedGroupId])
 
   async function loadMyGroups() {
-    const { data: tg } = await supabase
-      .from('teacher_groups')
-      .select('group_id, groups(id, name)')
-      .eq('teacher_id', profile.id)
-    if (tg && tg.length > 0) {
-      const grps = tg.map(r => r.groups).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+    // Query both assignment methods and merge, matching TeacherStudents.jsx /
+    // TeacherRegister.jsx - a teacher set only via the group's primary
+    // teacher_id (not teacher_groups) was otherwise invisible on this page.
+    const [{ data: tgRows }, { data: primaryRows }] = await Promise.all([
+      supabase.from('teacher_groups').select('group_id, groups(id, name, class_type)').eq('teacher_id', profile.id),
+      supabase.from('groups').select('id, name, class_type').eq('teacher_id', profile.id),
+    ])
+
+    const grpMap = new Map()
+    ;(tgRows || []).forEach(r => { if (r.groups) grpMap.set(r.groups.id, r.groups) })
+    ;(primaryRows || []).forEach(g => { if (!grpMap.has(g.id)) grpMap.set(g.id, g) })
+
+    let grps = [...grpMap.values()].sort((a, b) => a.name.localeCompare(b.name))
+
+    if (grps.length === 0 && profile.group_id) {
+      const { data: g } = await supabase.from('groups').select('id, name, class_type').eq('id', profile.group_id).single()
+      if (g) grps = [g]
+    }
+
+    if (grps.length > 0) {
       setMyGroups(grps)
       const def = grps.find(g => g.id === profile.group_id) || grps[0]
       setSelectedGroupId(def.id)
-    } else if (profile.group_id) {
-      const { data: g } = await supabase.from('groups').select('id, name').eq('id', profile.group_id).single()
-      setMyGroups(g ? [g] : [])
-      setSelectedGroupId(profile.group_id)
     } else {
       setMyGroups([])
       setGroupsLoading(false)
@@ -73,16 +86,22 @@ export default function TeacherReports() {
 
   async function load() {
     setLoading(true)
-    const [{ data: studentData }, { data: records }, { data: noteData }] = await Promise.all([
-      supabase.from('students')
-        .select('id, first_name, middle_name, last_name, date_of_birth, medical_notes')
-        .eq('group_id', selectedGroupId).eq('active', true).order('first_name').order('last_name'),
+    const grp = myGroups.find(g => g.id === selectedGroupId)
+    const [studentData, { data: records }, { data: noteData }] = await Promise.all([
+      loadGroupStudents(
+        selectedGroupId, grp?.class_type,
+        'id, first_name, middle_name, last_name, date_of_birth, medical_notes, groups(id, name, teacher_id)'
+      ).catch(err => { console.error('loadGroupStudents error:', err); return [] }),
       supabase.from('attendance_records')
         .select('student_id, status, session_date')
         .eq('group_id', selectedGroupId),
       supabase.from('student_notes')
         .select('student_id, progress_level, comments'),
     ])
+    studentData.sort((a, b) =>
+      (a.first_name || '').localeCompare(b.first_name || '') ||
+      (a.last_name  || '').localeCompare(b.last_name  || '')
+    )
 
     const statMap = {}
     ;(studentData || []).forEach(s => { statMap[s.id] = { present: 0, late: 0, absent: 0, holiday: 0, total: 0 } })
@@ -186,6 +205,9 @@ export default function TeacherReports() {
     </div>
   )
 
+  const selectedGroup = myGroups.find(g => g.id === selectedGroupId)
+  const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
+
   return (
     <div className="card">
       <div className="card-title">
@@ -256,6 +278,12 @@ export default function TeacherReports() {
                       <span style={{ fontSize: '.7rem', color: 'var(--danger)', fontWeight: 600 }}>⚕ Medical</span>
                     )}
                   </div>
+                  {!isPunjabiGroup && (
+                    <div style={{ fontSize: '.72rem', color: '#64748b', marginTop: 2 }}>
+                      Punjabi: {s.groups?.name || '—'}
+                      {s.groups && ` · ${resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}`}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
                   {[['P','present','#16a34a'],['L','late','#d97706'],['A','absent','#dc2626'],['H','holiday','#0284c7']].map(([lbl, key, clr]) => (

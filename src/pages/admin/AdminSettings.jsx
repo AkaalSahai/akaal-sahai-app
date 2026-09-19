@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 const DEFAULTS = {
   class_schedule:    'Every Friday & Saturday, 6:15PM – 8:30PM',
@@ -17,10 +18,11 @@ const DEFAULTS = {
   broadcast_message: '',
   broadcast_active:  'false',
   broadcast_id:      '',
+  mfa_required_since: '',
 }
 
 export default function AdminSettings() {
-  const { profile } = useAuth()
+  const { profile, refreshMfaRequiredSetting } = useAuth()
   const [form, setForm]     = useState(DEFAULTS)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]     = useState(false)
@@ -32,6 +34,9 @@ export default function AdminSettings() {
   // (which resets everyone's read-report) when the broadcast itself actually
   // changes — not on every unrelated settings save.
   const [savedBroadcast, setSavedBroadcast] = useState({ message: '', active: 'false' })
+  const [resetPreview, setResetPreview] = useState(null)   // {removed, groups} once loaded, opens the confirm dialog
+  const [resetBusy, setResetBusy]       = useState(false)
+  const [resetDone, setResetDone]       = useState(null)   // {removed, groups} briefly, after a successful reset
 
   useEffect(() => {
     supabase.from('site_settings').select('key, value').then(({ data, error }) => {
@@ -73,6 +78,31 @@ export default function AdminSettings() {
   }
 
   function set(k) { return e => { setForm(f => ({ ...f, [k]: e.target.value })); setSaved(false) } }
+
+  async function openResetPreview() {
+    const { data, error } = await supabase.from('teacher_groups').select('group_id').eq('role', 'covering')
+    if (error) { alert(error.message); return }
+    const removed = (data || []).length
+    if (removed === 0) { alert("Every group already only has its primary teacher — nothing to reset."); return }
+    setResetPreview({ removed, groups: new Set((data || []).map(r => r.group_id)).size })
+  }
+
+  async function confirmReset() {
+    setResetBusy(true)
+    const { error } = await supabase.from('teacher_groups').delete().eq('role', 'covering')
+    setResetBusy(false)
+    const preview = resetPreview
+    setResetPreview(null)
+    if (error) {
+      logAction(profile, 'Reset teacher assignments', error.message, false).catch(() => {})
+      alert('Reset failed: ' + error.message)
+      return
+    }
+    logAction(profile, 'Reset teacher assignments',
+      `Removed ${preview.removed} covering teacher(s) across ${preview.groups} group(s)`).catch(() => {})
+    setResetDone(preview)
+    setTimeout(() => setResetDone(null), 6000)
+  }
 
   if (loading) return <div className="empty-state">Loading settings…</div>
 
@@ -154,6 +184,26 @@ export default function AdminSettings() {
             Leave any social field blank to hide that button from parents.
           </div>
 
+          <div className="section-label" style={{ marginTop: 8 }}>Two-Factor Authentication</div>
+
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 400, cursor: 'pointer' }}>
+              <input type="checkbox"
+                checked={!!form.mfa_required_since}
+                onChange={e => {
+                  setForm(f => ({ ...f, mfa_required_since: e.target.checked ? new Date().toISOString() : '' }))
+                  setSaved(false)
+                }}
+                style={{ width: 'auto' }} />
+              Require two-factor authentication for admin &amp; registrar accounts
+            </label>
+            <div style={{ fontSize: '.73rem', color: 'var(--muted)', marginTop: 4 }}>
+              {form.mfa_required_since
+                ? `Required since ${new Date(form.mfa_required_since).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}. Anyone in these roles without it set up will be asked to set it up the next time they sign in.`
+                : "Off by default — admin and registrar can still turn it on for themselves from their own account menu, but it isn't required."}
+            </div>
+          </div>
+
           <div className="section-label" style={{ marginTop: 8 }}>Teacher Broadcast Message</div>
 
           <div className="form-group">
@@ -195,6 +245,7 @@ export default function AdminSettings() {
             setTimeout(() => setSaved(false), 3000)
             setSavedBroadcast({ message: form.broadcast_message, active: form.broadcast_active })
             loadAckReport(newId)
+            refreshMfaRequiredSetting()
           }} disabled={busy}>
             {busy ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
           </button>
@@ -251,6 +302,34 @@ export default function AdminSettings() {
           )}
         </div>
       </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="card-title">Teacher Assignments</div>
+        <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginTop: -6, marginBottom: 14 }}>
+          Every group can have one primary teacher and any number of covering
+          teachers. If covering assignments have built up over time, use this
+          to bring every group back down to just its primary teacher.
+        </p>
+        <button className="btn btn-danger btn-sm" onClick={openResetPreview}>
+          Reset to Primary Teachers Only
+        </button>
+        {resetDone && (
+          <div style={{ marginTop: 10, fontSize: '.82rem', color: '#16a34a', fontWeight: 600 }}>
+            ✓ Removed {resetDone.removed} covering teacher{resetDone.removed === 1 ? '' : 's'} across{' '}
+            {resetDone.groups} group{resetDone.groups === 1 ? '' : 's'}.
+          </div>
+        )}
+      </div>
+
+      {resetPreview && (
+        <ConfirmDialog
+          danger
+          message={`This removes ${resetPreview.removed} covering teacher${resetPreview.removed === 1 ? '' : 's'} across ${resetPreview.groups} group${resetPreview.groups === 1 ? '' : 's'}, leaving only each group's primary teacher. Anyone removed loses access to that group's register until re-added.`}
+          confirmText={resetBusy ? 'Resetting…' : 'Reset'}
+          onConfirm={confirmReset}
+          onCancel={() => setResetPreview(null)}
+        />
+      )}
     </div>
   )
 }

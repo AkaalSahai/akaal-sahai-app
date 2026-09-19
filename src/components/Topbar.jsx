@@ -1,8 +1,14 @@
 import { useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import MfaSetup from './MfaSetup'
 
-export default function Topbar({ title }) {
-  const { profile, logout, changePassword } = useAuth()
+const PRIMARY_HOME = { registrar: '/registrar', teacher: '/teacher', admin: '/admin', adminView: '/admin' }
+
+export default function Topbar({ title, onLogoClick }) {
+  const { profile, logout, changePassword, hasRole } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [showMenu, setShowMenu] = useState(false)
   const [showPw, setShowPw]     = useState(false)
   const [current, setCurrent]   = useState('')
@@ -11,6 +17,7 @@ export default function Topbar({ title }) {
   const [pwError, setPwError]   = useState('')
   const [pwSuccess, setPwSuccess] = useState(false)
   const [busy, setBusy]         = useState(false)
+  const [showMfa, setShowMfa]   = useState(false)
 
   async function handleLogout() {
     await logout()
@@ -30,15 +37,49 @@ export default function Topbar({ title }) {
     } finally { setBusy(false) }
   }
 
-  const roleLabel = { admin: 'Admin', registrar: 'Registrar', teacher: 'Teacher' }[profile?.role] || ''
+  const roleLabel = { admin: 'Admin', registrar: 'Registrar', teacher: 'Teacher', adminView: 'Admin View' }[profile?.role] || ''
+
+  // Someone whose PRIMARY role isn't admin/adminView but who's been given
+  // adminView as an extra role (e.g. a teacher who's also a trustee) can
+  // reach /admin read-only without it replacing their normal home page —
+  // these two links are how they get there and back.
+  const hasExtraAdminView = profile && profile.role !== 'admin' && profile.role !== 'adminView' && hasRole('adminView')
+  const onAdminPath       = location.pathname.startsWith('/admin')
 
   return (
     <>
       <div className="topbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button onClick={() => {
+            // Each layout (Admin/Registrar/Teacher) keeps its own local
+            // "which tab" state rather than encoding it in the URL, so
+            // navigating to a path you're already on is a no-op - nothing
+            // visibly happens. onLogoClick lets the current layout reset
+            // its own tab state back to its home tab; navigate() still
+            // handles actually crossing into a different role's layout.
+            onLogoClick?.()
+            navigate(PRIMARY_HOME[profile?.role] || '/')
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none',
+            padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}>
           <img src="/logo.png" alt="Akaal Sahai" style={{ height: 36 }} />
           <span style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--primary)' }}>{title}</span>
-        </div>
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {hasExtraAdminView && (
+          onAdminPath ? (
+            <button onClick={() => navigate(PRIMARY_HOME[profile.role] || '/')}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer',
+                padding: '6px 12px', fontWeight: 600, fontSize: '.8rem', color: 'var(--muted)' }}>
+              ← Back to my {roleLabel} view
+            </button>
+          ) : (
+            <button onClick={() => navigate('/admin')}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer',
+                padding: '6px 12px', fontWeight: 600, fontSize: '.8rem', color: 'var(--primary)' }}>
+              Admin View (read-only)
+            </button>
+          )
+        )}
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setShowMenu(m => !m)}
@@ -55,6 +96,14 @@ export default function Topbar({ title }) {
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
                 Change Password
               </button>
+              {/* Available to any account now that a per-person "Require
+                  2FA" toggle can apply to any role, not just admin/
+                  registrar - everyone needs a way to set it up whether
+                  it's required for them or they just want it. */}
+              <button onClick={() => { setShowMenu(false); setShowMfa(true) }}
+                style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '.86rem' }}>
+                Two-Factor Authentication
+              </button>
               <hr style={{ margin: '4px 12px', border: 'none', borderTop: '1px solid var(--border)' }} />
               <button onClick={handleLogout}
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--danger)', fontWeight: 600, fontSize: '.86rem' }}>
@@ -63,6 +112,7 @@ export default function Topbar({ title }) {
             </div>
           )}
           {showMenu && <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => setShowMenu(false)} />}
+        </div>
         </div>
       </div>
 
@@ -98,6 +148,8 @@ export default function Topbar({ title }) {
           </div>
         </div>
       )}
+
+      {showMfa && <MfaSetup onClose={() => setShowMfa(false)} />}
     </>
   )
 }
