@@ -11,7 +11,11 @@ export default function AdminVerificationStatus() {
   const [loading, setLoading] = useState(true)
   const [requiredSince, setRequiredSince]   = useState(null)
   const [requiredReason, setRequiredReason] = useState(null)
-  const [showOnlyOutstanding, setShowOnlyOutstanding] = useState(true)
+  // Defaults to showing every group, not just outstanding ones - a group
+  // that just became fully verified should show up as a positive "all
+  // done" confirmation, not silently disappear from the page. Admin can
+  // still switch to outstanding-only when specifically chasing people.
+  const [showOnlyOutstanding, setShowOnlyOutstanding] = useState(false)
   const [triggerOpen, setTriggerOpen] = useState(false)
   const [triggerReason, setTriggerReason] = useState('')
   const [triggerBusy, setTriggerBusy] = useState(false)
@@ -188,7 +192,13 @@ export default function AdminVerificationStatus() {
           </div>
         )}
 
-        {groups.filter(g => g.total > 0 && (!showOnlyOutstanding || g.unverified.length > 0)).map(g => (
+        {groups
+          .filter(g => g.total > 0 && (!showOnlyOutstanding || g.unverified.length > 0))
+          // Outstanding groups first - with every group visible by default,
+          // the ones needing attention shouldn't be buried alphabetically
+          // behind groups that are already fully done.
+          .sort((a, b) => (a.unverified.length > 0 ? 0 : 1) - (b.unverified.length > 0 ? 0 : 1))
+          .map(g => (
           <div key={g.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div>
