@@ -231,7 +231,7 @@ export default function AdminVerificationStatus() {
                 </span>
               </div>
               <span style={{ fontSize: '.8rem', fontWeight: 700,
-                color: g.unverified.length === 0 ? '#16a34a' : '#d97706' }}>
+                color: g.unverified.length === 0 ? '#16a34a' : '#dc2626' }}>
                 {g.verifiedCount}/{g.total} verified
               </span>
             </div>
