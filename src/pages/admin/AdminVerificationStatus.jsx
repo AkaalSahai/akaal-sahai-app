@@ -83,12 +83,14 @@ export default function AdminVerificationStatus() {
           status: getVerificationStatus(s, latestByStudent[s.id], since),
         }))
         const unverified = withStatus.filter(x => !x.status.verified)
+        const verified = withStatus.filter(x => x.status.verified)
         const teacherNames = tgMap[g.id] || (g.teacher_id && teacherMap[g.teacher_id] ? [teacherMap[g.teacher_id]] : [])
         return {
           id: g.id, name: g.name, teacherNames,
           total: groupStudents.length,
           verifiedCount: groupStudents.length - unverified.length,
           unverified,
+          verified,
         }
       })
 
@@ -233,6 +235,23 @@ export default function AdminVerificationStatus() {
                 {g.verifiedCount}/{g.total} verified
               </span>
             </div>
+            {g.verified.length > 0 && (
+              <details style={{ marginBottom: g.unverified.length > 0 ? 10 : 0 }}>
+                <summary style={{ cursor: 'pointer', fontSize: '.78rem', fontWeight: 700, color: '#16a34a' }}>
+                  ✓ {g.verified.length} verified
+                </summary>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {g.verified.map(({ student: s, status }) => (
+                    <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                      background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6,
+                      padding: '3px 9px', fontSize: '.76rem' }}>
+                      <strong>{[s.first_name, s.last_name].filter(Boolean).join(' ')}</strong>
+                      <span style={{ color: '#16a34a' }}>✓ {fmtDate(status.verifiedAt)}</span>
+                    </span>
+                  ))}
+                </div>
+              </details>
+            )}
             {g.unverified.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {g.unverified.map(({ student: s, status }) => (
