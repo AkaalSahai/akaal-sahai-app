@@ -80,7 +80,16 @@ export default function TeacherStudents() {
       (a.first_name || '').localeCompare(b.first_name || '')
     )
     setStudents(sorted)
-    await loadVerifications(sorted.map(s => s.id))
+    // Verification is Punjabi-group-only (see isPunjabiGroup comment below) -
+    // skip the fetch for extra classes rather than run a query whose rows
+    // would be RLS-filtered by student_id's PRIMARY group and never shown
+    // anyway; also clears out any stale rows left over from a previously
+    // viewed Punjabi group.
+    if (!classType || classType === 'punjabi') {
+      await loadVerifications(sorted.map(s => s.id))
+    } else {
+      setVerifications({})
+    }
   }
 
   async function loadVerifications(studentIds) {
@@ -453,7 +462,14 @@ export default function TeacherStudents() {
               <th onClick={() => toggleSort('dob')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Date of Birth{sortIcon('dob')}</th>
               <th onClick={() => toggleSort('parent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Parent{sortIcon('parent')}</th>
               <th onClick={() => toggleSort('phone')}  style={{ cursor: 'pointer', userSelect: 'none' }}>Phone{sortIcon('phone')}</th>
-              <th>Details Verified</th>
+              {/* Verification is scoped to a student's Punjabi teacher (see
+                  isPunjabiGroup comment above) - the RLS policy behind
+                  loadVerifications() only grants visibility via that
+                  relationship, so an extra-class teacher's copy of this
+                  column would silently show "Never verified" for every
+                  student regardless of their real status. Hide it rather
+                  than show data that isn't actually theirs to see. */}
+              {isPunjabiGroup && <th>Details Verified</th>}
               <th></th>
             </tr>
           </thead>
@@ -486,21 +502,23 @@ export default function TeacherStudents() {
                     {s.parent_name ? `${s.parent_name}${s.relationship ? ` (${s.relationship})` : ''}` : '—'}
                   </td>
                   <td style={{ fontSize: '.85rem' }}>{s.phone || '—'}</td>
-                  <td>
-                    {status.verified ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-                        padding: '3px 10px', borderRadius: 12, fontSize: '.72rem', fontWeight: 700,
-                        background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
-                        ✓ Verified {fmtDate(status.verifiedAt)}
-                      </span>
-                    ) : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-                        padding: '3px 10px', borderRadius: 12, fontSize: '.72rem', fontWeight: 700,
-                        background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>
-                        ⚠ {VERIFICATION_REASON_LABEL[status.reason]}
-                      </span>
-                    )}
-                  </td>
+                  {isPunjabiGroup && (
+                    <td>
+                      {status.verified ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '3px 10px', borderRadius: 12, fontSize: '.72rem', fontWeight: 700,
+                          background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                          ✓ Verified {fmtDate(status.verifiedAt)}
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '3px 10px', borderRadius: 12, fontSize: '.72rem', fontWeight: 700,
+                          background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>
+                          ⚠ {VERIFICATION_REASON_LABEL[status.reason]}
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {isPunjabiGroup && (
@@ -519,7 +537,7 @@ export default function TeacherStudents() {
                 </tr>
                 {verifyingId === s.id && (
                   <tr>
-                    <td colSpan={isPunjabiGroup ? 7 : 8} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                    <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                       {requiredReason && !status.verified && status.reason === 'admin_required' && (
                         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
                           padding: '8px 12px', marginBottom: 12, fontSize: '.8rem', color: '#92400e' }}>
@@ -554,7 +572,7 @@ export default function TeacherStudents() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isPunjabiGroup ? 7 : 8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {search ? 'No students match your search' : 'No students in your group yet'}
               </td></tr>
             )}
