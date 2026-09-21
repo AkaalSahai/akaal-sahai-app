@@ -9,6 +9,7 @@ export default function AdminVerificationStatus() {
   const { profile, hasRole } = useAuth()
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [requiredSince, setRequiredSince]   = useState(null)
   const [requiredReason, setRequiredReason] = useState(null)
   // Defaults to showing every group, not just outstanding ones - a group
@@ -36,11 +37,21 @@ export default function AdminVerificationStatus() {
         .in('key', ['verification_required_since', 'verification_required_reason']),
     ])
 
-    const studentIds = (students || []).map(s => s.id)
-    const { data: verRows } = studentIds.length
-      ? await supabase.from('student_verifications').select('*')
-          .in('student_id', studentIds).order('verified_at', { ascending: false })
-      : { data: [] }
+    // Deliberately unfiltered by student_id (unlike TeacherStudents.jsx's
+    // small per-teacher-roster version of this same query) - this is
+    // admin-only data, RLS already grants full access, and an .in() filter
+    // listing every active student's id (800+) produces a URL well past
+    // what the API gateway accepts, failing with a 400 that was silently
+    // swallowed here - every count on this page read 0 because of it. This
+    // matches the working, unfiltered query AdminDashboard.jsx already uses.
+    const { data: verRows, error: verErr } = await supabase
+      .from('student_verifications').select('*').order('verified_at', { ascending: false })
+    if (verErr) {
+      setLoadError(verErr.message)
+      setLoading(false)
+      return
+    }
+    setLoadError(null)
 
     const latestByStudent = {}
     ;(verRows || []).forEach(v => { if (!latestByStudent[v.student_id]) latestByStudent[v.student_id] = v })
@@ -112,6 +123,16 @@ export default function AdminVerificationStatus() {
   }
 
   if (loading) return <div className="spinner" />
+
+  if (loadError) {
+    return (
+      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
+        padding: '14px 18px', color: '#991b1b', fontSize: '.85rem' }}>
+        <strong>Couldn't load verification data:</strong> {loadError}
+        <button className="btn btn-outline btn-sm" style={{ marginLeft: 12 }} onClick={load}>Retry</button>
+      </div>
+    )
+  }
 
   const groups = data || []
   const totalStudents  = groups.reduce((s, g) => s + g.total, 0)
