@@ -230,9 +230,16 @@ export default function AdminVerificationStatus() {
                   {g.teacherNames.join(', ') || 'No teacher'}
                 </span>
               </div>
-              <span style={{ fontSize: '.8rem', fontWeight: 700,
-                color: g.unverified.length === 0 ? '#16a34a' : '#dc2626' }}>
-                {g.verifiedCount}/{g.total} verified
+              <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <span style={{ fontSize: '.8rem', fontWeight: 700,
+                  color: g.unverified.length === 0 ? '#16a34a' : '#dc2626' }}>
+                  {g.verifiedCount}/{g.total} verified
+                </span>
+                {g.unverified.length > 0 && (
+                  <span style={{ fontSize: '.8rem', fontWeight: 700, color: '#dc2626' }}>
+                    {g.unverified.length} unverified
+                  </span>
+                )}
               </span>
             </div>
             {g.verified.length > 0 && (
