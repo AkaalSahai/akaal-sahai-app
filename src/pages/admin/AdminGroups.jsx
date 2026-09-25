@@ -20,6 +20,9 @@ export default function AdminGroups({ readOnly }) {
   const [mergeConflicts, setMergeConflicts] = useState(null)
   const [mergeChecking, setMergeChecking]   = useState(false)
   const [mergeBusy, setMergeBusy]     = useState(false)
+  const [renamingId, setRenamingId]   = useState(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameBusy, setRenameBusy]   = useState(false)
 
   useEffect(() => { load() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
@@ -134,6 +137,23 @@ export default function AdminGroups({ readOnly }) {
       load()
     }
     setBusy(false)
+  }
+
+  function startRename(g) { setRenamingId(g.id); setRenameValue(g.name) }
+  function cancelRename() { setRenamingId(null); setRenameValue('') }
+
+  async function submitRename(groupId) {
+    const trimmed = renameValue.trim()
+    if (!trimmed) { alert('Group name cannot be empty.'); return }
+    const g = groups.find(x => x.id === groupId)
+    if (trimmed === g?.name) { cancelRename(); return }
+    setRenameBusy(true)
+    const { error } = await supabase.from('groups').update({ name: trimmed }).eq('id', groupId)
+    setRenameBusy(false)
+    if (error) { alert(error.message); return }
+    logAction(profile, 'Renamed group', `${g?.name} → ${trimmed}`).catch(() => {})
+    cancelRename()
+    load()
   }
 
   // A group's first-ever teacher becomes primary automatically; every
@@ -318,7 +338,33 @@ export default function AdminGroups({ readOnly }) {
               const typeMeta = classTypesMeta[g.class_type || 'punjabi']
               return (
               <tr key={g.id}>
-                <td style={{ fontWeight: 600 }}>{g.name}</td>
+                <td style={{ fontWeight: 600 }}>
+                  {renamingId === g.id ? (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') submitRename(g.id)
+                          if (e.key === 'Escape') cancelRename()
+                        }}
+                        style={{ padding: '4px 8px', fontSize: '.85rem', maxWidth: 160, fontWeight: 600 }} />
+                      <button className="btn btn-primary btn-xs" disabled={renameBusy} onClick={() => submitRename(g.id)}>
+                        {renameBusy ? 'Saving…' : 'Save'}
+                      </button>
+                      <button className="btn btn-outline btn-xs" onClick={cancelRename}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {g.name}
+                      {!readOnly && (
+                        <button onClick={() => startRename(g)} title="Rename group"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--muted)', fontSize: '.8rem', padding: 0, lineHeight: 1 }}>
+                          ✏️
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td>
                   <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 6,
                     fontSize: '.76rem', fontWeight: 600,
