@@ -42,6 +42,7 @@ export default function TeacherRegister() {
   const [removeBusy, setRemoveBusy]     = useState(null)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
+  const [search, setSearch]       = useState('')
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
   const notesRef     = useRef({})
@@ -131,6 +132,7 @@ export default function TeacherRegister() {
     setSaveState('idle')
     setHistory(false)
     setHistoryData([])
+    setSearch('')
   }
 
   async function loadStudents() {
@@ -345,6 +347,17 @@ export default function TeacherRegister() {
     </div>
   )
 
+  // Matches name, age, or date of birth against one search box - tallies
+  // below stay based on the full roster (marking status doesn't change
+  // just because the view is filtered), only which rows are shown does.
+  const q = search.trim().toLowerCase()
+  const filteredStudents = !q ? students : students.filter(s => {
+    const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ').toLowerCase()
+    const age = calcAge(s.date_of_birth)
+    const dob = s.date_of_birth ? fmtDate(s.date_of_birth).toLowerCase() : ''
+    return fullName.includes(q) || (age !== null && String(age).includes(q)) || dob.includes(q)
+  })
+
   const present = Object.values(attendance).filter(v => v === 'present').length
   const late    = Object.values(attendance).filter(v => v === 'late').length
   const absent  = Object.values(attendance).filter(v => v === 'absent').length
@@ -406,6 +419,10 @@ export default function TeacherRegister() {
           </div>
         )}
 
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, age, or date of birth…"
+          style={{ marginBottom: 14, width: '100%', boxSizing: 'border-box' }} />
+
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           {[['present','#16a34a'], ['late','#d97706'], ['absent','#dc2626'], ['holiday','#0284c7']].map(([s,c]) => (
             <div key={s} style={{ flex: 1, background: '#f8fafc', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
@@ -421,9 +438,11 @@ export default function TeacherRegister() {
           </div>
         </div>
 
-        {loading ? <div className="spinner" /> : (
+        {loading ? <div className="spinner" /> : filteredStudents.length === 0 && students.length > 0 ? (
+          <div className="empty-state"><div className="icon">🔍</div>No students match your search</div>
+        ) : (
           <ul className="student-list">
-            {students.map((s, i) => {
+            {filteredStudents.map((s, i) => {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
               const status   = attendance[s.id]
               const age      = calcAge(s.date_of_birth)
