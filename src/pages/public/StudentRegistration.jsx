@@ -283,6 +283,8 @@ export default function StudentRegistration() {
     if (!form.relationship) e.relationship = 'Required'
     if (!phone || phone.length !== 10) e.phone = 'Enter a valid 10-digit UK number (after +44)'
     if (secPhone && secPhone.length !== 10) e.sec_phone = 'Enter a valid 10-digit UK number (after +44)'
+    if (!form.email.trim()) e.email = 'Required'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = 'Enter a valid email address'
     if (!form.gdpr_consent) e.gdpr_consent = 'You must acknowledge this to proceed'
     return e
   }
@@ -399,8 +401,9 @@ export default function StudentRegistration() {
               {errors.sec_phone && <div className="field-error">{errors.sec_phone}</div>}
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
-              <label>Email Address</label>
-              <input type="email" value={form.email} onChange={set('email')} placeholder="optional" />
+              <label>Email Address *</label>
+              <input type="email" value={form.email} onChange={set('email')} placeholder="parent@example.com" />
+              {errors.email && <div className="field-error">{errors.email}</div>}
             </div>
           </div>
 
