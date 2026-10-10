@@ -31,7 +31,7 @@ function NotificationBell({ userId }) {
       .select('id, message, read, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(30)
+      .limit(50)
     if (error) console.error('Notifications load error:', error.message)
     setNotes(data || [])
   }

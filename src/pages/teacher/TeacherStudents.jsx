@@ -93,7 +93,7 @@ export default function TeacherStudents() {
       setVerifications({})
     }
     if (sorted.length === 0) { setAttendance({}); return }
-    setAttendance(await loadAttendanceStats(sorted.map(s => s.id)))
+    setAttendance(await loadAttendanceStats(sorted.map(s => s.id), gid))
   }
 
   async function loadVerifications(studentIds) {
