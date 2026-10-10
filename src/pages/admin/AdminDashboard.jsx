@@ -269,6 +269,7 @@ export default function AdminDashboard({ setTab }) {
   const [loading, setLoading]   = useState(true)
   const [showRS, setShowRS]     = useState(false)
   const [showVerify, setShowVerify] = useState(false)
+  const [showClassDays, setShowClassDays] = useState(false)
   const [reportBusy, setReportBusy] = useState(false)
   const [reportData, setReportData] = useState(null)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
@@ -341,6 +342,18 @@ export default function AdminDashboard({ setTab }) {
     const sessionsByType = Object.fromEntries(
       Object.entries(daysByType).map(([ct, dates]) => [ct, dates.size])
     )
+
+    // Per-day detail for the Class Days drill-down: which class type(s) ran
+    // and how many groups submitted a register, for each distinct day.
+    const sessionDayMap = {}
+    ;(allSessionDates || []).forEach(r => {
+      if (!sessionDayMap[r.session_date]) sessionDayMap[r.session_date] = { types: new Set(), groupIds: new Set() }
+      sessionDayMap[r.session_date].types.add(groupClassTypeMap[r.group_id] || 'punjabi')
+      sessionDayMap[r.session_date].groupIds.add(r.group_id)
+    })
+    const sessionDays = Object.entries(sessionDayMap)
+      .map(([date, v]) => ({ date, types: [...v.types], groupCount: v.groupIds.size }))
+      .sort((a, b) => b.date.localeCompare(a.date))
 
     const scInGroupIds = new Set((scRows || []).map(r => r.student_id))
     const scGroupCountMap = {}
@@ -425,7 +438,7 @@ export default function AdminDashboard({ setTab }) {
     ).length
 
     const result = {
-      totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType,
+      totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType, sessionDays,
       pendingStudents, pendingTeachers,
       enrichedGroups, lowestStudents, leastActive,
       todayCount: doneGroupIds.size,
@@ -559,6 +572,51 @@ export default function AdminDashboard({ setTab }) {
     </>
   )
 
+  if (showClassDays) return (
+    <>
+      <button onClick={() => setShowClassDays(false)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 16,
+          background: 'white', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '7px 14px', fontSize: '.82rem', fontWeight: 700, color: 'var(--primary)',
+          cursor: 'pointer', fontFamily: 'inherit' }}>
+        ← Back to Dashboard
+      </button>
+      <div className="card">
+        <div className="card-title">
+          Class Days ({data.sessionDays.length})
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Day</th>
+                <th>Class Type(s)</th>
+                <th>Groups Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.sessionDays.map(sd => {
+                const d = new Date(sd.date + 'T12:00:00')
+                return (
+                  <tr key={sd.date}>
+                    <td className="date">{fmtDate(sd.date)}</td>
+                    <td style={{ color: 'var(--muted)' }}>{d.toLocaleDateString('en-GB', { weekday: 'long' })}</td>
+                    <td>{sd.types.map(ct => classTypesMeta[ct]?.label || ct).join(', ')}</td>
+                    <td style={{ fontWeight: 600 }}>{sd.groupCount}</td>
+                  </tr>
+                )
+              })}
+              {data.sessionDays.length === 0 && (
+                <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No sessions recorded yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+
   const { totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType,
     pendingStudents, pendingTeachers, unassignedStudents,
     enrichedGroups, lowestStudents, leastActive, todayCount,
@@ -676,7 +734,7 @@ export default function AdminDashboard({ setTab }) {
             value: totalSessions ?? 0,
             sub: sessionsByTypeLabel || 'since this app started',
             accent: '#0d9488',
-            action: () => {},
+            action: () => setShowClassDays(true),
           },
           {
             label: 'Pending',
