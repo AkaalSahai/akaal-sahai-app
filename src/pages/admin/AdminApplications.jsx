@@ -28,6 +28,7 @@ export default function AdminApplications({ readOnly }) {
   const [transfers, setTransfers]   = useState([])
   const [groups, setGroups]         = useState([])
   const [teacherMap, setTeacherMap] = useState({})
+  const [userMap, setUserMap]       = useState({})
   const [loading, setLoading]       = useState(true)
   const [busy, setBusy]             = useState(null)
   const [showGroupsSidebar, setShowGroupsSidebar] = useState(false)  // mobile only — desktop always shows it
@@ -48,6 +49,7 @@ export default function AdminApplications({ readOnly }) {
       const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
       const tMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
       setTeacherMap(tMap)
+      setUserMap(Object.fromEntries((us || []).map(u => [u.id, u.name])))
       // A group's teacher can be set via the legacy groups.teacher_id field or
       // via the teacher_groups junction (multi-teacher groups) — check both.
       const tgGroupMap = {}
@@ -78,14 +80,14 @@ export default function AdminApplications({ readOnly }) {
       })
       if (error) throw error
       const { error: appErr } = await supabase.from('parent_applications')
-        .update({ status: 'approved', reviewed_at: new Date().toISOString(), assigned_group_id: groupId || null })
+        .update({ status: 'approved', reviewed_at: new Date().toISOString(), assigned_group_id: groupId || null, reviewed_by: profile.id })
         .eq('id', app.id)
       if (appErr) {
         if (appErr.message?.includes('assigned_group_id')) {
           // Migration not run yet — still mark the application approved, just
           // without recording which group so it can show on the card later.
           await supabase.from('parent_applications')
-            .update({ status: 'approved', reviewed_at: new Date().toISOString() })
+            .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: profile.id })
             .eq('id', app.id)
         } else throw appErr
       }
@@ -105,7 +107,7 @@ export default function AdminApplications({ readOnly }) {
   async function rejectStudent(app) {
     if (readOnly) return
     setBusy(app.id)
-    await supabase.from('parent_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', app.id)
+    await supabase.from('parent_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', app.id)
     logAction(profile, 'Rejected student application', [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')).catch(() => {})
     setBusy(null); load()
   }
@@ -136,7 +138,7 @@ export default function AdminApplications({ readOnly }) {
   async function rejectTeacher(app) {
     if (readOnly) return
     setBusy(app.id)
-    await supabase.from('teacher_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', app.id)
+    await supabase.from('teacher_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', app.id)
     logAction(profile, 'Rejected teacher application', app.full_name).catch(() => {})
     setBusy(null); load()
   }
@@ -149,7 +151,7 @@ export default function AdminApplications({ readOnly }) {
       await supabase.from('students').update({ group_id: toGroupId }).eq('id', tr.student_id)
       const grp = groups.find(g => g.id === toGroupId)
       await supabase.from('transfer_requests').update({
-        status: 'approved', to_group_id: toGroupId, reviewed_at: new Date().toISOString(),
+        status: 'approved', to_group_id: toGroupId, reviewed_at: new Date().toISOString(), reviewed_by: profile.id,
       }).eq('id', tr.id)
       alert(`${tr.student_name} has been moved to ${grp?.name || 'the selected group'}.`)
       logAction(profile, 'Approved transfer request', `${tr.student_name} → ${grp?.name || 'new group'}`).catch(() => {})
@@ -197,7 +199,7 @@ export default function AdminApplications({ readOnly }) {
   async function rejectTransfer(tr) {
     if (readOnly) return
     setBusy(tr.id)
-    await supabase.from('transfer_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', tr.id)
+    await supabase.from('transfer_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', tr.id)
     logAction(profile, 'Rejected transfer request', tr.student_name).catch(() => {})
     setBusy(null); load()
   }
@@ -341,6 +343,9 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Address" value={[app.house_no, app.street_name, app.town, app.postcode].filter(Boolean).join(', ')} />
                 {app.medical_notes && <Detail label="Medical Notes" value={app.medical_notes} />}
                 <Detail label="Photo Consent" value={app.photo_consent ? 'Yes' : 'No'} />
+                {app.status !== 'pending' && (
+                  <Detail label={app.status === 'approved' ? 'Approved By' : 'Rejected By'} value={userMap[app.reviewed_by] || 'Unknown'} />
+                )}
               </div>
               {!readOnly && (
                 <div>
@@ -383,6 +388,9 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Preferred Group" value={app.preferred_group || '—'} />
                 <Detail label="DBS Number" value={app.dbs_number || '—'} />
                 <Detail label="Experience" value={app.experience || '—'} />
+                {app.status !== 'pending' && (
+                  <Detail label={app.status === 'approved' ? 'Approved By' : 'Rejected By'} value={userMap[app.reviewed_by] || 'Unknown'} />
+                )}
               </div>
               {!readOnly && (
                 <div>
@@ -427,6 +435,9 @@ export default function AdminApplications({ readOnly }) {
                 {tr.to_group_id && <Detail label="Moved To" value={groups.find(g => g.id === tr.to_group_id)?.name || '—'} />}
                 {tr.students?.medical_notes && (
                   <Detail label="Medical Notes" value={tr.students.medical_notes} />
+                )}
+                {tr.status !== 'pending' && (
+                  <Detail label={tr.status === 'approved' ? 'Approved By' : 'Rejected By'} value={userMap[tr.reviewed_by] || 'Unknown'} />
                 )}
               </div>
               {!readOnly && (
