@@ -149,12 +149,38 @@ export default function AdminStudents({ readOnly }) {
 
   async function loadAttendHistory(studentId) {
     setAttendLoading(prev => ({ ...prev, [studentId]: true }))
-    const { data } = await supabase
+    const s = students.find(x => x.id === studentId)
+    const { data: records } = await supabase
       .from('attendance_records')
       .select('session_id, session_date, status, group_id')
       .eq('student_id', studentId)
-      .order('session_date', { ascending: false })
-    setAttendOpen(prev => ({ ...prev, [studentId]: data || [] }))
+    // Show every session the student's group(s) have held since they joined -
+    // not just the ones with an existing attendance_records row - so a
+    // session nobody ever marked them for shows up as a visible gap rather
+    // than silently not counting. Covers every group they have a record in
+    // (handles a past transfer) plus their current group (in case they're
+    // new and have no records there yet).
+    const groupIds = new Set((records || []).map(r => r.group_id))
+    if (s?.group_id) groupIds.add(s.group_id)
+    let sessions = []
+    if (groupIds.size > 0) {
+      const { data } = await supabase
+        .from('attendance_sessions')
+        .select('id, session_date, group_id')
+        .in('group_id', [...groupIds])
+        .gte('session_date', s?.date_joined || '1900-01-01')
+      sessions = data || []
+    }
+    const recordMap = Object.fromEntries((records || []).map(r => [r.session_id, r]))
+    const merged = sessions
+      .map(sess => ({
+        session_id: sess.id,
+        session_date: sess.session_date,
+        group_id: sess.group_id,
+        status: recordMap[sess.id]?.status ?? null,
+      }))
+      .sort((a, b) => b.session_date.localeCompare(a.session_date))
+    setAttendOpen(prev => ({ ...prev, [studentId]: merged }))
     setAttendLoading(prev => ({ ...prev, [studentId]: false }))
   }
 
@@ -175,8 +201,10 @@ export default function AdminStudents({ readOnly }) {
     const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
     const key  = record.session_id + studentId
 
-    if (record.status === newStatus) {
-      // Tap active status → clear the record
+    if (record.status && record.status === newStatus) {
+      // Tap active status → clear it back to not-marked, rather than
+      // removing the row entirely - the session still happened, we're just
+      // no longer saying what this student's status was for it.
       setEditBusy(key)
       try {
         const { error } = await supabase.from('attendance_records')
@@ -186,7 +214,9 @@ export default function AdminStudents({ readOnly }) {
         if (error) throw error
         setAttendOpen(prev => ({
           ...prev,
-          [studentId]: prev[studentId].filter(r => r.session_id !== record.session_id),
+          [studentId]: prev[studentId].map(r =>
+            r.session_id === record.session_id ? { ...r, status: null } : r
+          ),
         }))
         await logAction(profile, 'Edited attendance record',
           `Cleared ${name} on ${record.session_date}`)
@@ -197,10 +227,17 @@ export default function AdminStudents({ readOnly }) {
 
     setEditBusy(key)
     try {
+      // upsert rather than update - record may not exist yet if this session
+      // was never marked for this student at all (a gap, now shown rather
+      // than hidden).
       const { error } = await supabase.from('attendance_records')
-        .update({ status: newStatus })
-        .eq('session_id', record.session_id)
-        .eq('student_id', studentId)
+        .upsert({
+          session_id: record.session_id,
+          student_id: studentId,
+          group_id: record.group_id,
+          session_date: record.session_date,
+          status: newStatus,
+        }, { onConflict: 'session_id,student_id' })
       if (error) throw error
       setAttendOpen(prev => ({
         ...prev,
@@ -661,7 +698,7 @@ export default function AdminStudents({ readOnly }) {
                             Attendance History — {fullName}
                             {records.length > 0 && (
                               <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>
-                                {records.length} session{records.length !== 1 ? 's' : ''} · tap active status to clear, tap another to change
+                                {records.length} session{records.length !== 1 ? 's' : ''} since {fmtDate(s.date_joined) || 'joining'} · tap active status to clear, tap another to change
                               </span>
                             )}
                           </span>
@@ -669,7 +706,7 @@ export default function AdminStudents({ readOnly }) {
                         {attendLoading[s.id] ? (
                           <div className="spinner" style={{ width: 24, height: 24 }} />
                         ) : records.length === 0 ? (
-                          <div style={{ fontSize: '.83rem', color: 'var(--muted)' }}>No attendance records found for this student.</div>
+                          <div style={{ fontSize: '.83rem', color: 'var(--muted)' }}>No sessions have been held for this student's group since they joined.</div>
                         ) : (
                           <div style={{ maxHeight: 300, overflowY: 'auto', borderRadius: 8, border: '1px solid #bae6fd' }}>
                             <table style={{ width: '100%', fontSize: '.82rem', borderCollapse: 'collapse' }}>
@@ -693,9 +730,15 @@ export default function AdminStudents({ readOnly }) {
                                         {d.toLocaleDateString('en-GB', { weekday: 'long' })}
                                       </td>
                                       <td style={{ padding: '7px 12px' }}>
-                                        <span style={{ fontWeight: 700, color: STATUS_COLOR[r.status] || '#475569', textTransform: 'capitalize' }}>
-                                          {r.status}
-                                        </span>
+                                        {r.status ? (
+                                          <span style={{ fontWeight: 700, color: STATUS_COLOR[r.status] || '#475569', textTransform: 'capitalize' }}>
+                                            {r.status}
+                                          </span>
+                                        ) : (
+                                          <span style={{ fontWeight: 600, color: '#94a3b8', fontStyle: 'italic' }}>
+                                            Not marked
+                                          </span>
+                                        )}
                                       </td>
                                       <td style={{ padding: '7px 12px' }}>
                                         <div style={{ display: 'flex', gap: 4 }}>
