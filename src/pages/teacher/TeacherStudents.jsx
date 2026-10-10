@@ -31,6 +31,7 @@ export default function TeacherStudents() {
   const [sortCol, setSortCol]       = useState('name')
   const [sortDir, setSortDir]       = useState('asc')
   const [verifications, setVerifications] = useState({})  // studentId -> latest verification row
+  const [attendance, setAttendance] = useState({})  // studentId -> { pct, sessions }
   const [requiredSince, setRequiredSince] = useState(null)
   const [requiredReason, setRequiredReason] = useState(null)
   const [verifyingId, setVerifyingId]     = useState(null)
@@ -90,6 +91,27 @@ export default function TeacherStudents() {
     } else {
       setVerifications({})
     }
+    await loadAttendance(sorted.map(s => s.id))
+  }
+
+  async function loadAttendance(studentIds) {
+    if (studentIds.length === 0) { setAttendance({}); return }
+    const { data } = await supabase.from('attendance_records')
+      .select('student_id, status').in('student_id', studentIds)
+    const stats = {}
+    ;(data || []).forEach(r => {
+      if (!stats[r.student_id]) stats[r.student_id] = { total: 0, attended: 0 }
+      // Holiday days aren't counted either way - matches AdminDashboard.jsx
+      if (r.status === 'holiday') return
+      stats[r.student_id].total++
+      if (r.status === 'present' || r.status === 'late') stats[r.student_id].attended++
+    })
+    const result = {}
+    studentIds.forEach(id => {
+      const s = stats[id]
+      result[id] = { pct: s && s.total > 0 ? Math.round((s.attended / s.total) * 100) : null, sessions: s?.total || 0 }
+    })
+    setAttendance(result)
   }
 
   async function loadVerifications(studentIds) {
@@ -227,6 +249,11 @@ export default function TeacherStudents() {
     finally { setBusy(false) }
   }
 
+  function attColor(p) {
+    if (p === null) return '#94a3b8'
+    return p >= 80 ? '#16a34a' : p >= 65 ? '#d97706' : '#dc2626'
+  }
+
   function calcAge(dob) {
     if (!dob) return null
     const d = new Date(dob), now = new Date()
@@ -268,6 +295,9 @@ export default function TeacherStudents() {
     } else if (sortCol === 'phone') {
       va = a.phone || ''
       vb = b.phone || ''
+    } else if (sortCol === 'attendance') {
+      va = attendance[a.id]?.pct ?? -1
+      vb = attendance[b.id]?.pct ?? -1
     } else { return 0 }
     if (va < vb) return sortDir === 'asc' ? -1 : 1
     if (va > vb) return sortDir === 'asc' ? 1 : -1
@@ -462,6 +492,7 @@ export default function TeacherStudents() {
               <th onClick={() => toggleSort('dob')}    style={{ cursor: 'pointer', userSelect: 'none' }}>Date of Birth{sortIcon('dob')}</th>
               <th onClick={() => toggleSort('parent')} style={{ cursor: 'pointer', userSelect: 'none' }}>Parent{sortIcon('parent')}</th>
               <th onClick={() => toggleSort('phone')}  style={{ cursor: 'pointer', userSelect: 'none' }}>Phone{sortIcon('phone')}</th>
+              <th onClick={() => toggleSort('attendance')} style={{ cursor: 'pointer', userSelect: 'none' }}>Attendance{sortIcon('attendance')}</th>
               {/* Verification is scoped to a student's Punjabi teacher (see
                   isPunjabiGroup comment above) - the RLS policy behind
                   loadVerifications() only grants visibility via that
@@ -502,6 +533,16 @@ export default function TeacherStudents() {
                     {s.parent_name ? `${s.parent_name}${s.relationship ? ` (${s.relationship})` : ''}` : '—'}
                   </td>
                   <td style={{ fontSize: '.85rem' }}>{s.phone || '—'}</td>
+                  <td>
+                    {attendance[s.id]?.pct !== null && attendance[s.id] !== undefined ? (
+                      <span style={{ fontWeight: 700, fontSize: '.82rem', color: attColor(attendance[s.id].pct) }}
+                        title={`${attendance[s.id].sessions} session${attendance[s.id].sessions === 1 ? '' : 's'} recorded`}>
+                        {attendance[s.id].pct}%
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '.78rem', color: '#94a3b8' }}>—</span>
+                    )}
+                  </td>
                   {isPunjabiGroup && (
                     <td>
                       {status.verified ? (
@@ -537,7 +578,7 @@ export default function TeacherStudents() {
                 </tr>
                 {verifyingId === s.id && (
                   <tr>
-                    <td colSpan={7} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                    <td colSpan={8} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                       {requiredReason && !status.verified && status.reason === 'admin_required' && (
                         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
                           padding: '8px 12px', marginBottom: 12, fontSize: '.8rem', color: '#92400e' }}>
@@ -572,7 +613,7 @@ export default function TeacherStudents() {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {search ? 'No students match your search' : 'No students in your group yet'}
               </td></tr>
             )}
