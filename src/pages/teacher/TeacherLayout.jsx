@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import Topbar from '../../components/Topbar'
 import TeacherRegister from './TeacherRegister'
 import TeacherReports from './TeacherReports'
@@ -16,7 +17,9 @@ import BroadcastBanner from '../../components/BroadcastBanner'
 function NotificationBell({ userId }) {
   const [notes, setNotes]   = useState([])
   const [open, setOpen]     = useState(false)
-  const panelRef            = useRef(null)
+  const [coords, setCoords] = useState(null)
+  const wrapRef             = useRef(null)
+  const menuRef             = useRef(null)
 
   useEffect(() => {
     if (!userId) return
@@ -50,7 +53,16 @@ function NotificationBell({ userId }) {
 
   function toggleOpen() {
     setOpen(o => {
-      if (!o) setTimeout(markAllRead, 800)
+      if (!o) {
+        // Rendered via a portal (see below) so position it in fixed/viewport
+        // coordinates ourselves - .nav-tabs (the bar this lives in) scrolls
+        // horizontally, which per the CSS spec clips vertical overflow too,
+        // so a plain position:absolute dropdown nested inside it was
+        // rendering but invisible, silently clipped by that bar's bounds.
+        const rect = wrapRef.current.getBoundingClientRect()
+        setCoords({ top: rect.bottom + 6, right: window.innerWidth - rect.right })
+        setTimeout(markAllRead, 800)
+      }
       return !o
     })
   }
@@ -58,7 +70,9 @@ function NotificationBell({ userId }) {
   useEffect(() => {
     if (!open) return
     function handle(e) {
-      if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false)
+      if (wrapRef.current?.contains(e.target)) return
+      if (menuRef.current?.contains(e.target)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
@@ -76,7 +90,7 @@ function NotificationBell({ userId }) {
   }
 
   return (
-    <div ref={panelRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+    <div ref={wrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
       <button onClick={toggleOpen} title="Notifications"
         style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer',
           padding: '8px 10px', borderRadius: 8, display: 'flex', alignItems: 'center',
@@ -94,10 +108,10 @@ function NotificationBell({ userId }) {
         )}
       </button>
 
-      {open && (
-        <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 320, maxHeight: 400,
+      {open && coords && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', top: coords.top, right: coords.right, width: 320, maxHeight: 400,
           background: 'white', border: '1px solid var(--border)', borderRadius: 12,
-          boxShadow: '0 8px 30px rgba(0,0,0,.14)', zIndex: 300, overflowY: 'auto' }}>
+          boxShadow: '0 8px 30px rgba(0,0,0,.14)', zIndex: 1000, overflowY: 'auto' }}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)',
             fontWeight: 700, fontSize: '.85rem', color: 'var(--text)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             Notifications
@@ -132,7 +146,8 @@ function NotificationBell({ userId }) {
               </div>
             ))
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
