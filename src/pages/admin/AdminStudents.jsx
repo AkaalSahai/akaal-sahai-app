@@ -8,6 +8,7 @@ import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 import { loadAttendanceStats } from '../../lib/attendance'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
+import { loadExtraClassEnrollments } from '../../lib/classRoster'
 
 // Every date matching the group's weekly schedule between start and end
 // (inclusive), used to build the full theoretical calendar of class days -
@@ -76,9 +77,11 @@ export default function AdminStudents({ readOnly }) {
   const [teacherMap, setTeacherMap] = useState({})
   const [attendance, setAttendance] = useState({})  // studentId -> { pct, sessions }
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
+  const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
 
   useEffect(() => { load() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
+  useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
 
   async function load() {
     const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, attMap] = await Promise.all([
@@ -531,6 +534,14 @@ export default function AdminStudents({ readOnly }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             <div className="student-name">{fullName}</div>
                             <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                            {(extraClasses[s.id] || []).map(ec => (
+                              <span key={ec.class_type} title={`Also enrolled in ${ec.groupName}`}
+                                style={{ fontSize: '.68rem', fontWeight: 700, color: '#7c3aed',
+                                  background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 10,
+                                  padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                                {classTypesMeta[ec.class_type]?.label || ec.groupName}
+                              </span>
+                            ))}
                           </div>
                           {s.note?.progress_level && PROGRESS[s.note.progress_level] && (
                             <span style={{ fontSize: '.68rem', fontWeight: 700, color: 'white',

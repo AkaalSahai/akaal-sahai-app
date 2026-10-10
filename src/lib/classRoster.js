@@ -48,6 +48,27 @@ export async function loadGroupStudents(groupId, classType, select = '*') {
     .filter(s => s && s.active)
 }
 
+// studentId -> array of { class_type, groupName } for every extra class
+// (Gatka/Kirtan/GCSE Punjabi/etc) a student is enrolled in, via the
+// student_classes junction table. This is persistent enrollment, not
+// whether they were actually marked present there on any given day - used
+// to show an "Also in: Gatka" marker on a student's record wherever it's
+// displayed, so e.g. their Punjabi teacher always knows at a glance which
+// other classes that student attends, not just on days attendance synced.
+export async function loadExtraClassEnrollments() {
+  const { data, error } = await supabase
+    .from('student_classes')
+    .select('student_id, groups(id, name, class_type)')
+  if (error) { console.error('loadExtraClassEnrollments error:', error.message); return {} }
+  const map = {}
+  ;(data || []).forEach(r => {
+    if (!r.groups) return
+    if (!map[r.student_id]) map[r.student_id] = []
+    map[r.student_id].push({ class_type: r.groups.class_type, groupName: r.groups.name })
+  })
+  return map
+}
+
 // Resolves the teacher name for a student's PRIMARY Punjabi group - used
 // wherever an extra-class roster (Gatka/Kirtan/etc) shows students who
 // belong to a *different* group day-to-day, so the teacher marking that

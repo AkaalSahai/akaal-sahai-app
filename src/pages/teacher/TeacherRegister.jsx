@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
-import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
+import { loadGroupStudents, loadPunjabiTeacherResolver, loadExtraClassEnrollments } from '../../lib/classRoster'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
@@ -28,6 +28,7 @@ export default function TeacherRegister() {
   const [groupName, setGroupName] = useState(null)
   const [students, setStudents]   = useState([])
   const [attendance, setAttendance] = useState({})
+  const [syncedFrom, setSyncedFrom] = useState({})  // studentId -> class_type, when their status here was auto-filled from an extra class
   const [notes, setNotes]         = useState({})
   const [date, setDate]           = useState(todayISO())
   const [loading, setLoading]     = useState(true)
@@ -42,6 +43,7 @@ export default function TeacherRegister() {
   const [removeBusy, setRemoveBusy]     = useState(null)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
+  const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
   const [search, setSearch]       = useState('')
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
@@ -52,6 +54,7 @@ export default function TeacherRegister() {
   useEffect(() => { loadAllGroups() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
+  useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
 
@@ -125,6 +128,7 @@ export default function TeacherRegister() {
     setSelectedGroupId(groupId)
     setGroupName(grp?.name || null)
     setAttendance({})
+    setSyncedFrom({})
     setNotes({})
     setSessionId(null)
     setTransferOpen({})
@@ -159,23 +163,26 @@ export default function TeacherRegister() {
     if (!selectedGroupId) return
     const { data } = await supabase
       .from('attendance_sessions')
-      .select('id, records:attendance_records(student_id, status, notes)')
+      .select('id, records:attendance_records(student_id, status, notes, synced_from_class_type)')
       .eq('group_id', selectedGroupId)
       .eq('session_date', date)
       .maybeSingle()
     if (data) {
       setSessionId(data.id)
-      const attMap = {}, noteMap = {}
+      const attMap = {}, noteMap = {}, syncMap = {}
       ;(data.records || []).forEach(r => {
         attMap[r.student_id]  = r.status
         noteMap[r.student_id] = r.notes || ''
+        if (r.synced_from_class_type) syncMap[r.student_id] = r.synced_from_class_type
       })
       setAttendance(attMap)
       setNotes(noteMap)
+      setSyncedFrom(syncMap)
     } else {
       setSessionId(null)
       setAttendance({})
       setNotes({})
+      setSyncedFrom({})
     }
     setSaveState('idle')
   }
@@ -197,6 +204,7 @@ export default function TeacherRegister() {
 
   async function mark(studentId, status) {
     if (isReadOnly) return
+    if (isPunjabiGroup && syncedFrom[studentId]) return  // locked - set from their extra class attendance instead
     const current   = attendance[studentId]
     const newStatus = current === status ? null : status
     const student     = students.find(s => s.id === studentId)
@@ -242,6 +250,7 @@ export default function TeacherRegister() {
 
   async function saveNote(studentId, text) {
     if (isReadOnly) return
+    if (isPunjabiGroup && syncedFrom[studentId]) return  // locked - this record belongs to their extra class
     const currentStatus = attendance[studentId]
     if (!currentStatus) return
     const sid = sessionId || await ensureSession()
@@ -446,6 +455,12 @@ export default function TeacherRegister() {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
               const status   = attendance[s.id]
               const age      = calcAge(s.date_of_birth)
+              // Their status here came from an extra class (e.g. GCSE
+              // Punjabi) they also attend - see add-sync-extra-class-
+              // attendance-to-punjabi.sql. Locked rather than independently
+              // re-markable so the two registers can't drift out of sync.
+              const lockedFrom = isPunjabiGroup ? syncedFrom[s.id] : null
+              const locked = !!lockedFrom
               return (
                 <li key={s.id} className="student-row">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 0', flexWrap: 'wrap' }}>
@@ -464,6 +479,16 @@ export default function TeacherRegister() {
                           </span>
                         )}
                         <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                        {(extraClasses[s.id] || [])
+                          .filter(ec => ec.class_type !== (selectedGroup?.class_type || 'punjabi'))
+                          .map(ec => (
+                            <span key={ec.class_type} title={`Also enrolled in ${ec.groupName}`}
+                              style={{ fontSize: '.68rem', fontWeight: 700, color: '#7c3aed',
+                                background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 10,
+                                padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                              {classTypesMeta[ec.class_type]?.label || ec.groupName}
+                            </span>
+                          ))}
                       </div>
                       {/* Only relevant when marking an extra class - shows
                           which Punjabi group/teacher this student normally
@@ -475,15 +500,21 @@ export default function TeacherRegister() {
                           {s.groups && ` · ${resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}`}
                         </div>
                       )}
+                      {locked && (
+                        <div style={{ fontSize: '.7rem', color: '#7c3aed', marginTop: 2, fontWeight: 600 }}
+                          title={`Marked from their ${classTypesMeta[lockedFrom]?.label || lockedFrom} register - can't be changed here`}>
+                          📌 Synced from {classTypesMeta[lockedFrom]?.label || lockedFrom}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                       {[['present','Present'],['late','Late'],['absent','Absent'],['holiday','Holiday']].map(([st, lbl]) => (
                         <button key={st}
                           className={`att-btn att-${st}${status === st ? ' active' : ''}`}
-                          style={{ padding: '4px 10px', fontSize: '.76rem' }}
+                          style={{ padding: '4px 10px', fontSize: '.76rem', opacity: locked ? .6 : 1 }}
                           onClick={() => mark(s.id, st)}
-                          disabled={isReadOnly}>
+                          disabled={isReadOnly || locked}>
                           {lbl}
                         </button>
                       ))}
@@ -493,10 +524,10 @@ export default function TeacherRegister() {
                       type="text"
                       value={notes[s.id] || ''}
                       placeholder="Notes"
-                      disabled={isReadOnly || !status}
+                      disabled={isReadOnly || !status || locked}
                       style={{ flex: '0 1 110px', minWidth: 60, maxWidth: 110, fontSize: '.76rem',
                         padding: '5px 8px', borderRadius: 8, border: '1.5px solid var(--border)',
-                        background: status ? 'white' : '#f8fafc', color: '#374151', outline: 'none' }}
+                        background: status && !locked ? 'white' : '#f8fafc', color: '#374151', outline: 'none' }}
                       onChange={e => setNotes(prev => ({ ...prev, [s.id]: e.target.value }))}
                       onBlur={e => saveNote(s.id, e.target.value)}
                     />

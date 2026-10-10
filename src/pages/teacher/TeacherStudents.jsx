@@ -6,8 +6,9 @@ import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_LABEL } from '../../lib/verification'
-import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
+import { loadGroupStudents, loadPunjabiTeacherResolver, loadExtraClassEnrollments } from '../../lib/classRoster'
 import { loadAttendanceStats } from '../../lib/attendance'
+import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -38,9 +39,13 @@ export default function TeacherStudents() {
   const [verifyingId, setVerifyingId]     = useState(null)
   const [verifyBusy, setVerifyBusy]       = useState(false)
   const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
+  const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
+  const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
 
   useEffect(() => { load() }, [user])
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
+  useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
+  useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
 
   async function load() {
     if (!user) return
@@ -497,6 +502,14 @@ export default function TeacherStudents() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600 }}>{fullName}</span>
                       <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                      {(extraClasses[s.id] || []).map(ec => (
+                        <span key={ec.class_type} title={`Also enrolled in ${ec.groupName}`}
+                          style={{ fontSize: '.68rem', fontWeight: 700, color: '#7c3aed',
+                            background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 10,
+                            padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                          {classTypesMeta[ec.class_type]?.label || ec.groupName}
+                        </span>
+                      ))}
                     </div>
                   </td>
                   {!isPunjabiGroup && (
