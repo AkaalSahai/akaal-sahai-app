@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import MedicalBadge from '../../components/MedicalBadge'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
-import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
+import { loadGroupStudents, loadPunjabiTeacherResolver, loadExtraClassEnrollments } from '../../lib/classRoster'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
@@ -43,6 +43,7 @@ export default function TeacherRegister() {
   const [removeBusy, setRemoveBusy]     = useState(null)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
+  const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
   const [search, setSearch]       = useState('')
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
@@ -53,6 +54,7 @@ export default function TeacherRegister() {
   useEffect(() => { loadAllGroups() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
+  useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
 
@@ -477,6 +479,16 @@ export default function TeacherRegister() {
                           </span>
                         )}
                         <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                        {(extraClasses[s.id] || [])
+                          .filter(ec => ec.class_type !== (selectedGroup?.class_type || 'punjabi'))
+                          .map(ec => (
+                            <span key={ec.class_type} title={`Also enrolled in ${ec.groupName}`}
+                              style={{ fontSize: '.68rem', fontWeight: 700, color: '#7c3aed',
+                                background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 10,
+                                padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                              {classTypesMeta[ec.class_type]?.label || ec.groupName}
+                            </span>
+                          ))}
                       </div>
                       {/* Only relevant when marking an extra class - shows
                           which Punjabi group/teacher this student normally
