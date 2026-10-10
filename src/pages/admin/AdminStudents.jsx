@@ -57,11 +57,12 @@ export default function AdminStudents({ readOnly }) {
   const [savingStudent, setSavingStudent] = useState(false)
   const [dialog, setDialog] = useState(null)
   const [teacherMap, setTeacherMap] = useState({})
+  const [attendance, setAttendance] = useState({})  // studentId -> { pct, sessions }
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, { data: att }] = await Promise.all([
       supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
@@ -69,7 +70,22 @@ export default function AdminStudents({ readOnly }) {
         .eq('request_type', 'removal').eq('status', 'pending'),
       supabase.from('users').select('id, name, role, extra_roles'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
+      supabase.from('attendance_records').select('student_id, status'),
     ])
+    const attStats = {}
+    ;(att || []).forEach(r => {
+      if (!attStats[r.student_id]) attStats[r.student_id] = { total: 0, attended: 0 }
+      // Holiday days aren't counted either way - matches AdminDashboard.jsx / TeacherStudents.jsx
+      if (r.status === 'holiday') return
+      attStats[r.student_id].total++
+      if (r.status === 'present' || r.status === 'late') attStats[r.student_id].attended++
+    })
+    const attMap = {}
+    ;(s || []).forEach(st => {
+      const a = attStats[st.id]
+      attMap[st.id] = { pct: a && a.total > 0 ? Math.round((a.attended / a.total) * 100) : null, sessions: a?.total || 0 }
+    })
+    setAttendance(attMap)
     const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
     setTeacherMap(teacherMap)
@@ -314,6 +330,11 @@ export default function AdminStudents({ readOnly }) {
     return a
   }
 
+  function attColor(p) {
+    if (p === null) return '#94a3b8'
+    return p >= 80 ? '#16a34a' : p >= 65 ? '#d97706' : '#dc2626'
+  }
+
   function toggleSort(col) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
@@ -351,6 +372,9 @@ export default function AdminStudents({ readOnly }) {
     } else if (sortCol === 'date_joined') {
       va = a.date_joined || ''
       vb = b.date_joined || ''
+    } else if (sortCol === 'attendance') {
+      va = attendance[a.id]?.pct ?? -1
+      vb = attendance[b.id]?.pct ?? -1
     } else { return 0 }
     if (va < vb) return sortDir === 'asc' ? -1 : 1
     if (va > vb) return sortDir === 'asc' ? 1 : -1
@@ -424,6 +448,7 @@ export default function AdminStudents({ readOnly }) {
               <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
               <th onClick={() => toggleSort('phone')} style={{ cursor: 'pointer', userSelect: 'none' }}>Phone{sortIcon('phone')}</th>
               <th onClick={() => toggleSort('date_joined')} style={{ cursor: 'pointer', userSelect: 'none' }}>Date Joined{sortIcon('date_joined')}</th>
+              <th onClick={() => toggleSort('attendance')} style={{ cursor: 'pointer', userSelect: 'none' }}>Attendance{sortIcon('attendance')}</th>
               <th></th>
             </tr>
           </thead>
@@ -460,6 +485,16 @@ export default function AdminStudents({ readOnly }) {
                     <td>{s.phone || '—'}</td>
                     <td className="date">{fmtDate(s.date_joined)}</td>
                     <td>
+                      {attendance[s.id]?.pct !== null && attendance[s.id] !== undefined ? (
+                        <span style={{ fontWeight: 700, fontSize: '.82rem', color: attColor(attendance[s.id].pct) }}
+                          title={`${attendance[s.id].sessions} session${attendance[s.id].sessions === 1 ? '' : 's'} recorded`}>
+                          {attendance[s.id].pct}%
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '.78rem', color: '#94a3b8' }}>—</span>
+                      )}
+                    </td>
+                    <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button className="btn btn-outline btn-xs"
                           onClick={() => {
@@ -488,7 +523,7 @@ export default function AdminStudents({ readOnly }) {
 
                   {expanded === s.id && (
                     <tr key={s.id + '-exp'}>
-                      <td colSpan={7} style={{ background: '#f8fafc', padding: '12px 16px' }}>
+                      <td colSpan={8} style={{ background: '#f8fafc', padding: '12px 16px' }}>
                         {!readOnly && editingStudentId === s.id && editForm ? (
                           <div>
                             <div style={{ fontWeight: 700, fontSize: '.85rem', marginBottom: 12, color: 'var(--primary)' }}>
@@ -632,7 +667,7 @@ export default function AdminStudents({ readOnly }) {
 
                   {records !== undefined && (
                     <tr key={s.id + '-att'}>
-                      <td colSpan={7} style={{ background: '#f0f9ff', padding: '12px 16px', borderTop: '2px solid #bae6fd' }}>
+                      <td colSpan={8} style={{ background: '#f0f9ff', padding: '12px 16px', borderTop: '2px solid #bae6fd' }}>
                         <div style={{ fontWeight: 700, fontSize: '.82rem', color: '#0369a1', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                           <span>
                             Attendance History — {fullName}
@@ -701,7 +736,7 @@ export default function AdminStudents({ readOnly }) {
               )
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>No students found</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>No students found</td></tr>
             )}
           </tbody>
         </table>
