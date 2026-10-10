@@ -7,23 +7,30 @@ const PAGE_SIZE = 1000
 // truncated results once the table grew past that, producing wrong
 // percentages for whichever students' rows got cut off. Page through
 // everything so the count is always complete.
+//
+// Uses keyset (cursor) pagination - "give me rows after the last id I saw",
+// not offset ranges - for two reasons: (1) it only stops once a request
+// truly comes back empty, so it's correct even if this project's actual
+// server-side row cap is lower than PAGE_SIZE (an offset-based "got fewer
+// than I asked for" check would wrongly treat that as "no more data" and
+// quit early); (2) offset pagination can skip or duplicate rows if
+// attendance is being marked concurrently while this is mid-fetch, since
+// a row inserted before the current offset shifts every row after it -
+// keyset pagination has no such gap because each page is "greater than the
+// last id I've already got," not "the Nth batch."
 async function fetchAllAttendanceRows(studentIds) {
   let rows = []
-  let from = 0
+  let lastId = null
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // PostgREST does not guarantee a stable row order across separate
-    // range() requests unless one is specified explicitly - without this,
-    // consecutive pages of an unfiltered scan can skip or duplicate rows,
-    // which is exactly what was causing some students to show no
-    // attendance % at all despite having real session history.
-    let q = supabase.from('attendance_records').select('student_id, status').order('id').range(from, from + PAGE_SIZE - 1)
+    let q = supabase.from('attendance_records').select('id, student_id, status').order('id').limit(PAGE_SIZE)
     if (studentIds) q = q.in('student_id', studentIds)
+    if (lastId) q = q.gt('id', lastId)
     const { data, error } = await q
     if (error) { console.error('Attendance stats load error:', error.message); break }
-    rows = rows.concat(data || [])
-    if (!data || data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
+    if (!data || data.length === 0) break
+    rows = rows.concat(data)
+    lastId = data[data.length - 1].id
   }
   return rows
 }
