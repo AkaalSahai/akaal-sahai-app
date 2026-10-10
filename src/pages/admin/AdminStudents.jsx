@@ -7,6 +7,22 @@ import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 import { loadAttendanceStats } from '../../lib/attendance'
+import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
+
+// Every date matching the group's weekly schedule between start and end
+// (inclusive), used to build the full theoretical calendar of class days -
+// not just the ones someone happened to take a register for.
+function classDatesBetween(startStr, endStr, daysOfWeek) {
+  const dates = []
+  if (!startStr || !endStr || !daysOfWeek?.length) return dates
+  const d = new Date(startStr + 'T12:00:00')
+  const end = new Date(endStr + 'T12:00:00')
+  while (d <= end) {
+    if (daysOfWeek.includes(d.getDay())) dates.push(d.toISOString().split('T')[0])
+    d.setDate(d.getDate() + 1)
+  }
+  return dates
+}
 
 function calcAgeRange(students) {
   if (!students?.length) return null
@@ -59,12 +75,14 @@ export default function AdminStudents({ readOnly }) {
   const [dialog, setDialog] = useState(null)
   const [teacherMap, setTeacherMap] = useState({})
   const [attendance, setAttendance] = useState({})  // studentId -> { pct, sessions }
+  const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
 
   useEffect(() => { load() }, [])
+  useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
   async function load() {
     const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, attMap] = await Promise.all([
-      supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
+      supabase.from('students').select('*, groups(id, name, class_type)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
       supabase.from('transfer_requests').select('*')
@@ -154,33 +172,52 @@ export default function AdminStudents({ readOnly }) {
       .from('attendance_records')
       .select('session_id, session_date, status, group_id')
       .eq('student_id', studentId)
-    // Show every session the student's group(s) have held since they joined -
-    // not just the ones with an existing attendance_records row - so a
-    // session nobody ever marked them for shows up as a visible gap rather
-    // than silently not counting. Covers every group they have a record in
-    // (handles a past transfer) plus their current group (in case they're
-    // new and have no records there yet).
-    const groupIds = new Set((records || []).map(r => r.group_id))
-    if (s?.group_id) groupIds.add(s.group_id)
-    let sessions = []
-    if (groupIds.size > 0) {
-      const { data } = await supabase
+
+    // Any group the student already has a record in: show those exact
+    // records as-is. We don't know when they actually left a past group
+    // (no membership-history table), so we can't safely build a theoretical
+    // calendar for one - just show what's really there.
+    const merged = new Map()
+    ;(records || []).forEach(r => {
+      merged.set(r.session_date + '|' + r.group_id, {
+        session_id: r.session_id, session_date: r.session_date, group_id: r.group_id, status: r.status,
+      })
+    })
+
+    // For their CURRENT group: build the full theoretical calendar of class
+    // days (based on that group's weekly schedule), not just the ones
+    // someone happened to take a register for - so a day the teacher never
+    // even opened the register shows up too, not only days with no record
+    // for this one student. Clamped to the group's own earliest actual
+    // session so an unreliable/placeholder date_joined (common on students
+    // from the original import - see the hint below) can't generate years
+    // of bogus entries predating the app itself.
+    if (s?.group_id) {
+      const { data: groupSessions } = await supabase
         .from('attendance_sessions')
-        .select('id, session_date, group_id')
-        .in('group_id', [...groupIds])
-        .gte('session_date', s?.date_joined || '1900-01-01')
-      sessions = data || []
+        .select('id, session_date')
+        .eq('group_id', s.group_id)
+        .order('session_date', { ascending: true })
+      if (groupSessions?.length) {
+        const sessionIdByDate = new Map(groupSessions.map(x => [x.session_date, x.id]))
+        const earliestSessionDate = groupSessions[0].session_date
+        const startStr = (s.date_joined && s.date_joined > earliestSessionDate) ? s.date_joined : earliestSessionDate
+        const todayStr = new Date().toISOString().split('T')[0]
+        const classType = s.groups?.class_type || 'punjabi'
+        const days = classTypesMeta[classType]?.days || CLASS_META.punjabi.days
+        classDatesBetween(startStr, todayStr, days).forEach(dateStr => {
+          const key = dateStr + '|' + s.group_id
+          if (merged.has(key)) return  // already have a real record for this date
+          merged.set(key, {
+            session_id: sessionIdByDate.get(dateStr) || null,  // null = no register was even taken that day
+            session_date: dateStr, group_id: s.group_id, status: null,
+          })
+        })
+      }
     }
-    const recordMap = Object.fromEntries((records || []).map(r => [r.session_id, r]))
-    const merged = sessions
-      .map(sess => ({
-        session_id: sess.id,
-        session_date: sess.session_date,
-        group_id: sess.group_id,
-        status: recordMap[sess.id]?.status ?? null,
-      }))
-      .sort((a, b) => b.session_date.localeCompare(a.session_date))
-    setAttendOpen(prev => ({ ...prev, [studentId]: merged }))
+
+    const result = [...merged.values()].sort((a, b) => b.session_date.localeCompare(a.session_date))
+    setAttendOpen(prev => ({ ...prev, [studentId]: result }))
     setAttendLoading(prev => ({ ...prev, [studentId]: false }))
   }
 
@@ -197,6 +234,7 @@ export default function AdminStudents({ readOnly }) {
 
   async function editRecord(studentId, record, newStatus) {
     if (editBusy) return
+    if (!record.session_id) return  // no register was taken that day at all - nothing to attach a status to
     const s    = students.find(x => x.id === studentId)
     const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
     const key  = record.session_id + studentId
@@ -698,7 +736,7 @@ export default function AdminStudents({ readOnly }) {
                             Attendance History — {fullName}
                             {records.length > 0 && (
                               <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>
-                                {records.length} session{records.length !== 1 ? 's' : ''} since {fmtDate(s.date_joined) || 'joining'} · tap active status to clear, tap another to change
+                                {records.length} class day{records.length !== 1 ? 's' : ''} · tap active status to clear, tap another to change
                               </span>
                             )}
                           </span>
@@ -706,7 +744,7 @@ export default function AdminStudents({ readOnly }) {
                         {attendLoading[s.id] ? (
                           <div className="spinner" style={{ width: 24, height: 24 }} />
                         ) : records.length === 0 ? (
-                          <div style={{ fontSize: '.83rem', color: 'var(--muted)' }}>No sessions have been held for this student's group since they joined.</div>
+                          <div style={{ fontSize: '.83rem', color: 'var(--muted)' }}>No class days found for this student's group.</div>
                         ) : (
                           <div style={{ maxHeight: 300, overflowY: 'auto', borderRadius: 8, border: '1px solid #bae6fd' }}>
                             <table style={{ width: '100%', fontSize: '.82rem', borderCollapse: 'collapse' }}>
@@ -723,7 +761,7 @@ export default function AdminStudents({ readOnly }) {
                                   const d     = new Date(r.session_date + 'T12:00:00')
                                   const isBusy = editBusy === r.session_id + s.id
                                   return (
-                                    <tr key={r.session_id} style={{ borderTop: '1px solid #bae6fd', opacity: isBusy ? 0.5 : 1 }}>
+                                    <tr key={r.session_date + r.group_id} style={{ borderTop: '1px solid #bae6fd', opacity: isBusy ? 0.5 : 1 }}>
                                       <td style={{ padding: '7px 12px', fontWeight: 600 }}>
                                         {fmtDate(r.session_date)}</td>
                                       <td style={{ padding: '7px 12px', color: 'var(--muted)' }}>
@@ -734,24 +772,32 @@ export default function AdminStudents({ readOnly }) {
                                           <span style={{ fontWeight: 700, color: STATUS_COLOR[r.status] || '#475569', textTransform: 'capitalize' }}>
                                             {r.status}
                                           </span>
-                                        ) : (
+                                        ) : r.session_id ? (
                                           <span style={{ fontWeight: 600, color: '#94a3b8', fontStyle: 'italic' }}>
                                             Not marked
+                                          </span>
+                                        ) : (
+                                          <span style={{ fontWeight: 600, color: '#cbd5e1', fontStyle: 'italic' }}>
+                                            No register taken
                                           </span>
                                         )}
                                       </td>
                                       <td style={{ padding: '7px 12px' }}>
-                                        <div style={{ display: 'flex', gap: 4 }}>
-                                          {['present', 'late', 'absent', 'holiday'].map(st => (
-                                            <button key={st}
-                                              className={`att-btn att-${st}${r.status === st ? ' active' : ''}`}
-                                              style={{ fontSize: '.7rem', padding: '3px 8px' }}
-                                              disabled={isBusy}
-                                              onClick={() => editRecord(s.id, r, st)}>
-                                              {st.charAt(0).toUpperCase() + st.slice(1)}
-                                            </button>
-                                          ))}
-                                        </div>
+                                        {r.session_id ? (
+                                          <div style={{ display: 'flex', gap: 4 }}>
+                                            {['present', 'late', 'absent', 'holiday'].map(st => (
+                                              <button key={st}
+                                                className={`att-btn att-${st}${r.status === st ? ' active' : ''}`}
+                                                style={{ fontSize: '.7rem', padding: '3px 8px' }}
+                                                disabled={isBusy}
+                                                onClick={() => editRecord(s.id, r, st)}>
+                                                {st.charAt(0).toUpperCase() + st.slice(1)}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <span style={{ fontSize: '.72rem', color: '#cbd5e1' }}>—</span>
+                                        )}
                                       </td>
                                     </tr>
                                   )
