@@ -12,7 +12,12 @@ async function fetchAllAttendanceRows(studentIds) {
   let from = 0
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    let q = supabase.from('attendance_records').select('student_id, status').range(from, from + PAGE_SIZE - 1)
+    // PostgREST does not guarantee a stable row order across separate
+    // range() requests unless one is specified explicitly - without this,
+    // consecutive pages of an unfiltered scan can skip or duplicate rows,
+    // which is exactly what was causing some students to show no
+    // attendance % at all despite having real session history.
+    let q = supabase.from('attendance_records').select('student_id, status').order('id').range(from, from + PAGE_SIZE - 1)
     if (studentIds) q = q.in('student_id', studentIds)
     const { data, error } = await q
     if (error) { console.error('Attendance stats load error:', error.message); break }
