@@ -63,7 +63,7 @@ export default function AdminStudents({ readOnly }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, attMap] = await Promise.all([
       supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
@@ -71,8 +71,9 @@ export default function AdminStudents({ readOnly }) {
         .eq('request_type', 'removal').eq('status', 'pending'),
       supabase.from('users').select('id, name, role, extra_roles'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
+      loadAttendanceStats(),
     ])
-    setAttendance(await loadAttendanceStats())
+    setAttendance(attMap)
     const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
     setTeacherMap(teacherMap)
