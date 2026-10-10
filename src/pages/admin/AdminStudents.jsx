@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
+import { loadAttendanceStats } from '../../lib/attendance'
 
 function calcAgeRange(students) {
   if (!students?.length) return null
@@ -62,7 +63,7 @@ export default function AdminStudents({ readOnly }) {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, { data: att }] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }] = await Promise.all([
       supabase.from('students').select('*, groups(id, name)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
@@ -70,22 +71,8 @@ export default function AdminStudents({ readOnly }) {
         .eq('request_type', 'removal').eq('status', 'pending'),
       supabase.from('users').select('id, name, role, extra_roles'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
-      supabase.from('attendance_records').select('student_id, status'),
     ])
-    const attStats = {}
-    ;(att || []).forEach(r => {
-      if (!attStats[r.student_id]) attStats[r.student_id] = { total: 0, attended: 0 }
-      // Holiday days aren't counted either way - matches AdminDashboard.jsx / TeacherStudents.jsx
-      if (r.status === 'holiday') return
-      attStats[r.student_id].total++
-      if (r.status === 'present' || r.status === 'late') attStats[r.student_id].attended++
-    })
-    const attMap = {}
-    ;(s || []).forEach(st => {
-      const a = attStats[st.id]
-      attMap[st.id] = { pct: a && a.total > 0 ? Math.round((a.attended / a.total) * 100) : null, sessions: a?.total || 0 }
-    })
-    setAttendance(attMap)
+    setAttendance(await loadAttendanceStats())
     const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
     setTeacherMap(teacherMap)

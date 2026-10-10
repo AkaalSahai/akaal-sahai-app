@@ -7,6 +7,7 @@ import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_LABEL } from '../../lib/verification'
 import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
+import { loadAttendanceStats } from '../../lib/attendance'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -91,27 +92,8 @@ export default function TeacherStudents() {
     } else {
       setVerifications({})
     }
-    await loadAttendance(sorted.map(s => s.id))
-  }
-
-  async function loadAttendance(studentIds) {
-    if (studentIds.length === 0) { setAttendance({}); return }
-    const { data } = await supabase.from('attendance_records')
-      .select('student_id, status').in('student_id', studentIds)
-    const stats = {}
-    ;(data || []).forEach(r => {
-      if (!stats[r.student_id]) stats[r.student_id] = { total: 0, attended: 0 }
-      // Holiday days aren't counted either way - matches AdminDashboard.jsx
-      if (r.status === 'holiday') return
-      stats[r.student_id].total++
-      if (r.status === 'present' || r.status === 'late') stats[r.student_id].attended++
-    })
-    const result = {}
-    studentIds.forEach(id => {
-      const s = stats[id]
-      result[id] = { pct: s && s.total > 0 ? Math.round((s.attended / s.total) * 100) : null, sessions: s?.total || 0 }
-    })
-    setAttendance(result)
+    if (sorted.length === 0) { setAttendance({}); return }
+    setAttendance(await loadAttendanceStats(sorted.map(s => s.id)))
   }
 
   async function loadVerifications(studentIds) {
