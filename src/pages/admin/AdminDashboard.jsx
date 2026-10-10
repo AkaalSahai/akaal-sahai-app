@@ -312,7 +312,7 @@ export default function AdminDashboard({ setTab }) {
       // class day, not 28 "sessions". Table is small enough (hundreds of
       // rows) to just fetch the dates and count distinct values client-side
       // rather than needing a dedicated count-distinct RPC.
-      supabase.from('attendance_sessions').select('session_date'),
+      supabase.from('attendance_sessions').select('session_date, group_id'),
       supabase.from('parent_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('student_classes').select('student_id, group_id'),
@@ -327,6 +327,20 @@ export default function AdminDashboard({ setTab }) {
     ])
 
     const totalSessions = new Set((allSessionDates || []).map(r => r.session_date)).size
+
+    // Break the same distinct-days count down by class type (Punjabi, Gatka,
+    // etc.) - a group that's since been merged/deleted falls back to
+    // 'punjabi', same default used everywhere else in this file.
+    const groupClassTypeMap = Object.fromEntries((groupRows || []).map(g => [g.id, g.class_type || 'punjabi']))
+    const daysByType = {}
+    ;(allSessionDates || []).forEach(r => {
+      const ct = groupClassTypeMap[r.group_id] || 'punjabi'
+      if (!daysByType[ct]) daysByType[ct] = new Set()
+      daysByType[ct].add(r.session_date)
+    })
+    const sessionsByType = Object.fromEntries(
+      Object.entries(daysByType).map(([ct, dates]) => [ct, dates.size])
+    )
 
     const scInGroupIds = new Set((scRows || []).map(r => r.student_id))
     const scGroupCountMap = {}
@@ -411,7 +425,7 @@ export default function AdminDashboard({ setTab }) {
     ).length
 
     const result = {
-      totalStudents, totalGroups, totalTeachers, totalSessions,
+      totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType,
       pendingStudents, pendingTeachers,
       enrichedGroups, lowestStudents, leastActive,
       todayCount: doneGroupIds.size,
@@ -545,7 +559,7 @@ export default function AdminDashboard({ setTab }) {
     </>
   )
 
-  const { totalStudents, totalGroups, totalTeachers, totalSessions,
+  const { totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType,
     pendingStudents, pendingTeachers, unassignedStudents,
     enrichedGroups, lowestStudents, leastActive, todayCount,
     groupsFullyVerified, groupsWithStudentsCount } = data
@@ -553,6 +567,10 @@ export default function AdminDashboard({ setTab }) {
   const notDoneGroups = enrichedGroups.filter(g => !g.doneToday)
   const classDay      = isAnyClassDay(classTypesMeta)
   const totalPending  = (pendingStudents || 0) + (pendingTeachers || 0)
+  const sessionsByTypeLabel = Object.entries(sessionsByType || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([ct, n]) => `${classTypesMeta[ct]?.label || ct} ${n}`)
+    .join(' · ')
 
   return (
     <>
@@ -656,7 +674,7 @@ export default function AdminDashboard({ setTab }) {
           {
             label: 'Class Days',
             value: totalSessions ?? 0,
-            sub: 'distinct days, since this app started',
+            sub: sessionsByTypeLabel || 'since this app started',
             accent: '#0d9488',
             action: () => {},
           },
