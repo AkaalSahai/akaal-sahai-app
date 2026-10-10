@@ -26,23 +26,25 @@ function NotificationBell({ userId }) {
   }, [userId])
 
   async function load() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .select('id, message, read, created_at')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30)
+    if (error) console.error('Notifications load error:', error.message)
     setNotes(data || [])
   }
 
   async function markAllRead() {
     const ids = notes.filter(n => !n.read).map(n => n.id)
     if (!ids.length) return
-    await supabase.from('notifications').update({ read: true }).in('id', ids)
+    await supabase.from('notifications').update({ read: true }).eq('user_id', userId).in('id', ids)
     setNotes(prev => prev.map(n => ({ ...n, read: true })))
   }
 
   async function dismiss(id) {
-    await supabase.from('notifications').delete().eq('id', id)
+    await supabase.from('notifications').delete().eq('user_id', userId).eq('id', id)
     setNotes(prev => prev.filter(n => n.id !== id))
   }
 
@@ -100,7 +102,7 @@ function NotificationBell({ userId }) {
             fontWeight: 700, fontSize: '.85rem', color: 'var(--text)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             Notifications
             {notes.length > 0 && (
-              <button onClick={() => Promise.all(notes.map(n => supabase.from('notifications').delete().eq('id', n.id))).then(() => setNotes([]))}
+              <button onClick={() => supabase.from('notifications').delete().eq('user_id', userId).in('id', notes.map(n => n.id)).then(() => setNotes([]))}
                 style={{ fontSize: '.72rem', color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}>
                 Clear all
               </button>

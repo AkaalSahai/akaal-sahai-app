@@ -5,6 +5,15 @@ import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 
+function pendingFirst(list) {
+  return [...list].sort((a, b) => {
+    const pa = a.status === 'pending' ? 0 : 1
+    const pb = b.status === 'pending' ? 0 : 1
+    if (pa !== pb) return pa - pb
+    return new Date(b.created_at) - new Date(a.created_at)
+  })
+}
+
 function calcAgeRange(students) {
   if (!students?.length) return null
   const now = new Date()
@@ -54,10 +63,10 @@ export default function AdminApplications({ readOnly }) {
       // via the teacher_groups junction (multi-teacher groups) — check both.
       const tgGroupMap = {}
       ;(tg || []).forEach(r => { if (!tgGroupMap[r.group_id] && tMap[r.teacher_id]) tgGroupMap[r.group_id] = tMap[r.teacher_id] })
-      setStudentApps(sa || [])
-      setTeacherApps(ta || [])
+      setStudentApps(pendingFirst(sa || []))
+      setTeacherApps(pendingFirst(ta || []))
       setGroups((gr || []).map(g => ({ ...g, teacherName: tMap[g.teacher_id] || tgGroupMap[g.id] || null })))
-      setTransfers(tr || [])
+      setTransfers(pendingFirst(tr || []))
     } catch (err) {
       console.error('Applications load error:', err)
     } finally {
