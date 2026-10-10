@@ -291,6 +291,7 @@ export default function AdminDashboard({ setTab }) {
       { count: totalStudents },
       { count: totalGroups },
       { count: totalTeachers },
+      { count: totalSessions },
       { count: pendingStudents },
       { count: pendingTeachers },
       { data: scRows },
@@ -306,6 +307,7 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('students').select('*', { count: 'exact', head: true }).eq('active', true),
       supabase.from('groups').select('*', { count: 'exact', head: true }),
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'teacher'),
+      supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }),
       supabase.from('parent_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('student_classes').select('student_id, group_id'),
@@ -402,7 +404,7 @@ export default function AdminDashboard({ setTab }) {
     ).length
 
     const result = {
-      totalStudents, totalGroups, totalTeachers,
+      totalStudents, totalGroups, totalTeachers, totalSessions,
       pendingStudents, pendingTeachers,
       enrichedGroups, lowestStudents, leastActive,
       todayCount: doneGroupIds.size,
@@ -536,7 +538,7 @@ export default function AdminDashboard({ setTab }) {
     </>
   )
 
-  const { totalStudents, totalGroups, totalTeachers,
+  const { totalStudents, totalGroups, totalTeachers, totalSessions,
     pendingStudents, pendingTeachers, unassignedStudents,
     enrichedGroups, lowestStudents, leastActive, todayCount,
     groupsFullyVerified, groupsWithStudentsCount } = data
@@ -643,6 +645,13 @@ export default function AdminDashboard({ setTab }) {
             sub: 'registered accounts',
             accent: '#d97706',
             tab: 'users',
+          },
+          {
+            label: 'Total Sessions',
+            value: totalSessions ?? 0,
+            sub: 'since this app started',
+            accent: '#0d9488',
+            action: () => {},
           },
           {
             label: 'Pending',
