@@ -291,7 +291,7 @@ export default function AdminDashboard({ setTab }) {
       { count: totalStudents },
       { count: totalGroups },
       { count: totalTeachers },
-      { count: totalSessions },
+      { data: allSessionDates },
       { count: pendingStudents },
       { count: pendingTeachers },
       { data: scRows },
@@ -307,7 +307,12 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('students').select('*', { count: 'exact', head: true }).eq('active', true),
       supabase.from('groups').select('*', { count: 'exact', head: true }),
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'teacher'),
-      supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }),
+      // One row per class day, not per group-per-day - a Friday where 28
+      // different Punjabi groups each submitted their own register is one
+      // class day, not 28 "sessions". Table is small enough (hundreds of
+      // rows) to just fetch the dates and count distinct values client-side
+      // rather than needing a dedicated count-distinct RPC.
+      supabase.from('attendance_sessions').select('session_date'),
       supabase.from('parent_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('student_classes').select('student_id, group_id'),
@@ -320,6 +325,8 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('student_verifications').select('*').order('verified_at', { ascending: false }),
       supabase.from('site_settings').select('key, value').eq('key', 'verification_required_since'),
     ])
+
+    const totalSessions = new Set((allSessionDates || []).map(r => r.session_date)).size
 
     const scInGroupIds = new Set((scRows || []).map(r => r.student_id))
     const scGroupCountMap = {}
@@ -647,9 +654,9 @@ export default function AdminDashboard({ setTab }) {
             tab: 'users',
           },
           {
-            label: 'Total Sessions',
+            label: 'Class Days',
             value: totalSessions ?? 0,
-            sub: 'since this app started',
+            sub: 'distinct days, since this app started',
             accent: '#0d9488',
             action: () => {},
           },
