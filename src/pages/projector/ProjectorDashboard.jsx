@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
-// Matches CLASS_META.punjabi.days in lib/classTypes.js (Friday, Saturday) -
-// kept as a plain constant here rather than importing classTypes.js, since
-// this page only ever needs Punjabi's own schedule, not the full
-// admin-manageable class type list.
-const PUNJABI_DAYS = [5, 6]
-
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
   if (diff < 1) return 'just now'
   if (diff < 60) return `${diff}m ago`
   return `${Math.floor(diff / 60)}h ago`
+}
+
+function fmtTargetDate(dateStr) {
+  if (!dateStr) return null
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -57,7 +56,6 @@ export default function ProjectorDashboard() {
     </div>
   )
 
-  const isClassDay = PUNJABI_DAYS.includes(now.getDay())
   const groups = data.groups || []
   const notStarted = groups.filter(g => !g.started)
   const totals = groups.reduce((a, g) => ({
@@ -82,14 +80,24 @@ export default function ProjectorDashboard() {
   })
   const ringBg = marked > 0 ? `conic-gradient(${ringStops.join(',')})` : 'conic-gradient(#2d2a66 0 360deg)'
 
+  const isToday = data.is_today
+  const hasSession = !!data.target_date
+  const sectionLabel = isToday ? 'Today' : fmtTargetDate(data.target_date) || 'No sessions recorded yet'
+
   return (
     <div style={page}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f0a500' }}>Akaal Sahai Southall</div>
-          <div style={{ fontSize: '1rem', color: '#a5b4fc', marginTop: 2 }}>
-            {data.class_day_number != null && `Session ${data.class_day_number}`}
+          <div style={{ fontSize: '1rem', color: '#a5b4fc', marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
+            {data.class_day_number != null && <span>Session {data.class_day_number}</span>}
+            {isToday ? (
+              <span style={{ background: '#dc2626', color: 'white', fontWeight: 700, fontSize: '.75rem',
+                padding: '2px 10px', borderRadius: 99 }}>● LIVE</span>
+            ) : (
+              <span style={{ color: '#a5b4fc', fontSize: '.9rem' }}>Last session: {sectionLabel}</span>
+            )}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -102,9 +110,9 @@ export default function ProjectorDashboard() {
         </div>
       </div>
 
-      {!isClassDay ? (
-        <div style={{ textAlign: 'center', marginTop: 140, fontSize: '1.8rem', color: '#a5b4fc' }}>
-          No Punjabi class today — see you Friday or Saturday
+      {!hasSession ? (
+        <div style={{ textAlign: 'center', marginTop: 140, fontSize: '1.6rem', color: '#a5b4fc' }}>
+          No Punjabi class sessions recorded yet
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 24 }}>
@@ -114,7 +122,9 @@ export default function ProjectorDashboard() {
             {/* Submission progress */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe' }}>Registers Submitted</span>
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe' }}>
+                  Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
+                </span>
                 <span style={{ fontSize: '1.6rem', fontWeight: 800 }}>{totals.started} / {groups.length}</span>
               </div>
               <div style={{ background: '#2d2a66', borderRadius: 99, height: 14, overflow: 'hidden' }}>
@@ -126,11 +136,11 @@ export default function ProjectorDashboard() {
             {/* Not started */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px', flex: 1 }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fca5a5', marginBottom: 14 }}>
-                ⚠ Not Started Yet {notStarted.length > 0 && `(${notStarted.length})`}
+                {isToday ? '⚠ Not Started Yet' : '⚠ Didn’t Submit'} {notStarted.length > 0 && `(${notStarted.length})`}
               </div>
               {notStarted.length === 0 ? (
                 <div style={{ fontSize: '1.3rem', color: '#86efac', fontWeight: 700, padding: '20px 0', textAlign: 'center' }}>
-                  ✓ Every group has started!
+                  ✓ Every group {isToday ? 'has started!' : 'submitted!'}
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
@@ -147,17 +157,19 @@ export default function ProjectorDashboard() {
             {/* Live just-submitted feed */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px' }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 12 }}>
-                🔴 Live Activity
+                {isToday ? '🔴 Live Activity' : 'Submission Order'}
               </div>
               {(data.recent || []).length === 0 ? (
-                <div style={{ color: '#a5b4fc', fontSize: '.95rem' }}>No registers started yet today</div>
+                <div style={{ color: '#a5b4fc', fontSize: '.95rem' }}>No registers started</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {data.recent.slice(0, 6).map((r, i) => (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
                       fontSize: '1rem', borderBottom: i < 5 ? '1px solid #2d2a66' : 'none', paddingBottom: 6 }}>
                       <span style={{ fontWeight: 600 }}>{r.name}</span>
-                      <span style={{ color: '#a5b4fc' }}>{timeAgo(r.created_at)}</span>
+                      <span style={{ color: '#a5b4fc' }}>
+                        {isToday ? timeAgo(r.created_at) : new Date(r.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -168,9 +180,11 @@ export default function ProjectorDashboard() {
           {/* Right column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* Live tracker ring */}
+            {/* Tracker ring */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '24px 26px', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 16 }}>Live Tracker</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 16 }}>
+                {isToday ? 'Live Tracker' : `Results — ${sectionLabel}`}
+              </div>
               <div style={{ position: 'relative', width: 180, height: 180, margin: '0 auto 16px', borderRadius: '50%', background: ringBg }}>
                 <div style={{ position: 'absolute', inset: 14, borderRadius: '50%', background: '#1e1a6e',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
