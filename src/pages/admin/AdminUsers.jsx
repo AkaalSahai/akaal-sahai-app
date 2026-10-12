@@ -19,6 +19,11 @@ async function callAdminAction(payload, token) {
 }
 
 const ROLES = ['admin','registrar','teacher','adminView']
+// Dashboard accounts are a dedicated, locked-down login for the projector
+// display - they don't make sense as an "extra role" stacked on top of a
+// staff account, so they're selectable as a primary role but left out of
+// the extra-roles checkboxes below.
+const PRIMARY_ROLES = [...ROLES, 'dashboard']
 
 export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const { profile: myProfile } = useAuth()
@@ -345,7 +350,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     return u.can_manage_teacher_register ? 1 : 0
   }
 
-  const roleOrder = ['admin', 'adminView', 'registrar', 'teacher']
+  const roleOrder = ['admin', 'adminView', 'registrar', 'teacher', 'dashboard']
   const sorted = sortCol
     ? [...users].sort((a, b) => {
         let va, vb
@@ -414,6 +419,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 <option value="registrar">Registrar</option>
                 <option value="teacher">Teacher</option>
                 <option value="adminView">Admin View (read-only)</option>
+                <option value="dashboard">Dashboard (projector display only)</option>
               </select>
             </div>
           </div>
@@ -451,7 +457,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                       <select value={u.role} disabled={busy === u.id}
                         onChange={e => changeRole(u.id, e.target.value)}
                         style={{ padding: '3px 6px', fontSize: '.78rem', borderRadius: 6, border: '1px solid var(--border)', fontWeight: 600, marginBottom: 4, display: 'block' }}>
-                        {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                        {PRIMARY_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                       <div style={{ marginTop: 4 }}>
                         <div style={{ fontSize: '10px', color: 'var(--muted)', letterSpacing: '.04em', marginBottom: 4, textTransform: 'uppercase' }}>Extra roles</div>
