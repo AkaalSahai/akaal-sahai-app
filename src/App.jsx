@@ -16,6 +16,7 @@ import ResetPassword from './pages/ResetPassword'
 import AdminLayout from './pages/admin/AdminLayout'
 import RegistrarLayout from './pages/registrar/RegistrarLayout'
 import TeacherLayout from './pages/teacher/TeacherLayout'
+import ProjectorDashboard from './pages/projector/ProjectorDashboard'
 
 // A profile matches an allowed role if it's their primary role OR one of
 // their extra_roles — same rule as hasRole() elsewhere in the app, so e.g.
@@ -49,6 +50,7 @@ function RootRedirect() {
   if (profile.role === 'adminView') return <Navigate to="/admin" replace />
   if (profile.role === 'registrar') return <Navigate to="/registrar" replace />
   if (profile.role === 'teacher')   return <Navigate to="/teacher" replace />
+  if (profile.role === 'dashboard') return <Navigate to="/projector" replace />
   return <Navigate to="/login" replace />
 }
 
@@ -68,6 +70,9 @@ function AppRoutes() {
       } />
       <Route path="/teacher/*" element={
         <RequireAuth role="teacher"><TeacherLayout /></RequireAuth>
+      } />
+      <Route path="/projector" element={
+        <RequireAuth role={['dashboard','admin']}><ProjectorDashboard /></RequireAuth>
       } />
 
       <Route path="/" element={<RootRedirect />} />
