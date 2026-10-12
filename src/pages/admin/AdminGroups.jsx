@@ -29,7 +29,7 @@ export default function AdminGroups({ readOnly }) {
 
   async function load() {
     const [{ data: g }, { data: t }, { data: tg }, { data: sc }] = await Promise.all([
-      supabase.from('groups').select('id, name, teacher_id, class_type, students(date_of_birth)').order('name'),
+      supabase.from('groups').select('id, name, teacher_id, class_type, active, students(date_of_birth)').order('name'),
       supabase.from('users').select('id, name, role, extra_roles').order('name'),
       supabase.from('teacher_groups').select('teacher_id, group_id, role'),
       // Extra-class (Gatka/Kirtan/any admin-added type) enrollment lives in
@@ -153,6 +153,18 @@ export default function AdminGroups({ readOnly }) {
     if (error) { alert(error.message); return }
     logAction(profile, 'Renamed group', `${g?.name} → ${trimmed}`).catch(() => {})
     cancelRename()
+    load()
+  }
+
+  // Reserved (inactive) groups are kept for a future cohort - excluded from
+  // register/attendance tracking (Register Status, Dashboard health cards,
+  // projector) and from destination dropdowns when assigning a student,
+  // but still fully visible and editable right here.
+  async function toggleActive(g) {
+    const next = !g.active
+    const { error } = await supabase.from('groups').update({ active: next }).eq('id', g.id)
+    if (error) { alert(error.message); return }
+    logAction(profile, next ? 'Reactivated group' : 'Marked group reserved', g.name).catch(() => {})
     load()
   }
 
@@ -362,6 +374,13 @@ export default function AdminGroups({ readOnly }) {
                           ✏️
                         </button>
                       )}
+                      {!g.active && (
+                        <span title="Excluded from register tracking and student-assignment dropdowns until reactivated"
+                          style={{ fontSize: '.68rem', fontWeight: 700, color: '#92400e', background: '#fef3c7',
+                            border: '1px solid #fde68a', borderRadius: 6, padding: '1px 7px', whiteSpace: 'nowrap' }}>
+                          Reserved
+                        </span>
+                      )}
                     </div>
                   )}
                 </td>
@@ -428,7 +447,12 @@ export default function AdminGroups({ readOnly }) {
                 </td>
                 {!readOnly && (
                   <td>
-                    <button className="btn btn-danger btn-xs" onClick={() => deleteGroup(g.id)}>Delete</button>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn btn-outline btn-xs" onClick={() => toggleActive(g)}>
+                        {g.active ? 'Mark Reserved' : 'Reactivate'}
+                      </button>
+                      <button className="btn btn-danger btn-xs" onClick={() => deleteGroup(g.id)}>Delete</button>
+                    </div>
                   </td>
                 )}
               </tr>

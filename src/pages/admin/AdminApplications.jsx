@@ -49,7 +49,7 @@ export default function AdminApplications({ readOnly }) {
       const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }, { data: tg }] = await Promise.all([
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
-        supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
+        supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
         supabase.from('users').select('id, name, role, extra_roles'),

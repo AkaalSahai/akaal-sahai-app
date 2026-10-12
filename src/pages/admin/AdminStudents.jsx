@@ -86,7 +86,7 @@ export default function AdminStudents({ readOnly }) {
   async function load() {
     const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, attMap] = await Promise.all([
       supabase.from('students').select('*, groups(id, name, class_type)').eq('active', true).order('first_name').order('last_name'),
-      supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').order('name'),
+      supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
       supabase.from('transfer_requests').select('*')
         .eq('request_type', 'removal').eq('status', 'pending'),
