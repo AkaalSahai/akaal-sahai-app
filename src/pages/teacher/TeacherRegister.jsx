@@ -34,6 +34,9 @@ export default function TeacherRegister() {
   const [loading, setLoading]     = useState(true)
   const [groupsLoading, setGroupsLoading] = useState(true)
   const [sessionId, setSessionId] = useState(null)
+  const [submittedAt, setSubmittedAt] = useState(null)
+  const [submitBusy, setSubmitBusy] = useState(false)
+  const [now, setNow] = useState(new Date())
   const [saveState, setSaveState] = useState('idle')
   const [history, setHistory]     = useState(false)
   const [historyData, setHistoryData] = useState([])
@@ -57,9 +60,19 @@ export default function TeacherRegister() {
   useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
+  // Re-evaluates the 9:30pm cutoff live, without needing a page refresh right
+  // at the boundary - a 30s tick is frequent enough for this, no need for
+  // anything faster.
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t) }, [])
 
-  const isReadOnly = date < todayISO()
   const isToday    = date === todayISO()
+  // Teachers can keep marking and re-submitting right up to 9:30pm; after
+  // that the register locks for the day regardless of submission status -
+  // see add-register-submit-and-cutoff.sql for the matching server-side
+  // auto-submit at the same time, so a register nobody explicitly submitted
+  // still gets finalized rather than left in limbo.
+  const pastCutoffToday = isToday && (now.getHours() > 21 || (now.getHours() === 21 && now.getMinutes() >= 30))
+  const isReadOnly = date < todayISO() || pastCutoffToday
   const dayOfWeek  = new Date(date + 'T12:00:00').getDay()
   const selectedGroup = myGroups.find(g => g.id === selectedGroupId)
   // Falls back to Punjabi's own schedule if the group's class type hasn't
@@ -131,6 +144,7 @@ export default function TeacherRegister() {
     setSyncedFrom({})
     setNotes({})
     setSessionId(null)
+    setSubmittedAt(null)
     setTransferOpen({})
     setRemoveOpen({})
     setSaveState('idle')
@@ -163,12 +177,13 @@ export default function TeacherRegister() {
     if (!selectedGroupId) return
     const { data } = await supabase
       .from('attendance_sessions')
-      .select('id, records:attendance_records(student_id, status, notes, synced_from_class_type)')
+      .select('id, submitted_at, records:attendance_records(student_id, status, notes, synced_from_class_type)')
       .eq('group_id', selectedGroupId)
       .eq('session_date', date)
       .maybeSingle()
     if (data) {
       setSessionId(data.id)
+      setSubmittedAt(data.submitted_at)
       const attMap = {}, noteMap = {}, syncMap = {}
       ;(data.records || []).forEach(r => {
         attMap[r.student_id]  = r.status
@@ -180,11 +195,29 @@ export default function TeacherRegister() {
       setSyncedFrom(syncMap)
     } else {
       setSessionId(null)
+      setSubmittedAt(null)
       setAttendance({})
       setNotes({})
       setSyncedFrom({})
     }
     setSaveState('idle')
+  }
+
+  async function submitRegister() {
+    const sid = sessionId || await ensureSession()
+    if (!sid) return
+    setSubmitBusy(true)
+    try {
+      const ts = new Date().toISOString()
+      const { error } = await supabase.from('attendance_sessions').update({ submitted_at: ts }).eq('id', sid)
+      if (error) throw error
+      setSubmittedAt(ts)
+      logAction(profile, 'Submitted register', `${groupName || selectedGroupId} (${date})`).catch(() => {})
+    } catch (err) {
+      alert('Could not submit: ' + err.message)
+    } finally {
+      setSubmitBusy(false)
+    }
   }
 
   async function ensureSession() {
@@ -410,7 +443,13 @@ export default function TeacherRegister() {
           </div>
         )}
 
-        {isReadOnly && (
+        {isReadOnly && pastCutoffToday && (
+          <div className="alert" style={{ background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' }}>
+            It's past 9:30pm, so today's register is now locked. Contact admin if something needs correcting.
+          </div>
+        )}
+
+        {isReadOnly && !pastCutoffToday && (
           <div className="alert" style={{ background: '#f1f5f9', color: '#475569', borderColor: '#cbd5e1' }}>
             Past register — read only. Showing record for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' })} {fmtDate(date)}.
           </div>
@@ -422,9 +461,23 @@ export default function TeacherRegister() {
           </div>
         )}
 
-        {isToday && sessionId && (
-          <div className="alert alert-success">
-            Register in progress for {new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long' })} {fmtDate(date)} — changes save automatically.
+        {isToday && !isReadOnly && sessionId && (
+          <div className="alert alert-success" style={{ display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <span>
+              {submittedAt ? (
+                <>✓ Submitted at {new Date(submittedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — you can still make changes and re-submit until 9:30pm.</>
+              ) : (
+                <>Register in progress — changes save automatically. Submit once you're done marking everyone (you can still edit until 9:30pm).</>
+              )}
+            </span>
+            <button className="btn btn-sm" disabled={submitBusy}
+              onClick={submitRegister}
+              style={{ background: submittedAt ? 'white' : 'var(--success)',
+                color: submittedAt ? 'var(--success)' : 'white',
+                border: submittedAt ? '1.5px solid var(--success)' : 'none', fontWeight: 700 }}>
+              {submitBusy ? 'Submitting…' : submittedAt ? 'Re-submit' : 'Submit Register'}
+            </button>
           </div>
         )}
 
