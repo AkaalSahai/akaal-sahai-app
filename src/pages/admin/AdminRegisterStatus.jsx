@@ -23,7 +23,7 @@ export default function AdminRegisterStatus() {
       { data: tgRows },
     ] = await Promise.all([
       supabase.from('groups').select('id, name, teacher_id').eq('active', true).order('name'),
-      supabase.from('attendance_sessions').select('id, group_id, created_at').eq('session_date', today),
+      supabase.from('attendance_sessions').select('id, group_id, created_at, submitted_at').eq('session_date', today),
       supabase.from('attendance_records').select('session_id, status').eq('session_date', today),
       supabase.from('users').select('id, name').eq('role', 'teacher'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
@@ -52,8 +52,9 @@ export default function AdminRegisterStatus() {
       return {
         ...g,
         teacherNames,
-        submitted:    !!session,
-        submittedAt:  session?.created_at || null,
+        started:      !!session,
+        submitted:    !!session?.submitted_at,
+        submittedAt:  session?.submitted_at || null,
         marked:       session ? (totalCount[session.id] || 0) : null,
         present:      session ? (presentCount[session.id] || 0) : null,
       }
@@ -157,15 +158,17 @@ export default function AdminRegisterStatus() {
                   <td>
                     {g.submitted
                       ? <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '.82rem' }}>✓ Submitted</span>
-                      : classDay
-                        ? <span style={{ color: '#dc2626', fontWeight: 700, fontSize: '.82rem' }}>⚠ Missing</span>
-                        : <span style={{ color: '#94a3b8', fontSize: '.82rem' }}>— Not submitted</span>}
+                      : g.started
+                        ? <span style={{ color: '#d97706', fontWeight: 700, fontSize: '.82rem' }}>⏳ In progress</span>
+                        : classDay
+                          ? <span style={{ color: '#dc2626', fontWeight: 700, fontSize: '.82rem' }}>⚠ Missing</span>
+                          : <span style={{ color: '#94a3b8', fontSize: '.82rem' }}>— Not submitted</span>}
                   </td>
                   <td style={{ fontSize: '.82rem', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
                     {fmtTime(g.submittedAt)}
                   </td>
                   <td style={{ fontSize: '.82rem' }}>
-                    {g.submitted
+                    {g.started
                       ? <span><strong>{g.present}</strong> present / {g.marked} marked</span>
                       : <span style={{ color: 'var(--muted)' }}>—</span>}
                   </td>

@@ -319,7 +319,7 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('student_classes').select('student_id, group_id'),
       supabase.from('groups').select('id, name, class_type, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
       supabase.from('users').select('id, name, last_login, last_seen').eq('role', 'teacher').order('name'),
-      supabase.from('attendance_sessions').select('id, group_id').eq('session_date', today),
+      supabase.from('attendance_sessions').select('id, group_id, submitted_at').eq('session_date', today),
       supabase.rpc('get_dashboard_attendance_stats', { from_date: fromDate }),
       supabase.from('students').select('*').eq('active', true),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
@@ -370,7 +370,7 @@ export default function AdminDashboard({ setTab }) {
       if (t) tgGroupMap[r.group_id].push(t.name)
     })
 
-    const doneGroupIds = new Set((todaySessions || []).map(s => s.group_id))
+    const doneGroupIds = new Set((todaySessions || []).filter(s => s.submitted_at).map(s => s.group_id))
 
     const { groupAtt = {}, studentAtt = {} } = attStats || {}
 

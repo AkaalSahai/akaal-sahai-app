@@ -57,15 +57,15 @@ export default function ProjectorDashboard() {
   )
 
   const groups = data.groups || []
-  const notStarted = groups.filter(g => !g.started)
+  const notSubmitted = groups.filter(g => !g.submitted)
   const totals = groups.reduce((a, g) => ({
     total:   a.total   + g.total_students,
     present: a.present + g.present,
     late:    a.late    + g.late,
     absent:  a.absent  + g.absent,
     holiday: a.holiday + g.holiday,
-    started: a.started + (g.started ? 1 : 0),
-  }), { total: 0, present: 0, late: 0, absent: 0, holiday: 0, started: 0 })
+    submitted: a.submitted + (g.submitted ? 1 : 0),
+  }), { total: 0, present: 0, late: 0, absent: 0, holiday: 0, submitted: 0 })
   const marked = totals.present + totals.late + totals.absent + totals.holiday
   const attendedPct = marked > 0 ? Math.round(((totals.present + totals.late) / marked) * 100) : null
 
@@ -125,10 +125,10 @@ export default function ProjectorDashboard() {
                 <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe' }}>
                   Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
                 </span>
-                <span style={{ fontSize: '1.6rem', fontWeight: 800 }}>{totals.started} / {groups.length}</span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800 }}>{totals.submitted} / {groups.length}</span>
               </div>
               <div style={{ background: '#2d2a66', borderRadius: 99, height: 14, overflow: 'hidden' }}>
-                <div style={{ width: `${groups.length ? (totals.started / groups.length) * 100 : 0}%`,
+                <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
                   height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
               </div>
             </div>
@@ -136,15 +136,15 @@ export default function ProjectorDashboard() {
             {/* Not started */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px', flex: 1 }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fca5a5', marginBottom: 14 }}>
-                {isToday ? '⚠ Not Started Yet' : '⚠ Didn’t Submit'} {notStarted.length > 0 && `(${notStarted.length})`}
+                ⚠ {isToday ? 'Not Submitted Yet' : 'Didn’t Submit'} {notSubmitted.length > 0 && `(${notSubmitted.length})`}
               </div>
-              {notStarted.length === 0 ? (
+              {notSubmitted.length === 0 ? (
                 <div style={{ fontSize: '1.3rem', color: '#86efac', fontWeight: 700, padding: '20px 0', textAlign: 'center' }}>
-                  ✓ Every group {isToday ? 'has started!' : 'submitted!'}
+                  ✓ Every group has submitted!
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
-                  {notStarted.map(g => (
+                  {notSubmitted.map(g => (
                     <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 10,
                       padding: '10px 14px', fontSize: '1.05rem', fontWeight: 700, color: '#fecaca' }}>
                       {g.name}
