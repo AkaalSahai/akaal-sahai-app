@@ -69,7 +69,7 @@ function LiveAttendanceWidget({ classTypesMeta }) {
     if (isLive) { countRef.current = 30; setCountdown(30) }
     try {
       const [{ data: grpRows }, { data: stuRows }, { data: recRows }, { data: scRows }] = await Promise.all([
-        supabase.from('groups').select('id, name').order('name'),
+        supabase.from('groups').select('id, name').eq('active', true).order('name'),
         supabase.from('students').select('id, group_id').eq('active', true),
         supabase.from('attendance_records').select('student_id, group_id, status').eq('session_date', targetDate),
         supabase.from('student_classes').select('student_id, group_id'),
@@ -306,7 +306,7 @@ export default function AdminDashboard({ setTab }) {
       { data: verifySettingsRows },
     ] = await Promise.all([
       supabase.from('students').select('*', { count: 'exact', head: true }).eq('active', true),
-      supabase.from('groups').select('*', { count: 'exact', head: true }),
+      supabase.from('groups').select('*', { count: 'exact', head: true }).eq('active', true),
       supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'teacher'),
       // One row per class day, not per group-per-day - a Friday where 28
       // different Punjabi groups each submitted their own register is one
@@ -317,7 +317,7 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('parent_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('student_classes').select('student_id, group_id'),
-      supabase.from('groups').select('id, name, class_type, teacher_id, students(date_of_birth)').order('name'),
+      supabase.from('groups').select('id, name, class_type, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
       supabase.from('users').select('id, name, last_login, last_seen').eq('role', 'teacher').order('name'),
       supabase.from('attendance_sessions').select('id, group_id').eq('session_date', today),
       supabase.rpc('get_dashboard_attendance_stats', { from_date: fromDate }),
@@ -468,7 +468,7 @@ export default function AdminDashboard({ setTab }) {
         { data: sessions },
         { data: records },
       ] = await Promise.all([
-        supabase.from('groups').select('id, name, teacher_id, class_type').order('name'),
+        supabase.from('groups').select('id, name, teacher_id, class_type').eq('active', true).order('name'),
         supabase.from('users').select('id, name').eq('role', 'teacher'),
         supabase.from('teacher_groups').select('teacher_id, group_id'),
         supabase.from('attendance_sessions').select('id, group_id, session_date').in('session_date', [friday, saturday]),

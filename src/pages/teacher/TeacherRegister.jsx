@@ -77,7 +77,7 @@ export default function TeacherRegister() {
   const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
 
   async function loadAllGroups() {
-    const { data } = await supabase.from('groups').select('id, name').order('name')
+    const { data } = await supabase.from('groups').select('id, name').eq('active', true).order('name')
     setAllGroups(data || [])
   }
 

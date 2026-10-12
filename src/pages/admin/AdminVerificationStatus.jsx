@@ -29,7 +29,7 @@ export default function AdminVerificationStatus() {
       { data: tgRows },
       { data: settingsRows },
     ] = await Promise.all([
-      supabase.from('groups').select('id, name, teacher_id, class_type').order('name'),
+      supabase.from('groups').select('id, name, teacher_id, class_type').eq('active', true).order('name'),
       supabase.from('students').select('*').eq('active', true),
       supabase.from('users').select('id, name').eq('role', 'teacher'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
