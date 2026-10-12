@@ -91,7 +91,6 @@ export default function ProjectorDashboard() {
         <div>
           <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f0a500' }}>Akaal Sahai Southall</div>
           <div style={{ fontSize: '1rem', color: '#a5b4fc', marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
-            {data.class_day_number != null && <span>Session {data.class_day_number}</span>}
             {isToday ? (
               <span style={{ background: '#dc2626', color: 'white', fontWeight: 700, fontSize: '.75rem',
                 padding: '2px 10px', borderRadius: 99 }}>● LIVE</span>
@@ -183,7 +182,7 @@ export default function ProjectorDashboard() {
             {/* Tracker ring */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '24px 26px', textAlign: 'center' }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 16 }}>
-                {isToday ? 'Live Tracker' : `Results — ${sectionLabel}`}
+                {isToday ? 'Live Tracker' : 'Tracker'}
               </div>
               <div style={{ position: 'relative', width: 180, height: 180, margin: '0 auto 16px', borderRadius: '50%', background: ringBg }}>
                 <div style={{ position: 'absolute', inset: 14, borderRadius: '50%', background: '#1e1a6e',
@@ -206,7 +205,7 @@ export default function ProjectorDashboard() {
             {/* Top 5 */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px', flex: 1 }}>
               <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 14 }}>
-                🏆 Top 5 — Most Students with Strong Attendance
+                🏆 Top 5 — Higher Attendance Group
               </div>
               {(data.top5 || []).length === 0 ? (
                 <div style={{ color: '#a5b4fc', fontSize: '.95rem' }}>Not enough data yet</div>
