@@ -57,6 +57,7 @@ export default function ProjectorDashboard() {
   )
 
   const groups = data.groups || []
+  const verifiedStudents = data.verified_students || null
   const notSubmitted = groups.filter(g => !g.submitted)
   const totals = groups.reduce((a, g) => ({
     total:   a.total   + g.total_students,
@@ -201,6 +202,20 @@ export default function ProjectorDashboard() {
                 {marked} of {totals.total} students marked
               </div>
             </div>
+
+            {/* Verified students */}
+            {verifiedStudents && (
+              <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe' }}>Students Verified</span>
+                  <span style={{ fontSize: '1.6rem', fontWeight: 800 }}>{verifiedStudents.verified} / {verifiedStudents.total}</span>
+                </div>
+                <div style={{ background: '#2d2a66', borderRadius: 99, height: 14, overflow: 'hidden' }}>
+                  <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
+                    height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
+                </div>
+              </div>
+            )}
 
             {/* Top 5 */}
             <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px', flex: 1 }}>
