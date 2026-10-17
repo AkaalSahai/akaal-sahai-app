@@ -109,21 +109,21 @@ export default function ProjectorDashboard() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, flexShrink: 0 }}>
         <div>
-          <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f0a500' }}>Akaal Sahai Southall</div>
-          <div style={{ fontSize: '1rem', color: '#a5b4fc', marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: '2.6rem', fontWeight: 800, color: '#f0a500' }}>Akaal Sahai Southall</div>
+          <div style={{ fontSize: '1.15rem', color: '#a5b4fc', marginTop: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
             {isToday ? (
-              <span style={{ background: '#dc2626', color: 'white', fontWeight: 700, fontSize: '.75rem',
-                padding: '2px 10px', borderRadius: 99 }}>● LIVE</span>
+              <span style={{ background: '#dc2626', color: 'white', fontWeight: 700, fontSize: '.95rem',
+                padding: '3px 13px', borderRadius: 99 }}>● LIVE</span>
             ) : (
-              <span style={{ color: '#a5b4fc', fontSize: '.9rem' }}>Last session: {sectionLabel}</span>
+              <span style={{ color: '#a5b4fc', fontSize: '1.05rem' }}>Last session: {sectionLabel}</span>
             )}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '2.2rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: '2.8rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
             {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
-          <div style={{ fontSize: '1rem', color: '#a5b4fc' }}>
+          <div style={{ fontSize: '1.15rem', color: '#a5b4fc' }}>
             {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </div>
         </div>
@@ -136,36 +136,36 @@ export default function ProjectorDashboard() {
       ) : (
         <>
           <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 28, minHeight: 0 }}>
+            alignItems: 'center', justifyContent: 'center', gap: 34, minHeight: 0 }}>
 
             {scene === 0 && (
               <>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#c7d2fe' }}>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c7d2fe' }}>
                     Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
                   </div>
-                  <div style={{ fontSize: '5.2rem', fontWeight: 800, lineHeight: 1, margin: '8px 0' }}>
+                  <div style={{ fontSize: '6.6rem', fontWeight: 800, lineHeight: 1, margin: '10px 0' }}>
                     {totals.submitted} / {groups.length}
                   </div>
-                  <div style={{ width: 'min(560px, 70vw)', background: '#2d2a66', borderRadius: 99, height: 20, overflow: 'hidden', margin: '0 auto' }}>
+                  <div style={{ width: 'min(640px, 75vw)', background: '#2d2a66', borderRadius: 99, height: 26, overflow: 'hidden', margin: '0 auto' }}>
                     <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
                       height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
                   </div>
                 </div>
 
-                <div style={{ width: '100%', maxWidth: 960 }}>
-                  <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#fca5a5', marginBottom: 16, textAlign: 'center' }}>
+                <div style={{ width: '100%', maxWidth: 1100 }}>
+                  <div style={{ fontSize: '1.7rem', fontWeight: 700, color: '#fca5a5', marginBottom: 18, textAlign: 'center' }}>
                     ⚠ {isToday ? 'Not Submitted Yet' : 'Didn’t Submit'} {notSubmitted.length > 0 && `(${notSubmitted.length})`}
                   </div>
                   {notSubmitted.length === 0 ? (
-                    <div style={{ fontSize: '1.8rem', color: '#86efac', fontWeight: 700, textAlign: 'center', padding: '10px 0' }}>
+                    <div style={{ fontSize: '2.2rem', color: '#86efac', fontWeight: 700, textAlign: 'center', padding: '10px 0' }}>
                       ✓ Every group has submitted!
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 170 : 220}px, 1fr))`, gap: manyMissing ? 10 : 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 190 : 260}px, 1fr))`, gap: manyMissing ? 12 : 16 }}>
                       {notSubmitted.map(g => (
-                        <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 12,
-                          padding: manyMissing ? '10px 14px' : '14px 18px', fontSize: manyMissing ? '1.05rem' : '1.35rem',
+                        <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 14,
+                          padding: manyMissing ? '12px 16px' : '16px 22px', fontSize: manyMissing ? '1.3rem' : '1.7rem',
                           fontWeight: 700, color: '#fecaca', textAlign: 'center' }}>
                           {g.name}
                         </div>
@@ -175,7 +175,7 @@ export default function ProjectorDashboard() {
                 </div>
 
                 {recent.length > 0 && (
-                  <div style={{ fontSize: '1.05rem', color: '#a5b4fc' }}>
+                  <div style={{ fontSize: '1.3rem', color: '#a5b4fc' }}>
                     {isToday ? '🔴 ' : ''}Last started: <strong style={{ color: 'white' }}>{recent[0].name}</strong>
                     {' · '}
                     {isToday ? timeAgo(recent[0].created_at) : new Date(recent[0].created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
@@ -186,41 +186,41 @@ export default function ProjectorDashboard() {
 
             {scene === 1 && (
               <>
-                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#c7d2fe' }}>{isToday ? 'Live Tracker' : 'Tracker'}</div>
-                <div style={{ position: 'relative', width: 300, height: 300, borderRadius: '50%', background: ringBg }}>
-                  <div style={{ position: 'absolute', inset: 24, borderRadius: '50%', background: '#14123f',
+                <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c7d2fe' }}>{isToday ? 'Live Tracker' : 'Tracker'}</div>
+                <div style={{ position: 'relative', width: 380, height: 380, borderRadius: '50%', background: ringBg }}>
+                  <div style={{ position: 'absolute', inset: 30, borderRadius: '50%', background: '#14123f',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '4rem', fontWeight: 800, lineHeight: 1 }}>{attendedPct !== null ? `${attendedPct}%` : '—'}</div>
-                    <div style={{ fontSize: '1rem', color: '#a5b4fc' }}>attendance</div>
+                    <div style={{ fontSize: '5.2rem', fontWeight: 800, lineHeight: 1 }}>{attendedPct !== null ? `${attendedPct}%` : '—'}</div>
+                    <div style={{ fontSize: '1.2rem', color: '#a5b4fc' }}>attendance</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700 }}>
+                <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', justifyContent: 'center', fontSize: '1.7rem', fontWeight: 700 }}>
                   <span style={{ color: '#4ade80' }}>● {totals.present} Present</span>
                   <span style={{ color: '#fbbf24' }}>● {totals.late} Late</span>
                   <span style={{ color: '#f87171' }}>● {totals.absent} Absent</span>
                   {totals.holiday > 0 && <span style={{ color: '#38bdf8' }}>● {totals.holiday} Holiday</span>}
                 </div>
-                <div style={{ fontSize: '1.2rem', color: '#a5b4fc' }}>{marked} of {totals.total} students marked</div>
+                <div style={{ fontSize: '1.5rem', color: '#a5b4fc' }}>{marked} of {totals.total} students marked</div>
               </>
             )}
 
             {scene === 2 && (
               <>
-                <div style={{ width: '100%', maxWidth: 760 }}>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 18, textAlign: 'center' }}>
+                <div style={{ width: '100%', maxWidth: 900 }}>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 22, textAlign: 'center' }}>
                     🏆 Top 5 — Higher Attendance Group
                   </div>
                   {(data.top5 || []).length === 0 ? (
-                    <div style={{ color: '#a5b4fc', fontSize: '1.1rem', textAlign: 'center' }}>Not enough data yet</div>
+                    <div style={{ color: '#a5b4fc', fontSize: '1.4rem', textAlign: 'center' }}>Not enough data yet</div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {data.top5.map((g, i) => (
-                        <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 18,
+                        <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 22,
                           background: i === 0 ? '#1e1a6e' : 'transparent', border: i === 0 ? 'none' : '1px solid #2d2a66',
-                          borderRadius: 14, padding: '14px 22px' }}>
-                          <span style={{ fontSize: '2rem', width: 46, textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
-                          <span style={{ flex: 1, fontSize: '1.45rem', fontWeight: 700 }}>{g.name}</span>
-                          <span style={{ fontSize: '1.7rem', fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
+                          borderRadius: 16, padding: '18px 26px' }}>
+                          <span style={{ fontSize: '2.5rem', width: 56, textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
+                          <span style={{ flex: 1, fontSize: '1.85rem', fontWeight: 700 }}>{g.name}</span>
+                          <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
                         </div>
                       ))}
                     </div>
@@ -228,10 +228,10 @@ export default function ProjectorDashboard() {
                 </div>
 
                 {verifiedStudents && (
-                  <div style={{ width: '100%', maxWidth: 520, textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 8 }}>Students Verified</div>
-                    <div style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: 10 }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
-                    <div style={{ background: '#2d2a66', borderRadius: 99, height: 18, overflow: 'hidden' }}>
+                  <div style={{ width: '100%', maxWidth: 600, textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 10 }}>Students Verified</div>
+                    <div style={{ fontSize: '3.2rem', fontWeight: 800, marginBottom: 12 }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
+                    <div style={{ background: '#2d2a66', borderRadius: 99, height: 22, overflow: 'hidden' }}>
                       <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
                         height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
                     </div>
@@ -243,7 +243,7 @@ export default function ProjectorDashboard() {
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, paddingTop: 16, flexShrink: 0 }}>
             {Array.from({ length: SCENE_COUNT }).map((_, i) => (
-              <span key={i} style={{ width: 8, height: 8, borderRadius: '50%',
+              <span key={i} style={{ width: 11, height: 11, borderRadius: '50%',
                 background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
             ))}
           </div>
