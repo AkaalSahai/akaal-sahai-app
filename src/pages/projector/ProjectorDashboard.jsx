@@ -69,7 +69,9 @@ export default function ProjectorDashboard() {
 
   const groups = data.groups || []
   const verifiedStudents = data.verified_students || null
-  const notSubmitted = groups.filter(g => !g.submitted)
+  // "Pending" means genuinely untouched - a group a teacher has already
+  // started marking isn't flagged here even before they hit Submit.
+  const pending = groups.filter(g => !g.started)
   const totals = groups.reduce((a, g) => ({
     total:   a.total   + g.total_students,
     present: a.present + g.present,
@@ -96,7 +98,7 @@ export default function ProjectorDashboard() {
   const hasSession = !!data.target_date
   const sectionLabel = isToday ? 'Today' : fmtTargetDate(data.target_date) || 'No sessions recorded yet'
   const recent = data.recent || []
-  const manyMissing = notSubmitted.length > 14
+  const manyMissing = pending.length > 14
 
   return (
     <div style={page}>
@@ -155,15 +157,15 @@ export default function ProjectorDashboard() {
 
                 <div style={{ width: '100%', maxWidth: 1100 }}>
                   <div style={{ fontSize: '1.7rem', fontWeight: 700, color: '#fca5a5', marginBottom: 18, textAlign: 'center' }}>
-                    ⚠ {isToday ? 'Not Submitted Yet' : 'Didn’t Submit'} {notSubmitted.length > 0 && `(${notSubmitted.length})`}
+                    ⚠ {isToday ? 'Registers Pending' : 'Didn’t Submit'} {pending.length > 0 && `(${pending.length})`}
                   </div>
-                  {notSubmitted.length === 0 ? (
+                  {pending.length === 0 ? (
                     <div style={{ fontSize: '2.2rem', color: '#86efac', fontWeight: 700, textAlign: 'center', padding: '10px 0' }}>
-                      ✓ Every group has submitted!
+                      ✓ Every group has started!
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 190 : 260}px, 1fr))`, gap: manyMissing ? 12 : 16 }}>
-                      {notSubmitted.map(g => (
+                      {pending.map(g => (
                         <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 14,
                           padding: manyMissing ? '12px 16px' : '16px 22px', fontSize: manyMissing ? '1.3rem' : '1.7rem',
                           fontWeight: 700, color: '#fecaca', textAlign: 'center' }}>
