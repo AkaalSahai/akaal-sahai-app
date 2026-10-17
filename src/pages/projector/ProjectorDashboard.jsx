@@ -15,16 +15,27 @@ function fmtTargetDate(dateStr) {
 
 const MEDALS = ['🥇', '🥈', '🥉']
 
+// Three scenes so a projector viewed from across a room only ever has to
+// read one focused thing at a time, instead of six cards competing at once.
+const SCENE_COUNT = 3
+const SCENE_MS = 14000
+
 export default function ProjectorDashboard() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [now, setNow] = useState(new Date())
+  const [scene, setScene] = useState(0)
 
   useEffect(() => {
     load()
     const poll = setInterval(load, 30000)
     const clock = setInterval(() => setNow(new Date()), 1000)
     return () => { clearInterval(poll); clearInterval(clock) }
+  }, [])
+
+  useEffect(() => {
+    const rotate = setInterval(() => setScene(s => (s + 1) % SCENE_COUNT), SCENE_MS)
+    return () => clearInterval(rotate)
   }, [])
 
   async function load() {
@@ -37,7 +48,7 @@ export default function ProjectorDashboard() {
   const page = {
     minHeight: '100vh', background: '#14123f', color: 'white',
     fontFamily: 'system-ui, -apple-system, sans-serif', padding: '28px 40px',
-    boxSizing: 'border-box',
+    boxSizing: 'border-box', display: 'flex', flexDirection: 'column',
   }
 
   if (error) return (
@@ -84,11 +95,19 @@ export default function ProjectorDashboard() {
   const isToday = data.is_today
   const hasSession = !!data.target_date
   const sectionLabel = isToday ? 'Today' : fmtTargetDate(data.target_date) || 'No sessions recorded yet'
+  const recent = data.recent || []
+  const manyMissing = notSubmitted.length > 14
 
   return (
     <div style={page}>
+      <style>{`
+        @keyframes projFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .proj-scene { animation: projFade .6s ease; }
+        @media (prefers-reduced-motion: reduce) { .proj-scene { animation: none !important; } }
+      `}</style>
+
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, flexShrink: 0 }}>
         <div>
           <div style={{ fontSize: '2rem', fontWeight: 800, color: '#f0a500' }}>Akaal Sahai Southall</div>
           <div style={{ fontSize: '1rem', color: '#a5b4fc', marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -115,130 +134,120 @@ export default function ProjectorDashboard() {
           No Punjabi class sessions recorded yet
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 24 }}>
-          {/* Left column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <>
+          <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 28, minHeight: 0 }}>
 
-            {/* Submission progress */}
-            <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe' }}>
-                  Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
-                </span>
-                <span style={{ fontSize: '1.6rem', fontWeight: 800 }}>{totals.submitted} / {groups.length}</span>
-              </div>
-              <div style={{ background: '#2d2a66', borderRadius: 99, height: 14, overflow: 'hidden' }}>
-                <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
-                  height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
-              </div>
-            </div>
-
-            {/* Not started */}
-            <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px', flex: 1 }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fca5a5', marginBottom: 14 }}>
-                ⚠ {isToday ? 'Not Submitted Yet' : 'Didn’t Submit'} {notSubmitted.length > 0 && `(${notSubmitted.length})`}
-              </div>
-              {notSubmitted.length === 0 ? (
-                <div style={{ fontSize: '1.3rem', color: '#86efac', fontWeight: 700, padding: '20px 0', textAlign: 'center' }}>
-                  ✓ Every group has submitted!
+            {scene === 0 && (
+              <>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#c7d2fe' }}>
+                    Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
+                  </div>
+                  <div style={{ fontSize: '5.2rem', fontWeight: 800, lineHeight: 1, margin: '8px 0' }}>
+                    {totals.submitted} / {groups.length}
+                  </div>
+                  <div style={{ width: 'min(560px, 70vw)', background: '#2d2a66', borderRadius: 99, height: 20, overflow: 'hidden', margin: '0 auto' }}>
+                    <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
+                      height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
+                  </div>
                 </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 }}>
-                  {notSubmitted.map(g => (
-                    <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 10,
-                      padding: '10px 14px', fontSize: '1.05rem', fontWeight: 700, color: '#fecaca' }}>
-                      {g.name}
+
+                <div style={{ width: '100%', maxWidth: 960 }}>
+                  <div style={{ fontSize: '1.3rem', fontWeight: 700, color: '#fca5a5', marginBottom: 16, textAlign: 'center' }}>
+                    ⚠ {isToday ? 'Not Submitted Yet' : 'Didn’t Submit'} {notSubmitted.length > 0 && `(${notSubmitted.length})`}
+                  </div>
+                  {notSubmitted.length === 0 ? (
+                    <div style={{ fontSize: '1.8rem', color: '#86efac', fontWeight: 700, textAlign: 'center', padding: '10px 0' }}>
+                      ✓ Every group has submitted!
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Live just-submitted feed */}
-            <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 12 }}>
-                {isToday ? '🔴 Live Activity' : 'Submission Order'}
-              </div>
-              {(data.recent || []).length === 0 ? (
-                <div style={{ color: '#a5b4fc', fontSize: '.95rem' }}>No registers started</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {data.recent.slice(0, 6).map((r, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
-                      fontSize: '1rem', borderBottom: i < 5 ? '1px solid #2d2a66' : 'none', paddingBottom: 6 }}>
-                      <span style={{ fontWeight: 600 }}>{r.name}</span>
-                      <span style={{ color: '#a5b4fc' }}>
-                        {isToday ? timeAgo(r.created_at) : new Date(r.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 170 : 220}px, 1fr))`, gap: manyMissing ? 10 : 14 }}>
+                      {notSubmitted.map(g => (
+                        <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 12,
+                          padding: manyMissing ? '10px 14px' : '14px 18px', fontSize: manyMissing ? '1.05rem' : '1.35rem',
+                          fontWeight: 700, color: '#fecaca', textAlign: 'center' }}>
+                          {g.name}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Right column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-            {/* Tracker ring */}
-            <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '24px 26px', textAlign: 'center' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 16 }}>
-                {isToday ? 'Live Tracker' : 'Tracker'}
-              </div>
-              <div style={{ position: 'relative', width: 180, height: 180, margin: '0 auto 16px', borderRadius: '50%', background: ringBg }}>
-                <div style={{ position: 'absolute', inset: 14, borderRadius: '50%', background: '#1e1a6e',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ fontSize: '2rem', fontWeight: 800 }}>{attendedPct !== null ? `${attendedPct}%` : '—'}</div>
-                  <div style={{ fontSize: '.78rem', color: '#a5b4fc' }}>attendance</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 14, flexWrap: 'wrap', fontSize: '.95rem', fontWeight: 700 }}>
-                <span style={{ color: '#4ade80' }}>● {totals.present} Present</span>
-                <span style={{ color: '#fbbf24' }}>● {totals.late} Late</span>
-                <span style={{ color: '#f87171' }}>● {totals.absent} Absent</span>
-                {totals.holiday > 0 && <span style={{ color: '#38bdf8' }}>● {totals.holiday} Holiday</span>}
-              </div>
-              <div style={{ marginTop: 14, fontSize: '1rem', color: '#a5b4fc' }}>
-                {marked} of {totals.total} students marked
-              </div>
-            </div>
-
-            {/* Verified students */}
-            {verifiedStudents && (
-              <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-                  <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe' }}>Students Verified</span>
-                  <span style={{ fontSize: '1.6rem', fontWeight: 800 }}>{verifiedStudents.verified} / {verifiedStudents.total}</span>
-                </div>
-                <div style={{ background: '#2d2a66', borderRadius: 99, height: 14, overflow: 'hidden' }}>
-                  <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
-                    height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
-                </div>
-              </div>
+                {recent.length > 0 && (
+                  <div style={{ fontSize: '1.05rem', color: '#a5b4fc' }}>
+                    {isToday ? '🔴 ' : ''}Last started: <strong style={{ color: 'white' }}>{recent[0].name}</strong>
+                    {' · '}
+                    {isToday ? timeAgo(recent[0].created_at) : new Date(recent[0].created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Top 5 */}
-            <div style={{ background: '#1e1a6e', borderRadius: 16, padding: '20px 26px', flex: 1 }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 14 }}>
-                🏆 Top 5 — Higher Attendance Group
-              </div>
-              {(data.top5 || []).length === 0 ? (
-                <div style={{ color: '#a5b4fc', fontSize: '.95rem' }}>Not enough data yet</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {data.top5.map((g, i) => (
-                    <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 12,
-                      background: i === 0 ? '#2d2a66' : 'transparent', borderRadius: 10, padding: '8px 12px' }}>
-                      <span style={{ fontSize: '1.4rem', width: 32 }}>{MEDALS[i] || `${i + 1}.`}</span>
-                      <span style={{ flex: 1, fontSize: '1.15rem', fontWeight: 700 }}>{g.name}</span>
-                      <span style={{ fontSize: '1.3rem', fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
-                    </div>
-                  ))}
+            {scene === 1 && (
+              <>
+                <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#c7d2fe' }}>{isToday ? 'Live Tracker' : 'Tracker'}</div>
+                <div style={{ position: 'relative', width: 300, height: 300, borderRadius: '50%', background: ringBg }}>
+                  <div style={{ position: 'absolute', inset: 24, borderRadius: '50%', background: '#14123f',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '4rem', fontWeight: 800, lineHeight: 1 }}>{attendedPct !== null ? `${attendedPct}%` : '—'}</div>
+                    <div style={{ fontSize: '1rem', color: '#a5b4fc' }}>attendance</div>
+                  </div>
                 </div>
-              )}
-            </div>
+                <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', justifyContent: 'center', fontSize: '1.3rem', fontWeight: 700 }}>
+                  <span style={{ color: '#4ade80' }}>● {totals.present} Present</span>
+                  <span style={{ color: '#fbbf24' }}>● {totals.late} Late</span>
+                  <span style={{ color: '#f87171' }}>● {totals.absent} Absent</span>
+                  {totals.holiday > 0 && <span style={{ color: '#38bdf8' }}>● {totals.holiday} Holiday</span>}
+                </div>
+                <div style={{ fontSize: '1.2rem', color: '#a5b4fc' }}>{marked} of {totals.total} students marked</div>
+              </>
+            )}
+
+            {scene === 2 && (
+              <>
+                <div style={{ width: '100%', maxWidth: 760 }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 18, textAlign: 'center' }}>
+                    🏆 Top 5 — Higher Attendance Group
+                  </div>
+                  {(data.top5 || []).length === 0 ? (
+                    <div style={{ color: '#a5b4fc', fontSize: '1.1rem', textAlign: 'center' }}>Not enough data yet</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      {data.top5.map((g, i) => (
+                        <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 18,
+                          background: i === 0 ? '#1e1a6e' : 'transparent', border: i === 0 ? 'none' : '1px solid #2d2a66',
+                          borderRadius: 14, padding: '14px 22px' }}>
+                          <span style={{ fontSize: '2rem', width: 46, textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
+                          <span style={{ flex: 1, fontSize: '1.45rem', fontWeight: 700 }}>{g.name}</span>
+                          <span style={{ fontSize: '1.7rem', fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {verifiedStudents && (
+                  <div style={{ width: '100%', maxWidth: 520, textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 8 }}>Students Verified</div>
+                    <div style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: 10 }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
+                    <div style={{ background: '#2d2a66', borderRadius: 99, height: 18, overflow: 'hidden' }}>
+                      <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
+                        height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
-        </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, paddingTop: 16, flexShrink: 0 }}>
+            {Array.from({ length: SCENE_COUNT }).map((_, i) => (
+              <span key={i} style={{ width: 8, height: 8, borderRadius: '50%',
+                background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
