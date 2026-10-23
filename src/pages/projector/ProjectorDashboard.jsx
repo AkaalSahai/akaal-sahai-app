@@ -111,7 +111,10 @@ export default function ProjectorDashboard() {
     submitted: a.submitted + (g.submitted ? 1 : 0),
   }), { total: 0, present: 0, late: 0, absent: 0, holiday: 0, submitted: 0 })
   const marked = totals.present + totals.late + totals.absent + totals.holiday
-  const attendedPct = marked > 0 ? Math.round(((totals.present + totals.late) / marked) * 100) : null
+  // Holidays don't count either way - same rule as every other attendance %
+  // (Dashboard, Students, reports). The ring below still shows them.
+  const counted = totals.present + totals.late + totals.absent
+  const attendedPct = counted > 0 ? Math.round(((totals.present + totals.late) / counted) * 100) : null
 
   // Conic-gradient ring for the present/late/absent/holiday split - same
   // technique as the group health cards on the admin Dashboard.
