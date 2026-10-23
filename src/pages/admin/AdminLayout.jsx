@@ -16,6 +16,7 @@ import AdminMessages from './AdminMessages'
 import AdminSettings from './AdminSettings'
 import AdminRegisterStatus from './AdminRegisterStatus'
 import AdminTeacherRegister from './AdminTeacherRegister'
+import AdminLogins from './AdminLogins'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import NotificationBell from '../../components/NotificationBell'
@@ -59,6 +60,7 @@ export default function AdminLayout() {
     ...(!readOnly ? [{ id: 'teacherregister', label: 'Teacher Register' }] : []),
     ...(!readOnly  ? [{ id: 'import',   label: 'Import Data' }] : []),
     ...(isFullAdmin ? [{ id: 'activity', label: 'Activity'    }] : []),
+    ...(isFullAdmin ? [{ id: 'logins',   label: 'Logins'      }] : []),
     ...(isFullAdmin ? [{ id: 'archive',  label: 'Archive'     }] : []),
     ...(!readOnly ? [{ id: 'messages', label: unread > 0 ? `Messages (${unread})` : 'Messages' }] : []),
     ...(isFullAdmin ? [{ id: 'settings', label: 'Settings'    }] : []),
@@ -97,6 +99,7 @@ export default function AdminLayout() {
         {tab === 'mystudents'   && <TeacherStudents />}
         {tab === 'registerstatus'  && !readOnly && <AdminRegisterStatus />}
         {tab === 'teacherregister' && !readOnly && <AdminTeacherRegister readOnly={readOnly} />}
+        {tab === 'logins'       && isFullAdmin && <AdminLogins />}
         {tab === 'activity'     && isFullAdmin && <AdminActivity />}
         {tab === 'archive'      && isFullAdmin && <AdminArchive />}
         {tab === 'messages'     && !readOnly && <AdminMessages onRead={() => setUnread(c => Math.max(0, c - 1))} />}
