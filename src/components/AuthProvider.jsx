@@ -80,6 +80,46 @@ export function AuthProvider({ children }) {
     setProfile(null)
   }
 
+  // Ends this person's login on every device, including this one
+  async function logoutEverywhere() {
+    if (profile) await logAction(profile, 'Logged out of all devices').catch(() => {})
+    await supabase.auth.signOut({ scope: 'global' })
+    setUser(null)
+    setProfile(null)
+  }
+
+  // An admin can end logins remotely ("Log out everywhere" / "Log out all
+  // users"), which stops them renewing - but an open device could otherwise
+  // keep working until its current hourly token expires. Re-check with the
+  // server every few minutes and whenever the app comes back into view, and
+  // drop to the login page once the server says the login is gone.
+  // Only a definite 401/403 from the server counts - being offline or a
+  // network blip must never log anyone out.
+  useEffect(() => {
+    if (!user) return
+    let stopped = false
+    async function checkLoginStillValid() {
+      if (stopped || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
+      const { error } = await supabase.auth.getUser()
+      if (!error || stopped) return
+      if (error.status === 401 || error.status === 403) {
+        await supabase.auth.signOut({ scope: 'local' })
+        setUser(null)
+        setProfile(null)
+      }
+    }
+    const timer = setInterval(checkLoginStillValid, 3 * 60 * 1000)
+    const onVisible = () => { if (document.visibilityState === 'visible') checkLoginStillValid() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      stopped = true
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [user?.id])
+
   async function changePassword(currentPassword, newPassword) {
     // Re-authenticate first
     const { error: reAuthError } = await supabase.auth.signInWithPassword({
@@ -131,7 +171,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, profile, loading, login, logout, changePassword, requestPasswordReset, hasRole,
+      user, profile, loading, login, logout, logoutEverywhere, changePassword, requestPasswordReset, hasRole,
       mfaLevel, refreshMfaLevel, mfaChallengePending,
       mfaRequiredSince, refreshMfaRequiredSetting, mfaEnrollmentRequired,
     }}>

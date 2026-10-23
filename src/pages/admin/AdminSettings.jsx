@@ -24,6 +24,24 @@ const DEFAULTS = {
 
 export default function AdminSettings() {
   const { profile, refreshMfaRequiredSetting } = useAuth()
+  const [logoutAllText, setLogoutAllText] = useState('')
+  const [logoutAllBusy, setLogoutAllBusy] = useState(false)
+
+  async function logOutAllUsers() {
+    if (logoutAllText !== 'LOG OUT EVERYONE') return
+    if (!confirm('Log out every user now, including yourself?\n\nThe projector account stays logged in. Everyone else will need to log in again.')) return
+    setLogoutAllBusy(true)
+    try {
+      // Admin-only database function - writes the Activity log entry, then
+      // ends every login except the projector account (this one included)
+      const { error } = await supabase.rpc('sign_out_all_users')
+      if (error) throw error
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (err) {
+      alert('Error: ' + err.message)
+      setLogoutAllBusy(false)
+    }
+  }
   const [form, setForm]     = useState(DEFAULTS)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]     = useState(false)
@@ -301,6 +319,26 @@ export default function AdminSettings() {
               })()}
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="card-title">Log Out All Users</div>
+        <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginTop: -6, marginBottom: 12 }}>
+          Ends every login on every device straight away - for example after a
+          suspected security problem, or at the start of a new term. Everyone,
+          including you, will need to log in again. The projector account stays
+          logged in so the screen keeps working.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input value={logoutAllText} onChange={e => setLogoutAllText(e.target.value)}
+            placeholder='Type LOG OUT EVERYONE to confirm'
+            style={{ flex: '1 1 240px', maxWidth: 320, fontSize: '.85rem', padding: '7px 10px', borderRadius: 8,
+              border: '1px solid var(--border)', fontFamily: 'inherit' }} />
+          <button className="btn btn-danger btn-sm" onClick={logOutAllUsers}
+            disabled={logoutAllText !== 'LOG OUT EVERYONE' || logoutAllBusy}>
+            {logoutAllBusy ? 'Logging everyone out…' : 'Log out all users'}
+          </button>
         </div>
       </div>
 
