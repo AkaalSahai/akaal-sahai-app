@@ -194,6 +194,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         setBusy(userId)
         try {
           const u = users.find(x => x.id === userId)
+          const { data: joinedRow } = await supabase.from('users').select('created_at').eq('id', userId).single()
           const { error: archErr } = await supabase.from('users_archive').insert({
             original_id: userId,
             name: u?.name,
@@ -202,6 +203,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
             role: u?.role,
             extra_roles: u?.extra_roles || [],
             group_names: u?.groupNames || [],
+            joined_at: joinedRow?.created_at || null,
             last_login: u?.last_login,
             deleted_by_id: myProfile.id,
             deleted_by_name: myProfile.name,
