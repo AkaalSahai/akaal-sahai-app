@@ -95,8 +95,9 @@ export function AuthProvider({ children }) {
   // drop to the login page once the server says the login is gone.
   // Only a definite 401/403 from the server counts - being offline or a
   // network blip must never log anyone out.
+  const userId = user?.id
   useEffect(() => {
-    if (!user) return
+    if (!userId) return
     let stopped = false
     async function checkLoginStillValid() {
       if (stopped || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
@@ -118,7 +119,7 @@ export function AuthProvider({ children }) {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [user?.id])
+  }, [userId])
 
   async function changePassword(currentPassword, newPassword) {
     // Re-authenticate first
