@@ -9,6 +9,9 @@ import { logAction } from '../../lib/audit'
 // device or all of a person's devices. See add-active-logins-view.sql.
 
 const IDLE_DAYS = 30
+// A login renews itself about once an hour while the app is open, so "used
+// in the last hour" is the closest the server can tell to "running now".
+const RUNNING_MINUTES = 60
 
 function describeDevice(ua) {
   if (!ua) return { icon: '❔', label: 'Unknown device' }
@@ -104,6 +107,10 @@ export default function AdminLogins() {
       .sort((a, b) => new Date(b.lastActive) - new Date(a.lastActive))
   }, [rows, search, onlyIdle])
 
+  const running = useMemo(() => (rows || [])
+    .filter(r => Date.now() - new Date(r.last_active_at).getTime() <= RUNNING_MINUTES * 60000)
+    .sort((a, b) => new Date(b.last_active_at) - new Date(a.last_active_at)), [rows])
+
   const stats = useMemo(() => {
     if (!rows) return null
     const day = Date.now() - 86400000, week = Date.now() - 7 * 86400000
@@ -149,6 +156,7 @@ export default function AdminLogins() {
   if (!rows) return <div className="spinner" />
 
   const tiles = [
+    { value: running.length, label: 'Running now',     color: '#16a34a' },
     { value: stats.total,  label: 'Logins total',      color: '#1e1a6e' },
     { value: stats.people, label: 'People logged in',  color: '#1e1a6e' },
     { value: stats.today,  label: 'Active today',      color: '#16a34a' },
@@ -170,7 +178,54 @@ export default function AdminLogins() {
 
       <div className="card">
         <div className="card-title">
-          Active Logins
+          Running Now
+          <span style={{ fontSize: '.75rem', fontWeight: 400, color: 'var(--muted)' }}>
+            Logins used in the last {RUNNING_MINUTES} minutes
+          </span>
+        </div>
+        {running.length === 0 ? (
+          <div style={{ color: 'var(--muted)', fontSize: '.85rem' }}>Nobody has used the app in the last {RUNNING_MINUTES} minutes.</div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Person</th><th>Role</th><th>Device</th><th>IP address</th><th>Last active</th><th></th></tr>
+              </thead>
+              <tbody>
+                {running.map(l => {
+                  const d = describeDevice(l.user_agent)
+                  return (
+                    <tr key={l.session_id}>
+                      <td style={{ fontWeight: 600, fontSize: '.86rem' }}>{l.name}</td>
+                      <td style={{ fontSize: '.82rem', color: 'var(--muted)' }}>{l.role}</td>
+                      <td style={{ fontSize: '.84rem' }} title={l.user_agent || ''}>
+                        {d.icon} {d.label}
+                        {l.session_id === mySession && (
+                          <span style={{ marginLeft: 6, fontSize: '.7rem', fontWeight: 700, color: '#1e1a6e',
+                            background: '#e0e7ff', borderRadius: 6, padding: '1px 6px' }}>★ This device</span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: '.82rem', fontFamily: 'ui-monospace, monospace' }}>{l.ip || '—'}</td>
+                      <td style={{ fontSize: '.84rem' }}>{timeAgo(l.last_active_at)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {l.role !== 'dashboard' && (
+                          <button className="btn btn-outline btn-xs" disabled={busy === l.session_id} onClick={() => endLogin(l)}>
+                            {busy === l.session_id ? '…' : 'End this login'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          All Logins
           <span style={{ fontSize: '.75rem', fontWeight: 400, color: 'var(--muted)' }}>
             IP addresses are personal data - viewing this page is recorded in the Activity log
           </span>
