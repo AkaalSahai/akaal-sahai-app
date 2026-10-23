@@ -4,7 +4,8 @@ import { fmtDate } from './dates'
 // Holidays are excluded. A class day is any date at least one teacher was
 // marked; a teacher only "owes" class days on/after their joining date
 // (account created_at), and - if they've left - on/before their leaving date.
-// Unmarked owed days count as absent but are flagged separately.
+// Unmarked owed days, and absences auto-recorded because nobody marked them,
+// count as absent but are flagged separately.
 
 export const STATUS_COLOR = { present: '#16a34a', absent: '#dc2626', late: '#d97706', holiday: '#0284c7', unmarked: '#dc2626' }
 export const STATUS_BG    = { present: '#f0fdf4', absent: '#fef2f2', late: '#fffbeb', holiday: '#f0f9ff', unmarked: '#fff7ed' }
@@ -56,8 +57,11 @@ export function buildReport(people, records) {
       const rec = recs[d]
       const owed = (!start || d >= start) && (!end || d <= end)
       if (rec) {
-        days[d] = { status: rec.status, notes: rec.notes || '' }
-        if (counts[rec.status] !== undefined) counts[rec.status]++
+        // Absences recorded automatically for nobody marking them (notes start
+        // "Auto:") stay flagged as not marked - they still count as absent.
+        const st = rec.status === 'absent' && (rec.notes || '').startsWith('Auto:') ? 'unmarked' : rec.status
+        days[d] = { status: st, notes: rec.notes || '' }
+        if (counts[st] !== undefined) counts[st]++
       } else if (owed && (p.left || p.otherRole ? recDates.length > 0 : true)) {
         days[d] = { status: 'unmarked', notes: '' }
         counts.unmarked++
