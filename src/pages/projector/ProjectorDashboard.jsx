@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -19,6 +20,31 @@ const MEDALS = ['🥇', '🥈', '🥉']
 // read one focused thing at a time, instead of six cards competing at once.
 const SCENE_COUNT = 3
 const SCENE_MS = 14000
+
+// Kept faint in the corner so it doesn't distract on the projector, but
+// always reachable - including on the loading and error screens.
+function LogoutButton() {
+  const { logout } = useAuth()
+  const [busy, setBusy] = useState(false)
+  async function handleClick() {
+    if (!confirm('Log out of the projector dashboard?')) return
+    setBusy(true)
+    try { await logout() } finally { setBusy(false) }
+  }
+  return (
+    <button onClick={handleClick} disabled={busy} className="proj-logout"
+      style={{ position: 'fixed', right: 16, bottom: 14, zIndex: 10, padding: '7px 14px', borderRadius: 8,
+        border: '1px solid #3b3880', background: 'rgba(20,18,63,.85)', color: '#a5b4fc',
+        fontSize: '.85rem', fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}>
+      {busy ? 'Logging out…' : 'Log out'}
+    </button>
+  )
+}
+
+const LOGOUT_CSS = `
+  .proj-logout { opacity: .35; transition: opacity .2s; }
+  .proj-logout:hover, .proj-logout:focus-visible { opacity: 1; }
+`
 
 export default function ProjectorDashboard() {
   const [data, setData] = useState(null)
@@ -56,6 +82,8 @@ export default function ProjectorDashboard() {
       <div style={{ fontSize: '1.4rem', color: '#fca5a5', textAlign: 'center', marginTop: 160 }}>
         Couldn't load dashboard — {error}
       </div>
+      <style>{LOGOUT_CSS}</style>
+      <LogoutButton />
     </div>
   )
 
@@ -64,6 +92,8 @@ export default function ProjectorDashboard() {
       <div style={{ textAlign: 'center', marginTop: 200, fontSize: '1.4rem', color: '#a5b4fc' }}>
         Loading…
       </div>
+      <style>{LOGOUT_CSS}</style>
+      <LogoutButton />
     </div>
   )
 
@@ -106,7 +136,9 @@ export default function ProjectorDashboard() {
         @keyframes projFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .proj-scene { animation: projFade .6s ease; }
         @media (prefers-reduced-motion: reduce) { .proj-scene { animation: none !important; } }
+        ${LOGOUT_CSS}
       `}</style>
+      <LogoutButton />
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, flexShrink: 0 }}>
