@@ -6,7 +6,7 @@ import MfaSetup from './MfaSetup'
 const PRIMARY_HOME = { registrar: '/registrar', teacher: '/teacher', admin: '/admin', adminView: '/admin' }
 
 export default function Topbar({ title, onLogoClick }) {
-  const { profile, logout, changePassword, hasRole } = useAuth()
+  const { profile, logout, logoutEverywhere, changePassword, hasRole } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [showMenu, setShowMenu] = useState(false)
@@ -21,6 +21,12 @@ export default function Topbar({ title, onLogoClick }) {
 
   async function handleLogout() {
     await logout()
+  }
+
+  async function handleLogoutEverywhere() {
+    setShowMenu(false)
+    if (!confirm('Log out of all your devices?\n\nThis logs you out on every phone, tablet and computer, including this one. You will need to log in again.')) return
+    await logoutEverywhere()
   }
 
   async function handleChangePw(e) {
@@ -105,6 +111,10 @@ export default function Topbar({ title, onLogoClick }) {
                 Two-Factor Authentication
               </button>
               <hr style={{ margin: '4px 12px', border: 'none', borderTop: '1px solid var(--border)' }} />
+              <button onClick={handleLogoutEverywhere}
+                style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--danger)', fontWeight: 600, fontSize: '.86rem' }}>
+                Log Out of All Devices
+              </button>
               <button onClick={handleLogout}
                 style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', color: 'var(--danger)', fontWeight: 600, fontSize: '.86rem' }}>
                 Sign Out

@@ -169,6 +169,18 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     finally { setBusy(null) }
   }
 
+  async function signOutEverywhere(userId, name) {
+    if (!confirm(`Log ${name} out on every device?\n\nThey'll need to log in again on each phone, tablet and computer. Useful if a device is lost or their password may be known to someone else.`)) return
+    setBusy(userId)
+    try {
+      // Admin-only database function - also writes the Activity log entry
+      const { data, error } = await supabase.rpc('sign_out_user_everywhere', { p_user_id: userId })
+      if (error) throw error
+      alert(data > 0 ? `${name} has been logged out on ${data} device${data === 1 ? '' : 's'}.` : `${name} wasn't logged in anywhere.`)
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setBusy(null) }
+  }
+
   async function resetUserPassword(userId, email) {
     setBusy(userId)
     try {
@@ -618,6 +630,10 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                         disabled={busy === u.id}
                         onClick={() => editPanel[u.id] ? closeEdit(u.id) : openEdit(u)}>
                         ✎ Edit
+                      </button>
+                      <button className="btn btn-outline btn-xs" disabled={busy === u.id} onClick={() => signOutEverywhere(u.id, u.name)}
+                        title="End this person's login on every device">
+                        Log out everywhere
                       </button>
                       <button className="btn btn-warning btn-xs" disabled={busy === u.id} onClick={() => resetUserPassword(u.id, u.email)}>
                         {busy === u.id ? '…' : 'Reset PW'}
