@@ -181,6 +181,23 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     finally { setBusy(null) }
   }
 
+  // The teacher gets an email link and chooses their own password (the
+  // existing /reset-password page) - nobody else ever sees it.
+  async function sendResetEmail(userId, name, email) {
+    if (!email) { alert(`${name} has no email address on their account.`); return }
+    if (!confirm(`Email a password reset link to ${name} (${email})?\n\nThey'll choose their own new password from the link. Their current password keeps working until they do.`)) return
+    setBusy(userId)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/reset-password',
+      })
+      if (error) throw error
+      logAction(myProfile, 'Sent password reset email', name).catch(() => {})
+      alert(`Reset email sent to ${email}.\n\nIf it doesn't arrive (check spam), use "Temp password" instead.`)
+    } catch (err) { alert('Could not send the reset email: ' + err.message) }
+    finally { setBusy(null) }
+  }
+
   async function resetUserPassword(userId, email) {
     setBusy(userId)
     try {
@@ -635,8 +652,13 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                         title="End this person's login on every device">
                         Log out everywhere
                       </button>
-                      <button className="btn btn-warning btn-xs" disabled={busy === u.id} onClick={() => resetUserPassword(u.id, u.email)}>
-                        {busy === u.id ? '…' : 'Reset PW'}
+                      <button className="btn btn-outline btn-xs" disabled={busy === u.id} onClick={() => sendResetEmail(u.id, u.name, u.email)}
+                        title="Email them a link to choose a new password">
+                        Send reset email
+                      </button>
+                      <button className="btn btn-warning btn-xs" disabled={busy === u.id} onClick={() => resetUserPassword(u.id, u.email)}
+                        title="Set a temporary password to share with them yourself">
+                        {busy === u.id ? '…' : 'Temp password'}
                       </button>
                       <button className="btn btn-danger btn-xs" disabled={busy === u.id} onClick={() => deleteUser(u.id, u.name)}>
                         {busy === u.id ? '…' : 'Delete'}

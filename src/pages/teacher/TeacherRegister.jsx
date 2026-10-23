@@ -94,9 +94,16 @@ export default function TeacherRegister() {
   // today, refreshed as both registers are taken at the same time
   useEffect(() => {
     if (!selectedGroupId || isPunjabiGroup) { setMainMarks({}); return }
+    let cancelled = false
+    async function loadMainMarks() {
+      const { data, error } = await supabase.rpc('get_main_group_marks', { p_group_id: selectedGroupId, p_date: date })
+      if (cancelled) return  // group/date changed while loading - ignore the old answer
+      if (error) { setMainMarks({}); return }
+      setMainMarks(Object.fromEntries((data || []).map(r => [r.student_id, { group: r.main_group_name, status: r.status }])))
+    }
     loadMainMarks()
     const t = setInterval(loadMainMarks, 60000)
-    return () => clearInterval(t)
+    return () => { cancelled = true; clearInterval(t) }
   }, [selectedGroupId, date, isPunjabiGroup])
 
   async function loadAllGroups() {
@@ -181,12 +188,6 @@ export default function TeacherRegister() {
     } finally {
       setLoading(false)
     }
-  }
-
-  async function loadMainMarks() {
-    const { data, error } = await supabase.rpc('get_main_group_marks', { p_group_id: selectedGroupId, p_date: date })
-    if (error) { setMainMarks({}); return }
-    setMainMarks(Object.fromEntries((data || []).map(r => [r.student_id, { group: r.main_group_name, status: r.status }])))
   }
 
   async function loadSession() {
