@@ -194,6 +194,7 @@ export default function AdminLogins() {
                 <th>Person</th>
                 <th>Role</th>
                 <th>Devices</th>
+                <th>IP addresses</th>
                 <th>Last active</th>
                 <th></th>
               </tr>
@@ -216,6 +217,13 @@ export default function AdminLogins() {
                         {p.logins.length}
                         {p.idleCount > 0 && <span style={{ color: '#ea580c', fontWeight: 700 }}> · {p.idleCount} unused ⚠</span>}
                       </td>
+                      <td style={{ fontSize: '.78rem', fontFamily: 'ui-monospace, monospace' }}>
+                        {(() => {
+                          // Most recently used first, each address once
+                          const ips = [...new Set(p.logins.map(l => l.ip).filter(Boolean))]
+                          return ips.length === 0 ? '—' : ips.slice(0, 3).join(', ') + (ips.length > 3 ? ` +${ips.length - 3} more` : '')
+                        })()}
+                      </td>
                       <td style={{ fontSize: '.85rem' }}>{timeAgo(p.lastActive)}</td>
                       <td onClick={e => e.stopPropagation()} style={{ textAlign: 'right' }}>
                         {!isProjector && (
@@ -227,7 +235,7 @@ export default function AdminLogins() {
                     </tr>
                     {open && (
                       <tr>
-                        <td colSpan={5} style={{ background: '#f8fafc', padding: '8px 16px 12px' }}>
+                        <td colSpan={6} style={{ background: '#f8fafc', padding: '8px 16px 12px' }}>
                           <table style={{ fontSize: '.82rem' }}>
                             <thead>
                               <tr><th>Device</th><th>IP address</th><th>Logged in</th><th>Last active</th><th></th></tr>

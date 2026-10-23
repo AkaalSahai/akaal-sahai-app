@@ -52,6 +52,12 @@ export default function TeacherRegister() {
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
   const notesRef     = useRef({})
+  // Latest group/date asked for. A slow answer for a group or date the
+  // teacher has already switched away from must be ignored - otherwise the
+  // screen could keep the previous group's register while showing this
+  // group's students, and marks would be saved into the wrong register.
+  const latestSessionReq  = useRef(null)
+  const latestStudentsReq = useRef(null)
 
   useEffect(() => { notesRef.current = notes }, [notes])
   useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
@@ -171,6 +177,8 @@ export default function TeacherRegister() {
   }
 
   async function loadStudents() {
+    const req = selectedGroupId
+    latestStudentsReq.current = req
     setLoading(true)
     try {
       const grp = myGroups.find(g => g.id === selectedGroupId)
@@ -178,26 +186,30 @@ export default function TeacherRegister() {
         selectedGroupId, grp?.class_type,
         'id, first_name, middle_name, last_name, date_of_birth, medical_notes, groups(id, name, teacher_id)'
       )
+      if (latestStudentsReq.current !== req) return  // group changed while loading
       setStudents(data.slice().sort((a, b) =>
         (a.first_name || '').localeCompare(b.first_name || '') ||
         (a.last_name  || '').localeCompare(b.last_name  || '')
       ))
     } catch (err) {
       console.error('loadStudents error:', err)
-      setStudents([])
+      if (latestStudentsReq.current === req) setStudents([])
     } finally {
-      setLoading(false)
+      if (latestStudentsReq.current === req) setLoading(false)
     }
   }
 
   async function loadSession() {
     if (!selectedGroupId) return
+    const req = `${selectedGroupId}|${date}`
+    latestSessionReq.current = req
     const { data } = await supabase
       .from('attendance_sessions')
       .select('id, submitted_at, records:attendance_records(student_id, status, notes, synced_from_class_type)')
       .eq('group_id', selectedGroupId)
       .eq('session_date', date)
       .maybeSingle()
+    if (latestSessionReq.current !== req) return  // group/date changed while loading
     if (data) {
       setSessionId(data.id)
       setSubmittedAt(data.submitted_at)
