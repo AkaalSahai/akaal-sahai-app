@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
+import TeacherAttendanceReport from './TeacherAttendanceReport'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
@@ -19,13 +20,12 @@ export default function AdminTeacherRegister({ readOnly }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy]       = useState({})
   const [noteOpen, setNoteOpen] = useState({})
-  const [history, setHistory] = useState(null)
-  const [histLoading, setHistLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     const [{ data: teacherRows }, { data: tgRows }, { data: attRows }] = await Promise.all([
-      supabase.from('users').select('id, name, group_id').eq('role', 'teacher').order('name'),
+      // Teachers and registrars, whether it's their primary or an extra role
+      supabase.from('users').select('id, name, group_id').or('role.in.(teacher,registrar),extra_roles.ov.{teacher,registrar}').order('name'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
       supabase.from('teacher_attendance').select('id, teacher_id, status, notes').eq('session_date', date),
     ])
@@ -113,20 +113,6 @@ export default function AdminTeacherRegister({ readOnly }) {
     finally { setBusy(b => ({ ...b, [teacher.id]: false })) }
   }
 
-  async function loadHistory() {
-    setHistLoading(true)
-    const fromDate = new Date()
-    fromDate.setDate(fromDate.getDate() - 60)
-    const { data } = await supabase
-      .from('teacher_attendance')
-      .select('teacher_id, session_date, status')
-      .gte('session_date', fromDate.toISOString().split('T')[0])
-      .order('session_date', { ascending: false })
-    setHistory(data || [])
-    setHistLoading(false)
-    logAction(profile, 'Viewed teacher attendance history').catch(() => {})
-  }
-
   const present  = teachers.filter(t => attendance[t.id]?.status === 'present').length
   const absent   = teachers.filter(t => attendance[t.id]?.status === 'absent').length
   const late     = teachers.filter(t => attendance[t.id]?.status === 'late').length
@@ -164,6 +150,14 @@ export default function AdminTeacherRegister({ readOnly }) {
           </div>
         ))}
       </div>
+
+      {/* Reminder while today's register is incomplete on a class day */}
+      {!readOnly && date === todayISO() && [5, 6].includes(new Date().getDay()) && unmarked > 0 && teachers.length > 0 && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px',
+          marginBottom: 16, fontSize: '.86rem', fontWeight: 600, color: '#92400e' }}>
+          ⏰ {unmarked} of {teachers.length} staff not marked yet today — please complete the Teacher Register before the end of class.
+        </div>
+      )}
 
       {/* Register table */}
       <div className="card">
@@ -291,66 +285,8 @@ export default function AdminTeacherRegister({ readOnly }) {
         )}
       </div>
 
-      {/* Attendance history */}
-      <div className="card">
-        <div className="card-title">
-          Attendance History — Last 60 Days
-          {history === null && (
-            <button onClick={loadHistory} disabled={histLoading}
-              style={{ fontSize: '.75rem', fontWeight: 700, padding: '5px 12px', borderRadius: 7,
-                border: '1px solid var(--border)', background: 'white', color: 'var(--muted)',
-                cursor: 'pointer', fontFamily: 'inherit' }}>
-              {histLoading ? 'Loading…' : 'Load History'}
-            </button>
-          )}
-        </div>
-
-        {history !== null && (
-          history.length === 0 ? (
-            <div style={{ color: 'var(--muted)', fontSize: '.85rem', padding: '8px 0' }}>No records in the last 60 days.</div>
-          ) : (() => {
-            // Group records by session_date, summarise
-            const byDate = {}
-            history.forEach(r => {
-              if (!byDate[r.session_date]) byDate[r.session_date] = { present: 0, absent: 0, late: 0, holiday: 0 }
-              byDate[r.session_date][r.status] = (byDate[r.session_date][r.status] || 0) + 1
-            })
-            const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
-            return (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Present</th>
-                      <th>Absent</th>
-                      <th>Late</th>
-                      <th>Holiday</th>
-                      <th>Total Marked</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dates.map(d => {
-                      const row = byDate[d]
-                      const total = (row.present || 0) + (row.absent || 0) + (row.late || 0) + (row.holiday || 0)
-                      return (
-                        <tr key={d} style={{ cursor: 'pointer' }} onClick={() => setDate(d)}>
-                          <td style={{ fontWeight: 600 }}>{fmtDate(d)}</td>
-                          <td style={{ color: '#16a34a', fontWeight: 700 }}>{row.present || 0}</td>
-                          <td style={{ color: '#dc2626', fontWeight: 700 }}>{row.absent || 0}</td>
-                          <td style={{ color: '#d97706', fontWeight: 700 }}>{row.late || 0}</td>
-                          <td style={{ color: '#0284c7', fontWeight: 700 }}>{row.holiday || 0}</td>
-                          <td style={{ color: 'var(--muted)' }}>{total}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )
-          })()
-        )}
-      </div>
+      {/* Attendance report */}
+      <TeacherAttendanceReport onPickDate={d => { setDate(d); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
     </>
   )
 }

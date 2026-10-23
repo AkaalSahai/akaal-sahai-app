@@ -18,10 +18,11 @@ import AdminRegisterStatus from './AdminRegisterStatus'
 import AdminTeacherRegister from './AdminTeacherRegister'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import NotificationBell from '../../components/NotificationBell'
 
 export default function AdminLayout() {
   const [tab, setTab]   = useState('dashboard')
-  const { hasRole } = useAuth()
+  const { hasRole, profile } = useAuth()
   // hasRole() checks primary role OR extra_roles, so this correctly covers
   // someone who reaches /admin via adminView as an EXTRA role (e.g. a
   // teacher who's also a trustee) - not just adminView as their primary
@@ -75,6 +76,9 @@ export default function AdminLayout() {
             {t.label}
           </button>
         ))}
+        <div style={{ marginLeft: 'auto', paddingRight: 4 }}>
+          <NotificationBell userId={profile?.id} />
+        </div>
       </div>
       <div className="content">
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}

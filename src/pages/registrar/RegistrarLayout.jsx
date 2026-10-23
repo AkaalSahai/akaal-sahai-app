@@ -11,6 +11,7 @@ import TeacherRegister from '../teacher/TeacherRegister'
 import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
+import NotificationBell from '../../components/NotificationBell'
 
 export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
@@ -40,6 +41,9 @@ export default function RegistrarLayout() {
             {t.label}
           </button>
         ))}
+        <div style={{ marginLeft: 'auto', paddingRight: 4 }}>
+          <NotificationBell userId={profile?.id} />
+        </div>
       </div>
       <div className="content">
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
