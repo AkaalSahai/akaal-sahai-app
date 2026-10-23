@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { fmtDate } from '../../lib/dates'
 import { exportCSV } from '../../lib/csv'
 import { logAction } from '../../lib/audit'
+import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import {
   STATUS_COLOR, STATUS_BG, STATUS_LABEL, STATUS_CODE,
   todayISO, daysAgoISO, tsToISO, shortDate, pctText, pctColor, statusTag,
@@ -67,7 +68,7 @@ export default function TeacherAttendanceReport({ onPickDate }) {
       const [records, { data: teacherRows, error: tErr }, { data: tgRows }, { data: groupRows }, { data: archRows }] = await Promise.all([
         fetchAllAttendance(from, to),
         // Teachers and registrars, whether it's their primary or an extra role
-        supabase.from('users').select('id, name, created_at').or('role.in.(teacher,registrar),extra_roles.ov.{teacher,registrar}'),
+        supabase.from('users').select('id, name, created_at').or(TEACHING_STAFF_FILTER),
         supabase.from('teacher_groups').select('teacher_id, groups(name)').eq('role', 'primary'),
         supabase.from('groups').select('name, teacher_id'),
         // Admin-only table; for other viewers this just returns nothing.

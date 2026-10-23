@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -56,7 +57,7 @@ export default function AdminSettings() {
     setAckError(null)
     try {
       const [{ data: teachers, error: tErr }, { data: acks, error: aErr }] = await Promise.all([
-        supabase.from('users').select('id, name').eq('role', 'teacher').order('name'),
+        supabase.from('users').select('id, name').or(TEACHING_STAFF_FILTER).order('name'),
         supabase.from('broadcast_acknowledgments').select('acknowledged_by, acknowledged_at').eq('broadcast_id', broadcastId),
       ])
       if (tErr) throw tErr

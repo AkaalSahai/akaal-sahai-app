@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
+import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import TeacherAttendanceReport from './TeacherAttendanceReport'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
@@ -25,7 +26,7 @@ export default function AdminTeacherRegister({ readOnly }) {
     setLoading(true)
     const [{ data: teacherRows }, { data: tgRows }, { data: attRows }] = await Promise.all([
       // Teachers and registrars, whether it's their primary or an extra role
-      supabase.from('users').select('id, name, group_id').or('role.in.(teacher,registrar),extra_roles.ov.{teacher,registrar}').order('name'),
+      supabase.from('users').select('id, name, group_id').or(TEACHING_STAFF_FILTER).order('name'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
       supabase.from('teacher_attendance').select('id, teacher_id, status, notes').eq('session_date', date),
     ])
