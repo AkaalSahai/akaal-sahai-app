@@ -363,17 +363,24 @@ export default function AdminArchive() {
 
   function purgeUser(u) {
     setDialog({
-      message: `Permanently delete archive record and ALL attendance history for ${u.name}? This cannot be undone (GDPR erasure).`,
+      message: `Permanently erase ${u.name}? This deletes their archive record, attendance history, announcement acknowledgements and teacher application, and removes their name from registers, notes, verifications, messages, approvals and the activity log. This cannot be undone (GDPR erasure).`,
       confirmText: 'Permanently Erase',
       danger: true,
       onConfirm: async () => {
         setDialog(null)
         setBusy(u.id)
         try {
-          await supabase.from('teacher_attendance').delete().eq('teacher_id', u.original_id)
-          const { error } = await supabase.from('users_archive').delete().eq('id', u.id)
-          if (error) throw error
-          logAction(profile, 'Permanently erased teacher archive', u.name).catch(() => {})
+          // Erases/anonymises everywhere in one transaction and writes its own
+          // activity-log entry (without the erased name)
+          if (u.original_id) {
+            const { error } = await supabase.rpc('erase_former_staff', { p_original_id: u.original_id })
+            if (error) throw error
+          } else {
+            // Very old archive rows have no account ID, so nothing else links to them
+            const { error } = await supabase.from('users_archive').delete().eq('id', u.id)
+            if (error) throw error
+            logAction(profile, 'Permanently erased teacher archive', 'GDPR erasure of a former staff member').catch(() => {})
+          }
           setExpanded(null)
           load()
         } catch (err) { alert('Error: ' + err.message) }

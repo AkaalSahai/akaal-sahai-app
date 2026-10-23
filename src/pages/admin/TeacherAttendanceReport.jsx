@@ -5,6 +5,7 @@ import { fmtDate } from '../../lib/dates'
 import { exportCSV } from '../../lib/csv'
 import { logAction } from '../../lib/audit'
 import { TEACHING_STAFF_FILTER } from '../../lib/staff'
+import { loadFormerStaff } from '../../lib/formerStaff'
 import {
   STATUS_COLOR, STATUS_BG, STATUS_LABEL, STATUS_CODE,
   todayISO, daysAgoISO, tsToISO, shortDate, pctText, pctColor, statusTag,
@@ -65,14 +66,14 @@ export default function TeacherAttendanceReport({ onPickDate }) {
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const [records, { data: teacherRows, error: tErr }, { data: tgRows }, { data: groupRows }, { data: archRows }] = await Promise.all([
+      const [records, { data: teacherRows, error: tErr }, { data: tgRows }, { data: groupRows }, archRows] = await Promise.all([
         fetchAllAttendance(from, to),
         // Teachers and registrars, whether it's their primary or an extra role
         supabase.from('users').select('id, name, created_at').or(TEACHING_STAFF_FILTER),
         supabase.from('teacher_groups').select('teacher_id, groups(name)').eq('role', 'primary'),
         supabase.from('groups').select('name, teacher_id'),
-        // Admin-only table; for other viewers this just returns nothing.
-        supabase.from('users_archive').select('original_id, name, deleted_at, group_names'),
+        // Staff who have left - name, joined/left dates and groups only
+        loadFormerStaff(),
       ])
       if (tErr) throw tErr
 
@@ -109,8 +110,8 @@ export default function TeacherAttendanceReport({ onPickDate }) {
             people[id] = { id, name: u.name, groups: primaryGroups[id] || [], joined: tsToISO(u.created_at),
               left: false, leftDate: null, otherRole: u.role }
           } else {
-            people[id] = { id, name: a?.name || 'Unknown teacher', groups: a?.group_names || [], joined: null,
-              left: true, leftDate: a ? tsToISO(a.deleted_at) : null, otherRole: null }
+            people[id] = { id, name: a?.name || 'Unknown teacher', groups: a?.group_names || [], joined: a ? tsToISO(a.joined_at) : null,
+              left: true, leftDate: a ? tsToISO(a.left_at) : null, otherRole: null }
           }
         })
       }

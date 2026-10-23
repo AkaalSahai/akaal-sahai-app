@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
+import { loadFormerStaff, formerStaffNameMap } from '../../lib/formerStaff'
 
 function pendingFirst(list) {
   return [...list].sort((a, b) => {
@@ -46,7 +47,7 @@ export default function AdminApplications({ readOnly }) {
 
   async function load() {
     try {
-      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }, { data: tg }] = await Promise.all([
+      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }, { data: tg }, former] = await Promise.all([
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
@@ -54,11 +55,13 @@ export default function AdminApplications({ readOnly }) {
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
         supabase.from('users').select('id, name, role, extra_roles'),
         supabase.from('teacher_groups').select('teacher_id, group_id'),
+        loadFormerStaff(),
       ])
       const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
       const tMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
       setTeacherMap(tMap)
-      setUserMap(Object.fromEntries((us || []).map(u => [u.id, u.name])))
+      // Former staff first so a current account always wins
+      setUserMap({ ...formerStaffNameMap(former), ...Object.fromEntries((us || []).map(u => [u.id, u.name])) })
       // A group's teacher can be set via the legacy groups.teacher_id field or
       // via the teacher_groups junction (multi-teacher groups) — check both.
       const tgGroupMap = {}
@@ -433,7 +436,7 @@ export default function AdminApplications({ readOnly }) {
                     From: {tr.from_group_name || '—'} · Requested: {fmtDate(tr.created_at)}
                   </div>
                   <div className="app-meta">
-                    Submitted by: {teacherMap[tr.requested_by] || 'Unknown'}
+                    Submitted by: {teacherMap[tr.requested_by] || userMap[tr.requested_by] || 'Unknown'}
                   </div>
                 </div>
                 <span className={`tag tag-${tr.status}`}>{tr.status}</span>
