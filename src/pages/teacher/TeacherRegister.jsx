@@ -47,6 +47,7 @@ export default function TeacherRegister() {
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
   const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
+  const [mainMarks, setMainMarks] = useState({})  // extra-class registers only: studentId -> { group, status } from their main group
   const [search, setSearch]       = useState('')
   const savingRef    = useRef(null)
   const creatingRef  = useRef(false)
@@ -88,6 +89,15 @@ export default function TeacherRegister() {
   // student from just an extra class stays an admin/registrar action via
   // the Classes tab.
   const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
+
+  // Extra-class registers: show who their main group's teacher marked present
+  // today, refreshed as both registers are taken at the same time
+  useEffect(() => {
+    if (!selectedGroupId || isPunjabiGroup) { setMainMarks({}); return }
+    loadMainMarks()
+    const t = setInterval(loadMainMarks, 60000)
+    return () => clearInterval(t)
+  }, [selectedGroupId, date, isPunjabiGroup])
 
   async function loadAllGroups() {
     const { data } = await supabase.from('groups').select('id, name').eq('active', true).order('name')
@@ -173,6 +183,12 @@ export default function TeacherRegister() {
     }
   }
 
+  async function loadMainMarks() {
+    const { data, error } = await supabase.rpc('get_main_group_marks', { p_group_id: selectedGroupId, p_date: date })
+    if (error) { setMainMarks({}); return }
+    setMainMarks(Object.fromEntries((data || []).map(r => [r.student_id, { group: r.main_group_name, status: r.status }])))
+  }
+
   async function loadSession() {
     if (!selectedGroupId) return
     const { data } = await supabase
@@ -235,9 +251,16 @@ export default function TeacherRegister() {
     } finally { creatingRef.current = false }
   }
 
+  // A mark copied from an extra class (GCSE Punjabi, Gatka...) locks the row
+  // only when it says they attended there; a copied Absent/Holiday can still
+  // be changed here if they turn up - see extra-class-sync-attended-anywhere.sql
+  function isLockedFromExtraClass(studentId) {
+    return isPunjabiGroup && !!syncedFrom[studentId] && ['present', 'late'].includes(attendance[studentId])
+  }
+
   async function mark(studentId, status) {
     if (isReadOnly) return
-    if (isPunjabiGroup && syncedFrom[studentId]) return  // locked - set from their extra class attendance instead
+    if (isLockedFromExtraClass(studentId)) return  // locked - they attended their extra class
     const current   = attendance[studentId]
     const newStatus = current === status ? null : status
     const student     = students.find(s => s.id === studentId)
@@ -268,9 +291,12 @@ export default function TeacherRegister() {
           session_date: date,
           status:       newStatus,
           notes:        notesRef.current[studentId] || null,
+          // Marked here by this register's teacher - no longer just a copy
+          synced_from_class_type: null,
         }, { onConflict: 'session_id,student_id' })
         if (error) throw error
       }
+      if (syncedFrom[studentId]) setSyncedFrom(prev => { const n = { ...prev }; delete n[studentId]; return n })
       logAction(profile, 'Marked attendance', `${studentName}: ${newStatus || 'cleared'} (${date})`).catch(() => {})
       setSaveState('saved')
       savingRef.current = setTimeout(() => setSaveState('idle'), 2000)
@@ -283,7 +309,7 @@ export default function TeacherRegister() {
 
   async function saveNote(studentId, text) {
     if (isReadOnly) return
-    if (isPunjabiGroup && syncedFrom[studentId]) return  // locked - this record belongs to their extra class
+    if (isLockedFromExtraClass(studentId)) return  // locked - this record belongs to their extra class
     const currentStatus = attendance[studentId]
     if (!currentStatus) return
     const sid = sessionId || await ensureSession()
@@ -508,12 +534,14 @@ export default function TeacherRegister() {
               const fullName = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ')
               const status   = attendance[s.id]
               const age      = calcAge(s.date_of_birth)
-              // Their status here came from an extra class (e.g. GCSE
-              // Punjabi) they also attend - see add-sync-extra-class-
-              // attendance-to-punjabi.sql. Locked rather than independently
-              // re-markable so the two registers can't drift out of sync.
+              // Their status here may have come from an extra class (e.g. GCSE
+              // Punjabi) they also attend - see extra-class-sync-attended-anywhere.sql.
+              // Locked only when the copy says they attended there; a copied
+              // Absent/Holiday stays editable in case they're in this class.
               const lockedFrom = isPunjabiGroup ? syncedFrom[s.id] : null
-              const locked = !!lockedFrom
+              const locked = isLockedFromExtraClass(s.id)
+              const mainMark = !isPunjabiGroup ? mainMarks[s.id] : null
+              const attendedMain = mainMark && ['present', 'late'].includes(mainMark.status)
               return (
                 <li key={s.id} className="student-row">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 0', flexWrap: 'wrap' }}>
@@ -553,10 +581,20 @@ export default function TeacherRegister() {
                           {s.groups && ` · ${resolvePunjabiTeacher(s.groups) || 'No teacher assigned'}`}
                         </div>
                       )}
-                      {locked && (
+                      {lockedFrom && (locked ? (
                         <div style={{ fontSize: '.7rem', color: '#7c3aed', marginTop: 2, fontWeight: 600 }}
                           title={`Marked from their ${classTypesMeta[lockedFrom]?.label || lockedFrom} register - can't be changed here`}>
-                          📌 Synced from {classTypesMeta[lockedFrom]?.label || lockedFrom}
+                          📌 {status === 'late' ? 'Late' : 'Present'} in {classTypesMeta[lockedFrom]?.label || lockedFrom}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '.7rem', color: '#7c3aed', marginTop: 2, fontWeight: 600 }}>
+                          {status === 'holiday' ? 'Holiday' : 'Absent'} in {classTypesMeta[lockedFrom]?.label || lockedFrom} – mark them here if they're in this class
+                        </div>
+                      ))}
+                      {attendedMain && (
+                        <div style={{ fontSize: '.7rem', color: '#15803d', marginTop: 2, fontWeight: 700 }}
+                          title="Marked by their main group's teacher today, so they weren't in this class">
+                          ✓ {mainMark.status === 'late' ? 'Late' : 'Present'} in {mainMark.group} today
                         </div>
                       )}
                     </div>
@@ -657,7 +695,7 @@ export default function TeacherRegister() {
         {isToday && !loading && students.length > 0 && (
           <div style={{ marginTop: 12, padding: '10px 12px', background: '#f8fafc', borderRadius: 8,
             fontSize: '.78rem', color: 'var(--muted)', textAlign: 'center' }}>
-            {present + late + absent + holiday} of {students.length} marked · Unmarked students auto-marked absent at 10pm
+            {present + late + absent + holiday} of {students.length} marked{isPunjabiGroup && ' · Unmarked students auto-marked absent at 9:30pm'}
           </div>
         )}
       </div>
