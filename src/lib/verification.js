@@ -22,9 +22,20 @@ export function buildVerificationSnapshot(student) {
   return snap
 }
 
+// Names are stored tidied (trimmed, single spaces - see tidy-name-spacing.sql),
+// but older snapshots may hold the untidied version. A spacing-only difference
+// in a name isn't a real change, so it mustn't undo a verification.
+const NAME_FIELDS = new Set(['first_name', 'middle_name', 'last_name', 'parent_name'])
+function tidyName(v) {
+  return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : v
+}
+
 function snapshotMatchesStudent(snapshot, student) {
   if (!snapshot) return false
-  return VERIFIED_FIELDS.every(f => (snapshot[f] ?? null) === (student[f] ?? null))
+  return VERIFIED_FIELDS.every(f => {
+    const a = snapshot[f] ?? null, b = student[f] ?? null
+    return NAME_FIELDS.has(f) ? tidyName(a) === tidyName(b) : a === b
+  })
 }
 
 // latestVerification: the most recent student_verifications row for this
