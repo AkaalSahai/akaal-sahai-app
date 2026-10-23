@@ -25,7 +25,8 @@ export default function AdminRegisterStatus() {
       supabase.from('groups').select('id, name, teacher_id').eq('active', true).order('name'),
       supabase.from('attendance_sessions').select('id, group_id, created_at, submitted_at').eq('session_date', today),
       supabase.from('attendance_records').select('session_id, status').eq('session_date', today),
-      supabase.from('users').select('id, name').eq('role', 'teacher'),
+      // Names for whoever is linked to a group, whatever their role
+      supabase.from('users').select('id, name'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
     ])
 

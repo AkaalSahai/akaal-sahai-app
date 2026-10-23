@@ -12,6 +12,7 @@ import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import NotificationBell from '../../components/NotificationBell'
+import BroadcastBanner from '../../components/BroadcastBanner'
 
 export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
@@ -45,6 +46,8 @@ export default function RegistrarLayout() {
           <NotificationBell userId={profile?.id} />
         </div>
       </div>
+      {/* Registrars count as teachers, so they get announcements too */}
+      <BroadcastBanner />
       <div className="content">
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
         {tab === 'applications' && <AdminApplications />}

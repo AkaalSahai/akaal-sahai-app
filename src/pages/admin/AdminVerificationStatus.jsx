@@ -31,7 +31,8 @@ export default function AdminVerificationStatus() {
     ] = await Promise.all([
       supabase.from('groups').select('id, name, teacher_id, class_type').eq('active', true).order('name'),
       supabase.from('students').select('*').eq('active', true),
-      supabase.from('users').select('id, name').eq('role', 'teacher'),
+      // Names for whoever is linked to a group, whatever their role
+      supabase.from('users').select('id, name'),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
       supabase.from('site_settings').select('key, value')
         .in('key', ['verification_required_since', 'verification_required_reason']),

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import { fmtDate } from '../../lib/dates'
 import { useAuth } from '../../hooks/useAuth'
 import { CLASS_META, isAnyClassDay, loadClassTypes } from '../../lib/classTypes'
@@ -307,7 +308,7 @@ export default function AdminDashboard({ setTab }) {
     ] = await Promise.all([
       supabase.from('students').select('*', { count: 'exact', head: true }).eq('active', true),
       supabase.from('groups').select('*', { count: 'exact', head: true }).eq('active', true),
-      supabase.from('users').select('*', { count: 'exact', head: true }).eq('role', 'teacher'),
+      supabase.from('users').select('*', { count: 'exact', head: true }).or(TEACHING_STAFF_FILTER),
       // One row per class day, not per group-per-day - a Friday where 28
       // different Punjabi groups each submitted their own register is one
       // class day, not 28 "sessions". Table is small enough (hundreds of
@@ -318,7 +319,7 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('student_classes').select('student_id, group_id'),
       supabase.from('groups').select('id, name, class_type, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
-      supabase.from('users').select('id, name, last_login, last_seen').eq('role', 'teacher').order('name'),
+      supabase.from('users').select('id, name, last_login, last_seen').or(TEACHING_STAFF_FILTER).order('name'),
       supabase.from('attendance_sessions').select('id, group_id, submitted_at').eq('session_date', today),
       supabase.rpc('get_dashboard_attendance_stats', { from_date: fromDate }),
       supabase.from('students').select('*').eq('active', true),
@@ -469,7 +470,8 @@ export default function AdminDashboard({ setTab }) {
         { data: records },
       ] = await Promise.all([
         supabase.from('groups').select('id, name, teacher_id, class_type').eq('active', true).order('name'),
-        supabase.from('users').select('id, name').eq('role', 'teacher'),
+        // Names for whoever is linked to a group, whatever their role
+        supabase.from('users').select('id, name'),
         supabase.from('teacher_groups').select('teacher_id, group_id'),
         supabase.from('attendance_sessions').select('id, group_id, session_date').in('session_date', [friday, saturday]),
         supabase.from('attendance_records').select('session_id, group_id, status, session_date').in('session_date', [friday, saturday]),

@@ -19,6 +19,7 @@ import AdminTeacherRegister from './AdminTeacherRegister'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import NotificationBell from '../../components/NotificationBell'
+import BroadcastBanner from '../../components/BroadcastBanner'
 
 export default function AdminLayout() {
   const [tab, setTab]   = useState('dashboard')
@@ -31,6 +32,8 @@ export default function AdminLayout() {
   const isFullAdmin     = hasRole('admin')
   const readOnly        = !isFullAdmin
   const isTeacher       = hasRole('teacher')
+  // Teachers and registrars (primary or extra role) get announcements
+  const isTeachingStaff = isTeacher || hasRole('registrar')
   const [unread, setUnread] = useState(0)
 
   useEffect(() => {
@@ -80,6 +83,7 @@ export default function AdminLayout() {
           <NotificationBell userId={profile?.id} />
         </div>
       </div>
+      {isTeachingStaff && <BroadcastBanner />}
       <div className="content">
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
         {tab === 'applications' && <AdminApplications readOnly={readOnly} />}
