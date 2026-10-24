@@ -151,7 +151,7 @@ export default function ProjectorDashboard() {
       {/* Header - both logos on every slide */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '1.5vh' }}>
         <div style={{ justifySelf: 'start' }}>
-          <img src="/logo-akaal-sahai-light.png" alt="Akaal Sahai Southall" style={{ height: '14vh', display: 'block' }} />
+          <img src="/logo-akaal-sahai-light.png" alt="Akaal Sahai Southall" style={{ height: '20vh', display: 'block' }} />
         </div>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: vw(3.6), fontWeight: 800, color: '#f0a500', lineHeight: 1.1 }}>Akaal Sahai Southall</div>
@@ -164,8 +164,8 @@ export default function ProjectorDashboard() {
             <div style={{ fontSize: vw(1.4), color: '#a5b4fc', marginTop: '0.4vh' }}>Last session: {sectionLabel}</div>
           )}
         </div>
-        <div style={{ justifySelf: 'end', background: 'white', borderRadius: 18, padding: '1vh 1.2vw' }}>
-          <img src="/logo-karam-ishersar.png" alt="Karam Ishersar" style={{ height: '11vh', display: 'block' }} />
+        <div style={{ justifySelf: 'end' }}>
+          <img src="/logo-karam-ishersar.png" alt="Karam Ishersar" style={{ height: '17vh', display: 'block' }} />
         </div>
       </div>
 
