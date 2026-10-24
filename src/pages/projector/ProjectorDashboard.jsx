@@ -165,7 +165,7 @@ export default function ProjectorDashboard() {
           )}
         </div>
         <div style={{ justifySelf: 'end' }}>
-          <img src="/logo-karam-ishersar.png" alt="Karam Ishersar" style={{ height: '17vh', display: 'block' }} />
+          <img src="/logo-karam-ishersar-white.png" alt="Karam Ishersar" style={{ height: '17vh', display: 'block' }} />
         </div>
       </div>
 
