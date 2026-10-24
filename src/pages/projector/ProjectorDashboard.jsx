@@ -129,12 +129,23 @@ export default function ProjectorDashboard() {
   const sevaToday = seva?.today_is_class_day ? sevaDays[0] : null
   const sevaNext = seva?.today_is_class_day ? sevaDays.slice(1) : sevaDays
 
+  // One look across every slide: gold headings, navy cards with gold borders,
+  // white main text and a yellow second line.
+  const GOLD = '#f0a500', YELLOW = '#fcd34d', CARD_BG = '#1e1a6e'
+  const card = extra => ({ background: CARD_BG, border: `2px solid ${GOLD}`, borderRadius: 22, ...extra })
+  const Heading = ({ children, size = 2.6 }) => (
+    <div style={{ fontSize: vw(size), fontWeight: 800, color: GOLD, textAlign: 'center', lineHeight: 1.15, flexShrink: 0 }}>{children}</div>
+  )
+  const Bar = ({ pct }) => (
+    <div style={{ width: '100%', background: '#14123f', border: `2px solid ${GOLD}`, borderRadius: 99, height: '3.2vh', overflow: 'hidden' }}>
+      <div style={{ width: `${pct}%`, height: '100%', background: GOLD, borderRadius: 99, transition: 'width .4s' }} />
+    </div>
+  )
   const SevaCard = ({ g, big }) => (
-    <div style={{ flex: 1, minWidth: 0, background: big ? '#1e1a6e' : '#1a174f', border: `2px solid ${big ? '#f0a500' : '#3b3880'}`,
-      borderRadius: 22, padding: big ? '2.4vh 1.6vw' : '1.3vh 1.2vw', textAlign: 'center',
-      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.6vh' }}>
-      <div style={{ fontSize: vw(big ? 3.2 : 2.1), fontWeight: 800, lineHeight: 1.1 }}>{g.group}</div>
-      {g.teacher && <div style={{ fontSize: vw(big ? 2 : 1.45), color: big ? '#fcd34d' : '#c7d2fe', fontWeight: 600 }}>{g.teacher}</div>}
+    <div style={card({ flex: 1, minWidth: 0, padding: big ? '2vh 1.6vw' : '1.2vh 1.2vw', textAlign: 'center',
+      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.6vh' })}>
+      <div style={{ fontSize: vw(big ? 3.2 : 2.2), fontWeight: 800, lineHeight: 1.1 }}>{g.group}</div>
+      {g.teacher && <div style={{ fontSize: vw(big ? 2 : 1.5), color: YELLOW, fontWeight: 600 }}>{g.teacher}</div>}
     </div>
   )
 
@@ -149,7 +160,8 @@ export default function ProjectorDashboard() {
       <LogoutButton />
 
       {/* Header - both logos on every slide */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '1.5vh' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0,
+        paddingBottom: '1.4vh', marginBottom: '2.2vh', borderBottom: `3px solid ${GOLD}` }}>
         <div style={{ justifySelf: 'start' }}>
           <img src="/logo-akaal-sahai-light.png" alt="Akaal Sahai Southall" style={{ height: '20vh', display: 'block' }} />
         </div>
@@ -170,48 +182,42 @@ export default function ProjectorDashboard() {
       </div>
 
       <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: '3vh', minHeight: 0, width: '100%' }}>
+        gap: '1.8vh', minHeight: 0, width: '100%' }}>
 
         {scene === 0 && (!hasSession ? (
-          <div style={{ fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
+          <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
         ) : (
           <>
-            <div style={{ textAlign: 'center', width: '100%' }}>
-              <div style={{ fontSize: vw(2.8), fontWeight: 700, color: '#c7d2fe' }}>
-                Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
+            <Heading>📋 Registers Submitted {!isToday && <span style={{ fontWeight: 600, color: '#c7d2fe' }}>({sectionLabel})</span>}</Heading>
+            <div style={card({ padding: '2vh 3vw', display: 'flex', alignItems: 'center', gap: '3vw', flexShrink: 0 })}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: vw(8), fontWeight: 800, lineHeight: 1 }}>{totals.submitted} / {groups.length}</div>
+                <div style={{ fontSize: vw(1.8), color: YELLOW, fontWeight: 600, marginTop: '0.8vh' }}>
+                  {groups.length - totals.submitted === 0 ? 'All registers submitted' : `${groups.length - totals.submitted} still to submit`}
+                </div>
               </div>
-              <div style={{ fontSize: vw(10), fontWeight: 800, lineHeight: 1, margin: '1vh 0' }}>
-                {totals.submitted} / {groups.length}
-              </div>
-              <div style={{ width: '70vw', background: '#2d2a66', borderRadius: 99, height: '3.5vh', overflow: 'hidden', margin: '0 auto' }}>
-                <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
-                  height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
-              </div>
+              <div style={{ flex: 1 }}><Bar pct={groups.length ? (totals.submitted / groups.length) * 100 : 0} /></div>
             </div>
 
-            <div style={{ width: '100%' }}>
-              <div style={{ fontSize: vw(2.6), fontWeight: 700, color: '#fca5a5', marginBottom: '1.5vh', textAlign: 'center' }}>
-                ⚠ {isToday ? 'Registers Pending' : 'Didn’t Submit'} {pending.length > 0 && `(${pending.length})`}
+            <Heading>⚠ {isToday ? 'Registers Pending' : 'Didn’t Submit'} {pending.length > 0 && `(${pending.length})`}</Heading>
+            {pending.length === 0 ? (
+              <div style={card({ padding: '2vh', textAlign: 'center', fontSize: vw(3), fontWeight: 800 })}>
+                ✓ Every group has started!
               </div>
-              {pending.length === 0 ? (
-                <div style={{ fontSize: vw(3.4), color: '#86efac', fontWeight: 700, textAlign: 'center' }}>
-                  ✓ Every group has started!
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 15 : 22}vw, 1fr))`, gap: '1.2vw' }}>
-                  {pending.map(g => (
-                    <div key={g.id} style={{ background: '#450a0a', border: '2px solid #7f1d1d', borderRadius: 16,
-                      padding: '1.4vh 1vw', fontSize: vw(manyMissing ? 1.7 : 2.2),
-                      fontWeight: 700, color: '#fecaca', textAlign: 'center' }}>
-                      {g.name}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            ) : (
+              <div style={{ flex: 1, minHeight: 0, display: 'grid', alignContent: 'start',
+                gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 15 : 22}vw, 1fr))`, gap: '1.2vw' }}>
+                {pending.map(g => (
+                  <div key={g.id} style={card({ padding: '1.4vh 1vw', textAlign: 'center' })}>
+                    <div style={{ fontSize: vw(manyMissing ? 1.8 : 2.3), fontWeight: 800 }}>{g.name}</div>
+                    <div style={{ fontSize: vw(manyMissing ? 1.2 : 1.5), color: YELLOW, fontWeight: 600 }}>{isToday ? 'Not started yet' : 'Not submitted'}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {recent.length > 0 && (
-              <div style={{ fontSize: vw(1.9), color: '#a5b4fc' }}>
+              <div style={{ fontSize: vw(1.9), color: YELLOW, textAlign: 'center', flexShrink: 0 }}>
                 Last started: <strong style={{ color: 'white' }}>{recent[0].name}</strong>
                 {' · '}
                 {isToday ? timeAgo(recent[0].created_at) : new Date(recent[0].created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
@@ -222,81 +228,66 @@ export default function ProjectorDashboard() {
 
         {scene === 1 && (
           !seva ? (
-            <div style={{ fontSize: vw(3), color: '#a5b4fc' }}>Seva timetable not available</div>
+            <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>Seva timetable not available</div>
           ) : (
-            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '2.6vh' }}>
+            <>
               {sevaToday && (
-                <div>
-                  <div style={{ fontSize: vw(2.8), fontWeight: 800, color: '#f0a500', textAlign: 'center', marginBottom: '1.5vh' }}>
-                    🙏 Today’s Seva
-                  </div>
+                <>
+                  <Heading size={2.8}>Seva Groups for Today</Heading>
                   {sevaToday.groups.length === 0 ? (
-                    <div style={{ fontSize: vw(2.4), color: '#a5b4fc', textAlign: 'center' }}>No seva groups listed for today</div>
+                    <div style={card({ padding: '2vh', textAlign: 'center', fontSize: vw(2.4) })}>No seva groups listed for today</div>
                   ) : (
-                    <div style={{ display: 'flex', gap: '2vw', justifyContent: 'center' }}>
+                    <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2vw' }}>
                       {sevaToday.groups.map(g => <SevaCard key={g.group} g={g} big />)}
                     </div>
                   )}
-                </div>
+                </>
               )}
-              <div>
-                <div style={{ fontSize: vw(sevaToday ? 2.2 : 2.8), fontWeight: 800, color: sevaToday ? '#c7d2fe' : '#f0a500', textAlign: 'center', marginBottom: '1.2vh' }}>
-                  {sevaToday ? 'Next Week’s Seva' : '🙏 Seva This Weekend'}
-                </div>
-                <div style={{ display: 'flex', gap: '2vw' }}>
-                  {sevaNext.map(day => (
-                    <div key={day.date} style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: vw(sevaToday ? 1.7 : 2.2), fontWeight: 700, color: '#a5b4fc', textAlign: 'center', marginBottom: '0.8vh' }}>
-                        {fmtDay(day.date)}
-                      </div>
-                      {day.groups.length === 0 ? (
-                        <div style={{ fontSize: vw(1.8), color: '#a5b4fc', textAlign: 'center' }}>No seva listed</div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
-                          {day.groups.map(g => <SevaCard key={g.group} g={g} big={!sevaToday} />)}
-                        </div>
-                      )}
+              <Heading size={sevaToday ? 2.4 : 2.8}>{sevaToday ? '🗓️ Next Week’s Seva' : 'Seva Groups This Weekend'}</Heading>
+              <div style={{ flex: sevaToday ? 1.4 : 1, minHeight: 0, display: 'flex', gap: '2vw' }}>
+                {sevaNext.map(day => (
+                  <div key={day.date} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1vh' }}>
+                    <div style={{ fontSize: vw(sevaToday ? 1.8 : 2.2), fontWeight: 700, color: YELLOW, textAlign: 'center' }}>
+                      {fmtDay(day.date)}
                     </div>
-                  ))}
-                </div>
+                    {day.groups.length === 0 ? (
+                      <div style={card({ padding: '1.5vh', textAlign: 'center', fontSize: vw(1.8) })}>No seva listed</div>
+                    ) : day.groups.map(g => <SevaCard key={g.group} g={g} big={!sevaToday} />)}
+                  </div>
+                ))}
               </div>
-            </div>
+            </>
           )
         )}
 
         {scene === 2 && (!hasSession ? (
-          <div style={{ fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
+          <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
         ) : (
-          <div style={{ width: '100%', display: 'flex', gap: '3vw', alignItems: 'stretch' }}>
-            <div style={{ flex: 3, minWidth: 0 }}>
-              <div style={{ fontSize: vw(2.8), fontWeight: 700, color: '#c7d2fe', marginBottom: '2vh', textAlign: 'center' }}>
-                🏆 Top 5 — Higher Attendance Group
-              </div>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2.5vw' }}>
+            <div style={{ flex: 3, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
+              <Heading>🏆 Top 5 — Higher Attendance Group</Heading>
               {(data.top5 || []).length === 0 ? (
-                <div style={{ color: '#a5b4fc', fontSize: vw(2.2), textAlign: 'center' }}>Not enough data yet</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.6vh' }}>
-                  {data.top5.map((g, i) => (
-                    <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: '1.6vw',
-                      background: i === 0 ? '#1e1a6e' : 'transparent', border: i === 0 ? 'none' : '2px solid #2d2a66',
-                      borderRadius: 18, padding: '1.8vh 2vw' }}>
-                      <span style={{ fontSize: vw(3.2), width: '4.5vw', textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
-                      <span style={{ flex: 1, fontSize: vw(2.8), fontWeight: 700 }}>{g.name}</span>
-                      <span style={{ fontSize: vw(3.2), fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
-                    </div>
-                  ))}
+                <div style={card({ padding: '2vh', textAlign: 'center', fontSize: vw(2.2) })}>Not enough data yet</div>
+              ) : data.top5.map((g, i) => (
+                <div key={g.name} style={card({ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', gap: '1.6vw', padding: '0 2vw',
+                  background: i === 0 ? '#2a2590' : CARD_BG })}>
+                  <span style={{ fontSize: vw(3), width: '4.5vw', textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
+                  <span style={{ flex: 1, fontSize: vw(2.6), fontWeight: 800 }}>{g.name}</span>
+                  <span style={{ fontSize: vw(3), fontWeight: 800, color: YELLOW }}>{g.high_count}</span>
                 </div>
-              )}
+              ))}
             </div>
 
             {verifiedStudents && (
-              <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center',
-                background: '#1a174f', borderRadius: 24, padding: '3vh 2vw' }}>
-                <div style={{ fontSize: vw(2.6), fontWeight: 700, color: '#c7d2fe', marginBottom: '1.5vh' }}>Students Verified</div>
-                <div style={{ fontSize: vw(6.5), fontWeight: 800, lineHeight: 1, marginBottom: '2.5vh' }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
-                <div style={{ background: '#2d2a66', borderRadius: 99, height: '3vh', overflow: 'hidden' }}>
-                  <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
-                    height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
+              <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
+                <Heading>✅ Students Verified</Heading>
+                <div style={card({ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+                  gap: '2.5vh', padding: '3vh 2vw', textAlign: 'center' })}>
+                  <div style={{ fontSize: vw(7), fontWeight: 800, lineHeight: 1 }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
+                  <div style={{ fontSize: vw(2), color: YELLOW, fontWeight: 600 }}>
+                    {verifiedStudents.total ? Math.round((verifiedStudents.verified / verifiedStudents.total) * 100) : 0}% of students verified
+                  </div>
+                  <Bar pct={verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0} />
                 </div>
               </div>
             )}
