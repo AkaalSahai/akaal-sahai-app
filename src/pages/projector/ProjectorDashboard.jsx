@@ -51,6 +51,7 @@ export default function ProjectorDashboard() {
   const [error, setError] = useState(null)
   const [now, setNow] = useState(new Date())
   const [scene, setScene] = useState(0)
+  const [seva, setSeva] = useState(null)
 
   useEffect(() => {
     load()
@@ -65,15 +66,20 @@ export default function ProjectorDashboard() {
   }, [])
 
   async function load() {
-    const { data: stats, error } = await supabase.rpc('get_projector_dashboard_stats')
+    const [{ data: stats, error }, { data: sevaData, error: sevaError }] = await Promise.all([
+      supabase.rpc('get_projector_dashboard_stats'),
+      supabase.rpc('get_projector_seva'),
+    ])
     if (error) { setError(error.message); return }
     setError(null)
     setData(stats)
+    // Seva is a separate slide - a problem loading it mustn't blank the rest
+    setSeva(sevaError ? null : sevaData)
   }
 
   const page = {
-    minHeight: '100vh', background: '#14123f', color: 'white',
-    fontFamily: 'system-ui, -apple-system, sans-serif', padding: '28px 40px',
+    height: '100vh', overflow: 'hidden', background: '#14123f', color: 'white',
+    fontFamily: 'system-ui, -apple-system, sans-serif', padding: '2vh 2.5vw',
     boxSizing: 'border-box', display: 'flex', flexDirection: 'column',
   }
 
@@ -110,28 +116,27 @@ export default function ProjectorDashboard() {
     holiday: a.holiday + g.holiday,
     submitted: a.submitted + (g.submitted ? 1 : 0),
   }), { total: 0, present: 0, late: 0, absent: 0, holiday: 0, submitted: 0 })
-  const marked = totals.present + totals.late + totals.absent + totals.holiday
-  // Holidays don't count either way - same rule as every other attendance %
-  // (Dashboard, Students, reports). The ring below still shows them.
-  const counted = totals.present + totals.late + totals.absent
-  const attendedPct = counted > 0 ? Math.round(((totals.present + totals.late) / counted) * 100) : null
-
-  // Conic-gradient ring for the present/late/absent/holiday split - same
-  // technique as the group health cards on the admin Dashboard.
-  let ringStops = [], acc = 0
-  ;[['#16a34a', totals.present], ['#d97706', totals.late], ['#dc2626', totals.absent], ['#0284c7', totals.holiday]].forEach(([color, count]) => {
-    if (count === 0) return
-    const start = acc
-    acc += (count / Math.max(marked, 1)) * 360
-    ringStops.push(`${color} ${start}deg ${acc}deg`)
-  })
-  const ringBg = marked > 0 ? `conic-gradient(${ringStops.join(',')})` : 'conic-gradient(#2d2a66 0 360deg)'
-
   const isToday = data.is_today
   const hasSession = !!data.target_date
   const sectionLabel = isToday ? 'Today' : fmtTargetDate(data.target_date) || 'No sessions recorded yet'
   const recent = data.recent || []
   const manyMissing = pending.length > 14
+
+  // Sizes follow the screen so text fills a projector at any resolution
+  const vw = n => `${n}vw`
+  const fmtDay = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+  const sevaDays = seva?.days || []
+  const sevaToday = seva?.today_is_class_day ? sevaDays[0] : null
+  const sevaNext = seva?.today_is_class_day ? sevaDays.slice(1) : sevaDays
+
+  const SevaCard = ({ g, big }) => (
+    <div style={{ flex: 1, minWidth: 0, background: big ? '#1e1a6e' : '#1a174f', border: `2px solid ${big ? '#f0a500' : '#3b3880'}`,
+      borderRadius: 22, padding: big ? '2.4vh 1.6vw' : '1.3vh 1.2vw', textAlign: 'center',
+      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '0.6vh' }}>
+      <div style={{ fontSize: vw(big ? 3.2 : 2.1), fontWeight: 800, lineHeight: 1.1 }}>{g.group}</div>
+      {g.teacher && <div style={{ fontSize: vw(big ? 2 : 1.45), color: big ? '#fcd34d' : '#c7d2fe', fontWeight: 600 }}>{g.teacher}</div>}
+    </div>
+  )
 
   return (
     <div style={page}>
@@ -143,149 +148,168 @@ export default function ProjectorDashboard() {
       `}</style>
       <LogoutButton />
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, flexShrink: 0 }}>
-        <div>
-          <div style={{ fontSize: '2.6rem', fontWeight: 800, color: '#f0a500' }}>Akaal Sahai Southall</div>
-          <div style={{ fontSize: '1.15rem', color: '#a5b4fc', marginTop: 4, display: 'flex', alignItems: 'center', gap: 10 }}>
-            {isToday ? (
-              <span style={{ background: '#dc2626', color: 'white', fontWeight: 700, fontSize: '.95rem',
-                padding: '3px 13px', borderRadius: 99 }}>● LIVE</span>
-            ) : (
-              <span style={{ color: '#a5b4fc', fontSize: '1.05rem' }}>Last session: {sectionLabel}</span>
-            )}
-          </div>
+      {/* Header - both logos on every slide */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '1.5vh' }}>
+        <div style={{ justifySelf: 'start' }}>
+          <img src="/logo-akaal-sahai-light.png" alt="Akaal Sahai Southall" style={{ height: '14vh', display: 'block' }} />
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '2.8rem', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: vw(3.6), fontWeight: 800, color: '#f0a500', lineHeight: 1.1 }}>Akaal Sahai Southall</div>
+          <div style={{ fontSize: vw(2.2), fontWeight: 700, marginTop: '0.6vh', fontVariantNumeric: 'tabular-nums' }}>
+            {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            <span style={{ color: '#a5b4fc', margin: '0 0.8vw' }}>·</span>
             {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
-          <div style={{ fontSize: '1.15rem', color: '#a5b4fc' }}>
-            {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </div>
+          {!isToday && hasSession && (
+            <div style={{ fontSize: vw(1.4), color: '#a5b4fc', marginTop: '0.4vh' }}>Last session: {sectionLabel}</div>
+          )}
+        </div>
+        <div style={{ justifySelf: 'end', background: 'white', borderRadius: 18, padding: '1vh 1.2vw' }}>
+          <img src="/logo-karam-ishersar.png" alt="Karam Ishersar" style={{ height: '11vh', display: 'block' }} />
         </div>
       </div>
 
-      {!hasSession ? (
-        <div style={{ textAlign: 'center', marginTop: 140, fontSize: '1.6rem', color: '#a5b4fc' }}>
-          No Punjabi class sessions recorded yet
-        </div>
-      ) : (
-        <>
-          <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 34, minHeight: 0 }}>
+      <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: '3vh', minHeight: 0, width: '100%' }}>
 
-            {scene === 0 && (
-              <>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c7d2fe' }}>
-                    Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
-                  </div>
-                  <div style={{ fontSize: '6.6rem', fontWeight: 800, lineHeight: 1, margin: '10px 0' }}>
-                    {totals.submitted} / {groups.length}
-                  </div>
-                  <div style={{ width: 'min(640px, 75vw)', background: '#2d2a66', borderRadius: 99, height: 26, overflow: 'hidden', margin: '0 auto' }}>
-                    <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
-                      height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
-                  </div>
+        {scene === 0 && (!hasSession ? (
+          <div style={{ fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
+        ) : (
+          <>
+            <div style={{ textAlign: 'center', width: '100%' }}>
+              <div style={{ fontSize: vw(2.8), fontWeight: 700, color: '#c7d2fe' }}>
+                Registers Submitted {!isToday && <span style={{ fontWeight: 400, color: '#a5b4fc' }}>({sectionLabel})</span>}
+              </div>
+              <div style={{ fontSize: vw(10), fontWeight: 800, lineHeight: 1, margin: '1vh 0' }}>
+                {totals.submitted} / {groups.length}
+              </div>
+              <div style={{ width: '70vw', background: '#2d2a66', borderRadius: 99, height: '3.5vh', overflow: 'hidden', margin: '0 auto' }}>
+                <div style={{ width: `${groups.length ? (totals.submitted / groups.length) * 100 : 0}%`,
+                  height: '100%', background: '#f0a500', borderRadius: 99, transition: 'width .4s' }} />
+              </div>
+            </div>
+
+            <div style={{ width: '100%' }}>
+              <div style={{ fontSize: vw(2.6), fontWeight: 700, color: '#fca5a5', marginBottom: '1.5vh', textAlign: 'center' }}>
+                ⚠ {isToday ? 'Registers Pending' : 'Didn’t Submit'} {pending.length > 0 && `(${pending.length})`}
+              </div>
+              {pending.length === 0 ? (
+                <div style={{ fontSize: vw(3.4), color: '#86efac', fontWeight: 700, textAlign: 'center' }}>
+                  ✓ Every group has started!
                 </div>
-
-                <div style={{ width: '100%', maxWidth: 1100 }}>
-                  <div style={{ fontSize: '1.7rem', fontWeight: 700, color: '#fca5a5', marginBottom: 18, textAlign: 'center' }}>
-                    ⚠ {isToday ? 'Registers Pending' : 'Didn’t Submit'} {pending.length > 0 && `(${pending.length})`}
-                  </div>
-                  {pending.length === 0 ? (
-                    <div style={{ fontSize: '2.2rem', color: '#86efac', fontWeight: 700, textAlign: 'center', padding: '10px 0' }}>
-                      ✓ Every group has started!
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 15 : 22}vw, 1fr))`, gap: '1.2vw' }}>
+                  {pending.map(g => (
+                    <div key={g.id} style={{ background: '#450a0a', border: '2px solid #7f1d1d', borderRadius: 16,
+                      padding: '1.4vh 1vw', fontSize: vw(manyMissing ? 1.7 : 2.2),
+                      fontWeight: 700, color: '#fecaca', textAlign: 'center' }}>
+                      {g.name}
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {recent.length > 0 && (
+              <div style={{ fontSize: vw(1.9), color: '#a5b4fc' }}>
+                Last started: <strong style={{ color: 'white' }}>{recent[0].name}</strong>
+                {' · '}
+                {isToday ? timeAgo(recent[0].created_at) : new Date(recent[0].created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
+          </>
+        ))}
+
+        {scene === 1 && (
+          !seva ? (
+            <div style={{ fontSize: vw(3), color: '#a5b4fc' }}>Seva timetable not available</div>
+          ) : (
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '2.6vh' }}>
+              {sevaToday && (
+                <div>
+                  <div style={{ fontSize: vw(2.8), fontWeight: 800, color: '#f0a500', textAlign: 'center', marginBottom: '1.5vh' }}>
+                    🙏 Today’s Seva
+                  </div>
+                  {sevaToday.groups.length === 0 ? (
+                    <div style={{ fontSize: vw(2.4), color: '#a5b4fc', textAlign: 'center' }}>No seva groups listed for today</div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 190 : 260}px, 1fr))`, gap: manyMissing ? 12 : 16 }}>
-                      {pending.map(g => (
-                        <div key={g.id} style={{ background: '#450a0a', border: '1px solid #7f1d1d', borderRadius: 14,
-                          padding: manyMissing ? '12px 16px' : '16px 22px', fontSize: manyMissing ? '1.3rem' : '1.7rem',
-                          fontWeight: 700, color: '#fecaca', textAlign: 'center' }}>
-                          {g.name}
-                        </div>
-                      ))}
+                    <div style={{ display: 'flex', gap: '2vw', justifyContent: 'center' }}>
+                      {sevaToday.groups.map(g => <SevaCard key={g.group} g={g} big />)}
                     </div>
                   )}
                 </div>
-
-                {recent.length > 0 && (
-                  <div style={{ fontSize: '1.3rem', color: '#a5b4fc' }}>
-                    {isToday ? '🔴 ' : ''}Last started: <strong style={{ color: 'white' }}>{recent[0].name}</strong>
-                    {' · '}
-                    {isToday ? timeAgo(recent[0].created_at) : new Date(recent[0].created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                )}
-              </>
-            )}
-
-            {scene === 1 && (
-              <>
-                <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c7d2fe' }}>{isToday ? 'Live Tracker' : 'Tracker'}</div>
-                <div style={{ position: 'relative', width: 380, height: 380, borderRadius: '50%', background: ringBg }}>
-                  <div style={{ position: 'absolute', inset: 30, borderRadius: '50%', background: '#14123f',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '5.2rem', fontWeight: 800, lineHeight: 1 }}>{attendedPct !== null ? `${attendedPct}%` : '—'}</div>
-                    <div style={{ fontSize: '1.2rem', color: '#a5b4fc' }}>attendance</div>
-                  </div>
+              )}
+              <div>
+                <div style={{ fontSize: vw(sevaToday ? 2.2 : 2.8), fontWeight: 800, color: sevaToday ? '#c7d2fe' : '#f0a500', textAlign: 'center', marginBottom: '1.2vh' }}>
+                  {sevaToday ? 'Next Week’s Seva' : '🙏 Seva This Weekend'}
                 </div>
-                <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', justifyContent: 'center', fontSize: '1.7rem', fontWeight: 700 }}>
-                  <span style={{ color: '#4ade80' }}>● {totals.present} Present</span>
-                  <span style={{ color: '#fbbf24' }}>● {totals.late} Late</span>
-                  <span style={{ color: '#f87171' }}>● {totals.absent} Absent</span>
-                  {totals.holiday > 0 && <span style={{ color: '#38bdf8' }}>● {totals.holiday} Holiday</span>}
-                </div>
-                <div style={{ fontSize: '1.5rem', color: '#a5b4fc' }}>{marked} of {totals.total} students marked</div>
-              </>
-            )}
-
-            {scene === 2 && (
-              <>
-                <div style={{ width: '100%', maxWidth: 900 }}>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 22, textAlign: 'center' }}>
-                    🏆 Top 5 — Higher Attendance Group
-                  </div>
-                  {(data.top5 || []).length === 0 ? (
-                    <div style={{ color: '#a5b4fc', fontSize: '1.4rem', textAlign: 'center' }}>Not enough data yet</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      {data.top5.map((g, i) => (
-                        <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 22,
-                          background: i === 0 ? '#1e1a6e' : 'transparent', border: i === 0 ? 'none' : '1px solid #2d2a66',
-                          borderRadius: 16, padding: '18px 26px' }}>
-                          <span style={{ fontSize: '2.5rem', width: 56, textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
-                          <span style={{ flex: 1, fontSize: '1.85rem', fontWeight: 700 }}>{g.name}</span>
-                          <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
+                <div style={{ display: 'flex', gap: '2vw' }}>
+                  {sevaNext.map(day => (
+                    <div key={day.date} style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: vw(sevaToday ? 1.7 : 2.2), fontWeight: 700, color: '#a5b4fc', textAlign: 'center', marginBottom: '0.8vh' }}>
+                        {fmtDay(day.date)}
+                      </div>
+                      {day.groups.length === 0 ? (
+                        <div style={{ fontSize: vw(1.8), color: '#a5b4fc', textAlign: 'center' }}>No seva listed</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1vh' }}>
+                          {day.groups.map(g => <SevaCard key={g.group} g={g} big={!sevaToday} />)}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
+              </div>
+            </div>
+          )
+        )}
 
-                {verifiedStudents && (
-                  <div style={{ width: '100%', maxWidth: 600, textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#c7d2fe', marginBottom: 10 }}>Students Verified</div>
-                    <div style={{ fontSize: '3.2rem', fontWeight: 800, marginBottom: 12 }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
-                    <div style={{ background: '#2d2a66', borderRadius: 99, height: 22, overflow: 'hidden' }}>
-                      <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
-                        height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
+        {scene === 2 && (!hasSession ? (
+          <div style={{ fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
+        ) : (
+          <div style={{ width: '100%', display: 'flex', gap: '3vw', alignItems: 'stretch' }}>
+            <div style={{ flex: 3, minWidth: 0 }}>
+              <div style={{ fontSize: vw(2.8), fontWeight: 700, color: '#c7d2fe', marginBottom: '2vh', textAlign: 'center' }}>
+                🏆 Top 5 — Higher Attendance Group
+              </div>
+              {(data.top5 || []).length === 0 ? (
+                <div style={{ color: '#a5b4fc', fontSize: vw(2.2), textAlign: 'center' }}>Not enough data yet</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.6vh' }}>
+                  {data.top5.map((g, i) => (
+                    <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: '1.6vw',
+                      background: i === 0 ? '#1e1a6e' : 'transparent', border: i === 0 ? 'none' : '2px solid #2d2a66',
+                      borderRadius: 18, padding: '1.8vh 2vw' }}>
+                      <span style={{ fontSize: vw(3.2), width: '4.5vw', textAlign: 'center' }}>{MEDALS[i] || `${i + 1}.`}</span>
+                      <span style={{ flex: 1, fontSize: vw(2.8), fontWeight: 700 }}>{g.name}</span>
+                      <span style={{ fontSize: vw(3.2), fontWeight: 800, color: '#f0a500' }}>{g.high_count}</span>
                     </div>
-                  </div>
-                )}
-              </>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {verifiedStudents && (
+              <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center',
+                background: '#1a174f', borderRadius: 24, padding: '3vh 2vw' }}>
+                <div style={{ fontSize: vw(2.6), fontWeight: 700, color: '#c7d2fe', marginBottom: '1.5vh' }}>Students Verified</div>
+                <div style={{ fontSize: vw(6.5), fontWeight: 800, lineHeight: 1, marginBottom: '2.5vh' }}>{verifiedStudents.verified} / {verifiedStudents.total}</div>
+                <div style={{ background: '#2d2a66', borderRadius: 99, height: '3vh', overflow: 'hidden' }}>
+                  <div style={{ width: `${verifiedStudents.total ? (verifiedStudents.verified / verifiedStudents.total) * 100 : 0}%`,
+                    height: '100%', background: '#38bdf8', borderRadius: 99, transition: 'width .4s' }} />
+                </div>
+              </div>
             )}
           </div>
+        ))}
+      </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, paddingTop: 16, flexShrink: 0 }}>
-            {Array.from({ length: SCENE_COUNT }).map((_, i) => (
-              <span key={i} style={{ width: 11, height: 11, borderRadius: '50%',
-                background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
-            ))}
-          </div>
-        </>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, paddingTop: '1.2vh', flexShrink: 0 }}>
+        {Array.from({ length: SCENE_COUNT }).map((_, i) => (
+          <span key={i} style={{ width: 13, height: 13, borderRadius: '50%',
+            background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
+        ))}
+      </div>
     </div>
   )
 }
