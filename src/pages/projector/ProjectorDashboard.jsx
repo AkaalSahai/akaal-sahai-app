@@ -108,19 +108,13 @@ export default function ProjectorDashboard() {
   // "Pending" means genuinely untouched - a group a teacher has already
   // started marking isn't flagged here even before they hit Submit.
   const pending = groups.filter(g => !g.started)
-  const totals = groups.reduce((a, g) => ({
-    total:   a.total   + g.total_students,
-    present: a.present + g.present,
-    late:    a.late    + g.late,
-    absent:  a.absent  + g.absent,
-    holiday: a.holiday + g.holiday,
-    submitted: a.submitted + (g.submitted ? 1 : 0),
-  }), { total: 0, present: 0, late: 0, absent: 0, holiday: 0, submitted: 0 })
   const isToday = data.is_today
   const hasSession = !!data.target_date
   const sectionLabel = isToday ? 'Today' : fmtTargetDate(data.target_date) || 'No sessions recorded yet'
   const recent = data.recent || []
   const manyMissing = pending.length > 14
+  // Start of class: nearly every group is pending - smaller cards so all fit
+  const hugeMissing = pending.length > 24
 
   // Sizes follow the screen so text fills a projector at any resolution
   const vw = n => `${n}vw`
@@ -160,8 +154,7 @@ export default function ProjectorDashboard() {
       <LogoutButton />
 
       {/* Header - both logos on every slide */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0,
-        paddingBottom: '1.4vh', marginBottom: '2.2vh', borderBottom: `3px solid ${GOLD}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '2.5vh' }}>
         <div style={{ justifySelf: 'start' }}>
           <img src="/logo-akaal-sahai-light.png" alt="Akaal Sahai Southall" style={{ height: '20vh', display: 'block' }} />
         </div>
@@ -188,17 +181,6 @@ export default function ProjectorDashboard() {
           <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
         ) : (
           <>
-            <Heading>📋 Registers Submitted {!isToday && <span style={{ fontWeight: 600, color: '#c7d2fe' }}>({sectionLabel})</span>}</Heading>
-            <div style={card({ padding: '2vh 3vw', display: 'flex', alignItems: 'center', gap: '3vw', flexShrink: 0 })}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: vw(8), fontWeight: 800, lineHeight: 1 }}>{totals.submitted} / {groups.length}</div>
-                <div style={{ fontSize: vw(1.8), color: YELLOW, fontWeight: 600, marginTop: '0.8vh' }}>
-                  {groups.length - totals.submitted === 0 ? 'All registers submitted' : `${groups.length - totals.submitted} still to submit`}
-                </div>
-              </div>
-              <div style={{ flex: 1 }}><Bar pct={groups.length ? (totals.submitted / groups.length) * 100 : 0} /></div>
-            </div>
-
             <Heading>⚠ {isToday ? 'Registers Pending' : 'Didn’t Submit'} {pending.length > 0 && `(${pending.length})`}</Heading>
             {pending.length === 0 ? (
               <div style={card({ padding: '2vh', textAlign: 'center', fontSize: vw(3), fontWeight: 800 })}>
@@ -206,11 +188,14 @@ export default function ProjectorDashboard() {
               </div>
             ) : (
               <div style={{ flex: 1, minHeight: 0, display: 'grid', alignContent: 'start',
-                gridTemplateColumns: `repeat(auto-fill, minmax(${manyMissing ? 15 : 22}vw, 1fr))`, gap: '1.2vw' }}>
+                gridTemplateColumns: `repeat(auto-fill, minmax(${hugeMissing ? 11 : manyMissing ? 17 : 28}vw, 1fr))`, gap: hugeMissing ? '0.7vw' : '1.4vw' }}>
                 {pending.map(g => (
-                  <div key={g.id} style={card({ padding: '1.4vh 1vw', textAlign: 'center' })}>
-                    <div style={{ fontSize: vw(manyMissing ? 1.8 : 2.3), fontWeight: 800 }}>{g.name}</div>
-                    <div style={{ fontSize: vw(manyMissing ? 1.2 : 1.5), color: YELLOW, fontWeight: 600 }}>{isToday ? 'Not started yet' : 'Not submitted'}</div>
+                  <div key={g.id} style={card({ padding: hugeMissing ? '1.2vh 0.5vw' : manyMissing ? '1.4vh 1vw' : '2.4vh 1.2vw', textAlign: 'center',
+                    display: 'flex', flexDirection: 'column', justifyContent: 'center' })}>
+                    <div style={{ fontSize: vw(hugeMissing ? 1.3 : manyMissing ? 2 : 2.9), fontWeight: 800, lineHeight: 1.15 }}>{g.name}</div>
+                    {!hugeMissing && (
+                      <div style={{ fontSize: vw(manyMissing ? 1.3 : 1.8), color: YELLOW, fontWeight: 600 }}>{isToday ? 'Not started yet' : 'Not submitted'}</div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -233,7 +218,7 @@ export default function ProjectorDashboard() {
             <>
               {sevaToday && (
                 <>
-                  <Heading size={2.8}>Seva Groups for Today</Heading>
+                  <Heading size={2.8}>🙏 Today’s Seva</Heading>
                   {sevaToday.groups.length === 0 ? (
                     <div style={card({ padding: '2vh', textAlign: 'center', fontSize: vw(2.4) })}>No seva groups listed for today</div>
                   ) : (
@@ -243,7 +228,7 @@ export default function ProjectorDashboard() {
                   )}
                 </>
               )}
-              <Heading size={sevaToday ? 2.4 : 2.8}>{sevaToday ? '🗓️ Next Week’s Seva' : 'Seva Groups This Weekend'}</Heading>
+              <Heading size={sevaToday ? 2.4 : 2.8}>{sevaToday ? 'Next Week’s Seva' : '🙏 Seva This Weekend'}</Heading>
               <div style={{ flex: sevaToday ? 1.4 : 1, minHeight: 0, display: 'flex', gap: '2vw' }}>
                 {sevaNext.map(day => (
                   <div key={day.date} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1vh' }}>
