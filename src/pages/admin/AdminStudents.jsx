@@ -9,6 +9,15 @@ import { notifyTeachersOfGroup } from '../../lib/notifications'
 import { loadAttendanceStats } from '../../lib/attendance'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 import { loadExtraClassEnrollments } from '../../lib/classRoster'
+import { getVerificationStatus, VERIFICATION_REASON_LABEL } from '../../lib/verification'
+import { exportCSV } from '../../lib/csv'
+
+// Admin/registrar filter panel - every field starts "off"
+const EMPTY_FILTERS = {
+  group: '', extra: '', ageMin: '', ageMax: '', joinedFrom: '', joinedTo: '', area: '',
+  medical: '', consent: '', attendance: '', verification: '', progress: '',
+}
+const ATTENDANCE_BANDS = { lt50: 'Below 50%', '50to74': '50–74%', '75plus': '75% and above', none: 'No records yet' }
 
 // Every date matching the group's weekly schedule between start and end
 // (inclusive), used to build the full theoretical calendar of class days -
@@ -56,7 +65,13 @@ const PROGRESS = {
 const STATUS_COLOR = { present: '#16a34a', late: '#d97706', absent: '#dc2626', holiday: '#0284c7' }
 
 export default function AdminStudents({ readOnly }) {
-  const { profile } = useAuth()
+  const { profile, hasRole } = useAuth()
+  // Full filter panel for admins and registrars; CSV download for admins only
+  const canFilter = hasRole('admin') || hasRole('registrar')
+  const canExport = hasRole('admin')
+  const [filters, setFilters]   = useState(EMPTY_FILTERS)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [verifications, setVerifications] = useState({ latest: {}, since: null })
   const [students, setStudents] = useState([])
   const [groups, setGroups]     = useState([])
   const [loading, setLoading]   = useState(true)
@@ -82,6 +97,17 @@ export default function AdminStudents({ readOnly }) {
   useEffect(() => { load() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
   useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
+
+  async function loadVerifications() {
+    const [{ data: v }, { data: st }] = await Promise.all([
+      supabase.from('student_verifications').select('student_id, verified_at, verified_by_name, snapshot').order('verified_at', { ascending: false }),
+      supabase.from('site_settings').select('value').eq('key', 'verification_required_since').maybeSingle(),
+    ])
+    const latest = {}
+    ;(v || []).forEach(r => { if (!latest[r.student_id]) latest[r.student_id] = r })
+    setVerifications({ latest, since: st?.value || null })
+  }
+  useEffect(() => { if (canFilter) loadVerifications() }, [canFilter])
 
   async function load() {
     const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, attMap] = await Promise.all([
@@ -411,12 +437,105 @@ export default function AdminStudents({ readOnly }) {
     return <span style={{ marginLeft: 3, fontSize: '.6rem', color: 'var(--primary)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
   }
 
+  const verificationOf = s => getVerificationStatus(s, verifications.latest[s.id], verifications.since)
+  const attendanceBand = s => {
+    const a = attendance[s.id]
+    if (!a || a.pct === null || a.pct === undefined) return 'none'
+    return a.pct < 50 ? 'lt50' : a.pct < 75 ? '50to74' : '75plus'
+  }
+  const setFilter = k => e => setFilters(f => ({ ...f, [k]: e.target.value }))
+  const clearFilter = k => setFilters(f => ({ ...f, [k]: '' }))
+
   const filtered = students.filter(s => {
     const name = [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(' ').toLowerCase()
-    const matchSearch = !search || name.includes(search.toLowerCase())
+    const q = search.trim().toLowerCase()
+    if (canFilter) {
+      // Search across name, parent, phones, email, postcode and reference
+      if (q) {
+        const digits = q.replace(/\D/g, '')
+        const hay = [name, s.parent_name, s.email, s.postcode, s.student_ref].filter(Boolean).join(' ').toLowerCase()
+        const phones = [s.phone, s.secondary_phone].filter(Boolean).join(' ').replace(/\D/g, '')
+        if (!hay.includes(q) && !(digits.length >= 4 && phones.includes(digits))) return false
+      }
+      const f = filters
+      if (f.group === '__none' ? !!s.group_id : (f.group && s.group_id !== f.group)) return false
+      const extras = extraClasses[s.id] || []
+      if (f.extra === '__none' ? extras.length > 0 : (f.extra && !extras.some(ec => ec.class_type === f.extra))) return false
+      const age = calcAge(s.date_of_birth)
+      if (f.ageMin !== '' && (age === null || age < Number(f.ageMin))) return false
+      if (f.ageMax !== '' && (age === null || age > Number(f.ageMax))) return false
+      if (f.joinedFrom && (!s.date_joined || s.date_joined < f.joinedFrom)) return false
+      if (f.joinedTo && (!s.date_joined || s.date_joined > f.joinedTo)) return false
+      if (f.area) {
+        const a = f.area.trim().toLowerCase()
+        if (![s.town, s.postcode, s.street_name].filter(Boolean).join(' ').toLowerCase().includes(a)) return false
+      }
+      if (f.medical === 'yes' && !s.medical_notes?.trim()) return false
+      if (f.medical === 'no' && s.medical_notes?.trim()) return false
+      if (f.consent === 'yes' && !s.photo_consent) return false
+      if (f.consent === 'no' && s.photo_consent) return false
+      if (f.attendance && attendanceBand(s) !== f.attendance) return false
+      if (f.verification) {
+        const v = verificationOf(s)
+        if (f.verification === 'verified' ? !v.verified : v.verified || v.reason !== f.verification) return false
+      }
+      if (f.progress === '__none' ? !!s.note?.progress_level : (f.progress && s.note?.progress_level !== f.progress)) return false
+      return true
+    }
+    const matchSearch = !q || name.includes(q)
     const matchGroup  = !groupFilter || s.group_id === groupFilter
     return matchSearch && matchGroup
   })
+
+  // Chips for every active filter
+  const groupName = id => groups.find(g => g.id === id)?.name || 'Unknown group'
+  const activeChips = canFilter ? [
+    filters.group && ['group', `Group: ${filters.group === '__none' ? 'No group' : groupName(filters.group)}`],
+    filters.extra && ['extra', `Extra class: ${filters.extra === '__none' ? 'None' : (classTypesMeta[filters.extra]?.label || filters.extra)}`],
+    (filters.ageMin !== '' || filters.ageMax !== '') && ['age', `Age ${filters.ageMin || '…'}–${filters.ageMax || '…'}`],
+    (filters.joinedFrom || filters.joinedTo) && ['joined', `Joined ${filters.joinedFrom ? fmtDate(filters.joinedFrom) : '…'} to ${filters.joinedTo ? fmtDate(filters.joinedTo) : '…'}`],
+    filters.area && ['area', `Area: ${filters.area}`],
+    filters.medical && ['medical', filters.medical === 'yes' ? 'Has medical notes' : 'No medical notes'],
+    filters.consent && ['consent', `Photo consent: ${filters.consent === 'yes' ? 'Yes' : 'No'}`],
+    filters.attendance && ['attendance', `Attendance: ${ATTENDANCE_BANDS[filters.attendance]}`],
+    filters.verification && ['verification', filters.verification === 'verified' ? 'Verified' : VERIFICATION_REASON_LABEL[filters.verification]],
+    filters.progress && ['progress', `Progress: ${filters.progress === '__none' ? 'Not set' : PROGRESS[filters.progress]?.label}`],
+  ].filter(Boolean) : []
+  function removeChip(key) {
+    if (key === 'age') setFilters(f => ({ ...f, ageMin: '', ageMax: '' }))
+    else if (key === 'joined') setFilters(f => ({ ...f, joinedFrom: '', joinedTo: '' }))
+    else clearFilter(key)
+  }
+
+  function downloadCSV() {
+    const v = s => verificationOf(s)
+    const cols = [
+      { label: 'Ref',             get: s => s.student_ref },
+      { label: 'First Name',      get: s => s.first_name },
+      { label: 'Middle Name',     get: s => s.middle_name },
+      { label: 'Last Name',       get: s => s.last_name },
+      { label: 'Date of Birth',   get: s => s.date_of_birth ? fmtDate(s.date_of_birth) : '' },
+      { label: 'Age',             get: s => calcAge(s.date_of_birth) ?? '' },
+      { label: 'Group',           get: s => s.groups?.name || '' },
+      { label: 'Extra Classes',   get: s => (extraClasses[s.id] || []).map(ec => ec.groupName).join(', ') },
+      { label: 'Parent/Guardian', get: s => s.parent_name },
+      { label: 'Relationship',    get: s => s.relationship },
+      { label: 'Phone',           get: s => s.phone },
+      { label: 'Secondary Phone', get: s => s.secondary_phone },
+      { label: 'Email',           get: s => s.email },
+      { label: 'Address',         get: s => [s.house_no, s.street_name, s.town].filter(Boolean).join(', ') },
+      { label: 'Postcode',        get: s => s.postcode },
+      { label: 'Medical Notes',   get: s => s.medical_notes },
+      { label: 'Photo Consent',   get: s => s.photo_consent ? 'Yes' : 'No' },
+      { label: 'Date Joined',     get: s => s.date_joined ? fmtDate(s.date_joined) : '' },
+      { label: 'Attendance %',    get: s => attendance[s.id]?.pct ?? '' },
+      { label: 'Verification',    get: s => v(s).verified ? 'Verified' : VERIFICATION_REASON_LABEL[v(s).reason] },
+      { label: 'Progress',        get: s => PROGRESS[s.note?.progress_level]?.label || '' },
+    ]
+    exportCSV(sorted, cols, `students-${new Date().toISOString().slice(0, 10)}.csv`)
+    // Personal data leaving the app - record who and how many
+    logAction(profile, 'Downloaded students CSV', `${sorted.length} students${activeChips.length ? ' · ' + activeChips.map(c => c[1]).join('; ') : ''}`).catch(() => {})
+  }
 
   const sorted = [...filtered].sort((a, b) => {
     let va, vb
@@ -489,20 +608,115 @@ export default function AdminStudents({ readOnly }) {
     )}
     <div className="card">
       <div className="card-title">
-        Students ({filtered.length})
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input type="text" placeholder="Search by name…" value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: 170, padding: '7px 10px', fontSize: '.84rem' }} />
-          <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
-            style={{ padding: '7px 10px', fontSize: '.84rem' }}>
-            <option value="">All groups</option>
-            {groups.map(g => {
-              const range = calcAgeRange(g.students)
-              return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
-            })}
-          </select>
-        </div>
+        Students ({canFilter && filtered.length !== students.length ? `${filtered.length} of ${students.length}` : filtered.length})
+        {canFilter ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input type="text" placeholder="Search name, parent, phone, email, postcode or ref…" value={search}
+              onChange={e => setSearch(e.target.value)} style={{ width: 320, padding: '7px 10px', fontSize: '.84rem' }} />
+            {canExport && (
+              <button className="btn btn-outline btn-sm" onClick={downloadCSV} disabled={sorted.length === 0}>⬇ Download CSV</button>
+            )}
+            <button className={`btn btn-sm ${filtersOpen || activeChips.length ? 'btn-primary' : 'btn-outline'}`} onClick={() => setFiltersOpen(o => !o)}>
+              Filters{activeChips.length ? ` (${activeChips.length})` : ''} {filtersOpen ? '▴' : '▾'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input type="text" placeholder="Search by name…" value={search} onChange={e => setSearch(e.target.value)}
+              style={{ width: 170, padding: '7px 10px', fontSize: '.84rem' }} />
+            <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
+              style={{ padding: '7px 10px', fontSize: '.84rem' }}>
+              <option value="">All groups</option>
+              {groups.map(g => {
+                const range = calcAgeRange(g.students)
+                return <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}{range ? ` (${range})` : ''}</option>
+              })}
+            </select>
+          </div>
+        )}
       </div>
+
+      {canFilter && filtersOpen && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '10px 16px',
+          background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+          <FilterField label="Group">
+            <select value={filters.group} onChange={setFilter('group')}>
+              <option value="">Any group</option>
+              <option value="__none">No group</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}{g.teacherName ? ` — ${g.teacherName}` : ''}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Extra class">
+            <select value={filters.extra} onChange={setFilter('extra')}>
+              <option value="">Any</option>
+              <option value="__none">None</option>
+              {Object.entries(classTypesMeta).filter(([k]) => k !== 'punjabi').map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Age">
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="text" inputMode="numeric" placeholder="From" value={filters.ageMin}
+                onChange={e => setFilters(f => ({ ...f, ageMin: e.target.value.replace(/\D/g, '').slice(0, 2) }))} style={{ minWidth: 0, flex: 1 }} />
+              <span style={{ color: 'var(--muted)' }}>to</span>
+              <input type="text" inputMode="numeric" placeholder="To" value={filters.ageMax}
+                onChange={e => setFilters(f => ({ ...f, ageMax: e.target.value.replace(/\D/g, '').slice(0, 2) }))} style={{ minWidth: 0, flex: 1 }} />
+            </div>
+          </FilterField>
+          <FilterField label="Joined" wide>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="date" value={filters.joinedFrom} onChange={setFilter('joinedFrom')} style={{ minWidth: 0, flex: 1 }} />
+              <span style={{ color: 'var(--muted)' }}>to</span>
+              <input type="date" value={filters.joinedTo} onChange={setFilter('joinedTo')} style={{ minWidth: 0, flex: 1 }} />
+            </div>
+          </FilterField>
+          <FilterField label="Town / postcode">
+            <input type="text" placeholder="e.g. UB1 or Southall" value={filters.area} onChange={setFilter('area')} />
+          </FilterField>
+          <FilterField label="Medical notes">
+            <select value={filters.medical} onChange={setFilter('medical')}>
+              <option value="">Any</option><option value="yes">Has medical notes</option><option value="no">No medical notes</option>
+            </select>
+          </FilterField>
+          <FilterField label="Photo consent">
+            <select value={filters.consent} onChange={setFilter('consent')}>
+              <option value="">Any</option><option value="yes">Yes</option><option value="no">No</option>
+            </select>
+          </FilterField>
+          <FilterField label="Attendance">
+            <select value={filters.attendance} onChange={setFilter('attendance')}>
+              <option value="">Any</option>
+              {Object.entries(ATTENDANCE_BANDS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Verification">
+            <select value={filters.verification} onChange={setFilter('verification')}>
+              <option value="">Any</option>
+              <option value="verified">Verified</option>
+              {Object.entries(VERIFICATION_REASON_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Progress (teacher report)">
+            <select value={filters.progress} onChange={setFilter('progress')}>
+              <option value="">Any</option>
+              <option value="__none">Not set</option>
+              {Object.entries(PROGRESS).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
+            </select>
+          </FilterField>
+        </div>
+      )}
+
+      {activeChips.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          {activeChips.map(([key, label]) => (
+            <button key={key} onClick={() => removeChip(key)} title="Remove this filter"
+              style={{ fontSize: '.76rem', fontWeight: 600, padding: '4px 10px', borderRadius: 99, border: '1px solid #c7d2fe',
+                background: '#eef2ff', color: '#3730a3', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {label} ✕
+            </button>
+          ))}
+          <button onClick={() => setFilters(EMPTY_FILTERS)} className="btn btn-outline btn-xs">Clear all</button>
+        </div>
+      )}
 
       <div className="table-wrap">
         <table>
@@ -831,6 +1045,15 @@ export default function AdminStudents({ readOnly }) {
       </div>
     </div>
     </>
+  )
+}
+
+function FilterField({ label, children, wide }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '.8rem', gridColumn: wide ? 'span 2' : undefined }}>
+      <span style={{ fontWeight: 700, color: 'var(--muted)', fontSize: '.72rem', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</span>
+      {children}
+    </label>
   )
 }
 
