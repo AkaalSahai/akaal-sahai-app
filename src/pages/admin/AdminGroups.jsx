@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { addTeacher as assignTeacher, removeTeacher as unassignTeacher, makePrimary, makeCovering } from '../../lib/primaryTeachers'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 
 export default function AdminGroups({ readOnly }) {
@@ -54,10 +55,9 @@ export default function AdminGroups({ readOnly }) {
       const rows = tgMap[grp.id] || []
       const teacherRoles = {}
       rows.forEach(r => { teacherRoles[r.teacher_id] = r.role })
-      // teacher_id should already match whichever row holds 'primary' -
-      // addTeacherToGroup/removeTeacherFromGroup/makePrimary below keep it
-      // that way - but fall back to it directly for any row that predates
-      // the role column.
+      // teacher_id should already be one of the 'primary' rows -
+      // lib/primaryTeachers.js keeps it that way - but fall back to it
+      // directly for any row that predates the role column.
       if (grp.teacher_id && !teacherRoles[grp.teacher_id]) teacherRoles[grp.teacher_id] = 'primary'
       const ids = rows.map(r => r.teacher_id)
       const teacherIds = grp.teacher_id && !ids.includes(grp.teacher_id) ? [grp.teacher_id, ...ids] : ids
@@ -168,20 +168,13 @@ export default function AdminGroups({ readOnly }) {
     load()
   }
 
-  // A group's first-ever teacher becomes primary automatically; every
-  // teacher added after that is covering by default. Use makePrimary
-  // below to promote a covering teacher (or replace the primary) later.
+  // Rules (first teacher is primary, several primaries allowed, at least
+  // one kept) live in lib/primaryTeachers.js, shared with AdminClasses.
   async function addTeacherToGroup(groupId, teacherId) {
     if (!teacherId) return
     try {
       const g = groups.find(x => x.id === groupId)
-      const hasPrimary = (g?.teacherIds || []).some(id => g.teacherRoles?.[id] === 'primary')
-      const role = hasPrimary ? 'covering' : 'primary'
-      const { error } = await supabase.from('teacher_groups').insert({ teacher_id: teacherId, group_id: groupId, role })
-      if (error) { alert(error.message); return }
-      if (role === 'primary') {
-        await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
-      }
+      const role = await assignTeacher(g, teacherId)
       const teacherName = teachers.find(t => t.id === teacherId)?.name
       logAction(profile, 'Assigned teacher to group', `${teacherName} → ${g?.name} (${role})`).catch(() => {})
       load()
@@ -190,46 +183,22 @@ export default function AdminGroups({ readOnly }) {
 
   async function removeTeacherFromGroup(groupId, teacherId) {
     try {
-      const { error } = await supabase.from('teacher_groups').delete().eq('teacher_id', teacherId).eq('group_id', groupId)
-      if (error) { alert(error.message); return }
       const g = groups.find(x => x.id === groupId)
-      if (g?.teacher_id === teacherId) {
-        // Removing the primary promotes a remaining covering teacher (if
-        // any) rather than leaving the group with no primary at all.
-        const remaining = (g.teacherIds || []).filter(id => id !== teacherId)
-        const nextPrimary = remaining[0] || null
-        if (nextPrimary) {
-          await supabase.from('teacher_groups').update({ role: 'primary' })
-            .eq('group_id', groupId).eq('teacher_id', nextPrimary)
-        }
-        await supabase.from('groups').update({ teacher_id: nextPrimary }).eq('id', groupId)
-      }
+      await unassignTeacher(g, teacherId)
       const teacherName = teachers.find(t => t.id === teacherId)?.name
       logAction(profile, 'Removed teacher from group', `${teacherName} ← ${g?.name}`).catch(() => {})
       load()
     } catch (err) { alert('Error: ' + err.message) }
   }
 
-  // Promotes a covering teacher to primary, demoting whoever held it
-  // before - this is also how admin "adds a teacher as primary": add them
-  // normally (covering by default), then promote.
-  async function makePrimary(groupId, teacherId) {
+  async function changeRole(groupId, teacherId, role) {
     try {
       const g = groups.find(x => x.id === groupId)
-      const prevPrimaryId = (g?.teacherIds || []).find(id => g.teacherRoles?.[id] === 'primary')
-      if (prevPrimaryId === teacherId) return
-      if (prevPrimaryId) {
-        await supabase.from('teacher_groups').update({ role: 'covering' })
-          .eq('group_id', groupId).eq('teacher_id', prevPrimaryId)
-      }
-      const { error } = await supabase.from('teacher_groups').update({ role: 'primary' })
-        .eq('group_id', groupId).eq('teacher_id', teacherId)
-      if (error) { alert(error.message); return }
-      await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
+      await (role === 'primary' ? makePrimary : makeCovering)(g, teacherId)
       const teacherName = teachers.find(t => t.id === teacherId)?.name
-      logAction(profile, 'Set primary teacher', `${teacherName} → ${g?.name}`).catch(() => {})
+      logAction(profile, role === 'primary' ? 'Set primary teacher' : 'Set covering teacher', `${teacherName} → ${g?.name}`).catch(() => {})
       load()
-    } catch (err) { alert('Error: ' + err.message) }
+    } catch (err) { alert(err.message) }
   }
 
   async function deleteGroup(groupId) {
@@ -393,8 +362,9 @@ export default function AdminGroups({ readOnly }) {
                 </td>
                 <td>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                    {(g.teacherIds || []).map(tid => {
+                    {(g.teacherIds || []).map((tid, _, ids) => {
                       const t = teachers.find(x => x.id === tid)
+                      const primaryCount = ids.filter(id => g.teacherRoles?.[id] === 'primary').length
                       if (!t) return null
                       const isPrimary = g.teacherRoles?.[tid] === 'primary'
                       return (
@@ -408,11 +378,19 @@ export default function AdminGroups({ readOnly }) {
                             {isPrimary ? '· Primary' : '· Covering'}
                           </span>
                           {!readOnly && !isPrimary && (
-                            <button onClick={() => makePrimary(g.id, tid)}
+                            <button onClick={() => changeRole(g.id, tid, 'primary')}
                               style={{ background: 'none', border: 'none', cursor: 'pointer',
                                 color: '#3730a3', padding: '0 2px', fontSize: '.68rem', fontWeight: 700,
                                 textDecoration: 'underline' }}>
                               Make Primary
+                            </button>
+                          )}
+                          {!readOnly && isPrimary && primaryCount > 1 && (
+                            <button onClick={() => changeRole(g.id, tid, 'covering')}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#475569', padding: '0 2px', fontSize: '.68rem', fontWeight: 700,
+                                textDecoration: 'underline' }}>
+                              Make Covering
                             </button>
                           )}
                           {!readOnly && (

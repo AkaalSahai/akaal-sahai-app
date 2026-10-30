@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { addTeacher as assignTeacher, removeTeacher as unassignTeacher, makePrimary, makeCovering, groupTeacherLabels } from '../../lib/primaryTeachers'
 import { loadClassTypes, formatDayNames } from '../../lib/classTypes'
 import { fmtDate } from '../../lib/dates'
 
@@ -34,7 +35,7 @@ export default function AdminClasses({ readOnly }) {
   const [search, setSearch]     = useState({})
   const [results, setResults]   = useState({})
   const [enrolBusy, setEnrolBusy] = useState(null)
-  const [groupTeacherMap, setGroupTeacherMap] = useState({})  // ANY group_id → teacher_ids via teacher_groups
+  const [teacherGroupRows, setTeacherGroupRows] = useState([])  // all teacher_groups rows, for teacherNameForGroup
   const [dialog, setDialog]     = useState(null)
   const [manageOpen, setManageOpen] = useState(false)
   const [classTypeForm, setClassTypeForm] = useState(null)  // null = closed; {key, label, days, color} - key is null when adding new
@@ -59,10 +60,6 @@ export default function AdminClasses({ readOnly }) {
       ])
       setClassTypes(extraTypes)
       setClassTab(prev => (prev && extraTypes[prev]) ? prev : (Object.keys(extraTypes)[0] || null))
-      // tgMap stays a plain group_id -> [teacher_id, ...] map - teacherNameForGroup
-      // below (used for a student's *Punjabi* group, not these extra-class
-      // groups) already expects that exact shape. Role info goes in a
-      // separate map instead of changing tgMap's shape.
       const tgMap = {}
       const roleMap = {}
       ;(tg || []).forEach(r => {
@@ -71,7 +68,7 @@ export default function AdminClasses({ readOnly }) {
         if (!roleMap[r.group_id]) roleMap[r.group_id] = {}
         roleMap[r.group_id][r.teacher_id] = r.role
       })
-      setGroupTeacherMap(tgMap)
+      setTeacherGroupRows(tg || [])
       const countMap = {}
       ;(sc || []).forEach(r => { countMap[r.group_id] = (countMap[r.group_id] || 0) + 1 })
       setGroups((g || []).map(grp => {
@@ -153,19 +150,11 @@ export default function AdminClasses({ readOnly }) {
     })
   }
 
-  // Resolves the teacher for a student's *Punjabi* group (s.groups), checking
-  // both the legacy groups.teacher_id field and the teacher_groups junction —
-  // a group can be assigned via either.
+  // The primary teacher(s) of a student's *Punjabi* group (s.groups), e.g.
+  // "Harpreet S. & Jaspreet K." - see lib/primaryTeachers.js.
   function teacherNameForGroup(grp) {
     if (!grp) return null
-    const primary = teachers.find(t => t.id === grp.teacher_id)?.name
-    if (primary) return primary
-    const viaJunction = groupTeacherMap[grp.id] || []
-    for (const tid of viaJunction) {
-      const name = teachers.find(t => t.id === tid)?.name
-      if (name) return name
-    }
-    return null
+    return groupTeacherLabels([grp], teacherGroupRows, id => teachers.find(t => t.id === id)?.name)[grp.id]
   }
 
   async function loadEnrolled(groupId) {
@@ -300,70 +289,38 @@ export default function AdminClasses({ readOnly }) {
       ? { ...g, studentCount: Math.max(0, g.studentCount - 1) } : g))
   }
 
-  // A group's first-ever teacher becomes primary automatically; every
-  // teacher added after that is covering by default. Use makePrimary
-  // below to promote a covering teacher (or replace the primary) later.
+  // Rules (first teacher is primary, several primaries allowed, at least
+  // one kept) live in lib/primaryTeachers.js, shared with AdminGroups.
   async function addTeacher(groupId, teacherId) {
     if (!teacherId || readOnly) return
     const g = groups.find(x => x.id === groupId)
-    const hasPrimary = (g?.teacherIds || []).some(id => g.teacherRoles?.[id] === 'primary')
-    const role = hasPrimary ? 'covering' : 'primary'
-    const { error } = await supabase.from('teacher_groups')
-      .insert({ teacher_id: teacherId, group_id: groupId, role })
-    if (error) { alert(error.message); return }
-    // Keep groups.teacher_id in sync the same way AdminGroups.jsx does -
-    // otherwise a group staffed only through this tab never gets a primary
-    // teacher, which several other checks (RLS, notifications) still rely on.
-    if (role === 'primary') {
-      await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
-    }
-    const t = teachers.find(x => x.id === teacherId)
-    logAction(profile, 'Assigned teacher to group', `${t?.name} → ${g?.name} (${role})`).catch(() => {})
+    try {
+      const role = await assignTeacher(g, teacherId)
+      const t = teachers.find(x => x.id === teacherId)
+      logAction(profile, 'Assigned teacher to group', `${t?.name} → ${g?.name} (${role})`).catch(() => {})
+    } catch (err) { alert(err.message); return }
     load()
   }
 
   async function removeTeacher(groupId, teacherId) {
     if (readOnly) return
-    const { error } = await supabase.from('teacher_groups').delete()
-      .eq('teacher_id', teacherId).eq('group_id', groupId)
-    if (error) { alert(error.message); return }
     const g = groups.find(x => x.id === groupId)
-    // Same sync as above, in reverse - a removed teacher must not stay the
-    // primary teacher_id, or they'd keep access despite being "removed".
-    // Removing the primary promotes a remaining covering teacher instead
-    // of leaving the group with no primary at all.
-    if (g?.teacher_id === teacherId) {
-      const remaining = (g.teacherIds || []).filter(id => id !== teacherId)
-      const nextPrimary = remaining[0] || null
-      if (nextPrimary) {
-        await supabase.from('teacher_groups').update({ role: 'primary' })
-          .eq('group_id', groupId).eq('teacher_id', nextPrimary)
-      }
-      await supabase.from('groups').update({ teacher_id: nextPrimary }).eq('id', groupId)
-    }
-    const t = teachers.find(x => x.id === teacherId)
-    logAction(profile, 'Removed teacher from group', `${t?.name} ← ${g?.name}`).catch(() => {})
+    try {
+      await unassignTeacher(g, teacherId)
+      const t = teachers.find(x => x.id === teacherId)
+      logAction(profile, 'Removed teacher from group', `${t?.name} ← ${g?.name}`).catch(() => {})
+    } catch (err) { alert(err.message); return }
     load()
   }
 
-  // Promotes a covering teacher to primary, demoting whoever held it
-  // before - also how admin "adds a teacher as primary": add normally
-  // (covering by default), then promote.
-  async function makePrimary(groupId, teacherId) {
+  async function changeRole(groupId, teacherId, role) {
     if (readOnly) return
     const g = groups.find(x => x.id === groupId)
-    const prevPrimaryId = (g?.teacherIds || []).find(id => g.teacherRoles?.[id] === 'primary')
-    if (prevPrimaryId === teacherId) return
-    if (prevPrimaryId) {
-      await supabase.from('teacher_groups').update({ role: 'covering' })
-        .eq('group_id', groupId).eq('teacher_id', prevPrimaryId)
-    }
-    const { error } = await supabase.from('teacher_groups').update({ role: 'primary' })
-      .eq('group_id', groupId).eq('teacher_id', teacherId)
-    if (error) { alert(error.message); return }
-    await supabase.from('groups').update({ teacher_id: teacherId }).eq('id', groupId)
-    const t = teachers.find(x => x.id === teacherId)
-    logAction(profile, 'Set primary teacher', `${t?.name} → ${g?.name}`).catch(() => {})
+    try {
+      await (role === 'primary' ? makePrimary : makeCovering)(g, teacherId)
+      const t = teachers.find(x => x.id === teacherId)
+      logAction(profile, role === 'primary' ? 'Set primary teacher' : 'Set covering teacher', `${t?.name} → ${g?.name}`).catch(() => {})
+    } catch (err) { alert(err.message); return }
     load()
   }
 
@@ -511,8 +468,9 @@ export default function AdminClasses({ readOnly }) {
                     {g.name}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    {(g.teacherIds || []).map(tid => {
+                    {(g.teacherIds || []).map((tid, _, ids) => {
                       const t = teachers.find(x => x.id === tid)
+                      const primaryCount = ids.filter(id => g.teacherRoles?.[id] === 'primary').length
                       if (!t) return null
                       const isPrimary = g.teacherRoles?.[tid] === 'primary'
                       return (
@@ -526,11 +484,19 @@ export default function AdminClasses({ readOnly }) {
                             {isPrimary ? '· Primary' : '· Covering'}
                           </span>
                           {!readOnly && !isPrimary && (
-                            <button onClick={() => makePrimary(g.id, tid)}
+                            <button onClick={() => changeRole(g.id, tid, 'primary')}
                               style={{ background: 'none', border: 'none', cursor: 'pointer',
                                 color: '#3730a3', padding: '0 2px', fontSize: '.68rem', fontWeight: 700,
                                 textDecoration: 'underline' }}>
                               Make Primary
+                            </button>
+                          )}
+                          {!readOnly && isPrimary && primaryCount > 1 && (
+                            <button onClick={() => changeRole(g.id, tid, 'covering')}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#475569', padding: '0 2px', fontSize: '.68rem', fontWeight: 700,
+                                textDecoration: 'underline' }}>
+                              Make Covering
                             </button>
                           )}
                           {!readOnly && (

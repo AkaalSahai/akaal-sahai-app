@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { groupTeacherLabels } from '../../lib/primaryTeachers'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
@@ -55,7 +56,7 @@ export default function AdminApplications({ readOnly }) {
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
         supabase.from('users').select('id, name, role, extra_roles'),
-        supabase.from('teacher_groups').select('teacher_id, group_id'),
+        supabase.from('teacher_groups').select('teacher_id, group_id, role'),
         loadFormerStaff(),
       ])
       const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
@@ -63,13 +64,11 @@ export default function AdminApplications({ readOnly }) {
       setTeacherMap(tMap)
       // Former staff first so a current account always wins
       setUserMap({ ...formerStaffNameMap(former), ...Object.fromEntries((us || []).map(u => [u.id, u.name])) })
-      // A group's teacher can be set via the legacy groups.teacher_id field or
-      // via the teacher_groups junction (multi-teacher groups) — check both.
-      const tgGroupMap = {}
-      ;(tg || []).forEach(r => { if (!tgGroupMap[r.group_id] && tMap[r.teacher_id]) tgGroupMap[r.group_id] = tMap[r.teacher_id] })
+      // Primary teacher(s) per group - several come out as "Harpreet S. & Jaspreet K."
+      const teacherLabels = groupTeacherLabels(gr, tg, id => tMap[id])
       setStudentApps(pendingFirst(sa || []))
       setTeacherApps(pendingFirst(ta || []))
-      setGroups((gr || []).map(g => ({ ...g, teacherName: tMap[g.teacher_id] || tgGroupMap[g.id] || null })))
+      setGroups((gr || []).map(g => ({ ...g, teacherName: teacherLabels[g.id] })))
       setTransfers(pendingFirst(tr || []))
     } catch (err) {
       console.error('Applications load error:', err)
@@ -274,8 +273,9 @@ export default function AdminApplications({ readOnly }) {
               const range = calcAgeRange(g.students)
               const count = g.students?.length ?? 0
               const countColor = count >= 30 ? '#dc2626' : count >= 25 ? '#d97706' : '#16a34a'
-              const teacherShort = g.teacherName
-                ? g.teacherName.split(' ').map((w, i, a) => i === a.length - 1 ? w[0] + '.' : w).join(' ')
+              // Several primaries are already shortened ("Harpreet S. & Jaspreet K.")
+              const teacherShort = g.teacherName?.includes(' & ') ? g.teacherName
+                : g.teacherName ? g.teacherName.split(' ').map((w, i, a) => i === a.length - 1 ? w[0] + '.' : w).join(' ')
                 : null
               return (
                 <tr key={g.id} style={{ borderBottom: '1px solid #f8fafc' }}>

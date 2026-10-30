@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { groupTeacherLabels } from './primaryTeachers'
 
 // Fetches the student roster for ANY group - a student's primary Punjabi
 // group (matched via students.group_id) or an admin-managed extra class
@@ -69,7 +70,7 @@ export async function loadExtraClassEnrollments() {
   return map
 }
 
-// Resolves the teacher name for a student's PRIMARY Punjabi group - used
+// Resolves the primary teacher name(s) for a student's PRIMARY Punjabi group - used
 // wherever an extra-class roster (Gatka/Kirtan/etc) shows students who
 // belong to a *different* group day-to-day, so the teacher marking that
 // extra class can see who each student's Punjabi teacher is. Checks both
@@ -83,24 +84,14 @@ export async function loadPunjabiTeacherResolver() {
   try {
     const [{ data: users }, { data: tg }] = await Promise.all([
       supabase.from('users').select('id, name, role, extra_roles'),
-      supabase.from('teacher_groups').select('group_id, teacher_id'),
+      supabase.from('teacher_groups').select('group_id, teacher_id, role'),
     ])
     const teachers = (users || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const nameById = new Map(teachers.map(t => [t.id, t.name]))
-    const groupTeacherMap = {}
-    ;(tg || []).forEach(r => {
-      if (!groupTeacherMap[r.group_id]) groupTeacherMap[r.group_id] = []
-      groupTeacherMap[r.group_id].push(r.teacher_id)
-    })
+    // Several primary teachers come out as "Harpreet S. & Jaspreet K."
     return function resolvePunjabiTeacher(grp) {
       if (!grp) return null
-      const primary = nameById.get(grp.teacher_id)
-      if (primary) return primary
-      for (const tid of (groupTeacherMap[grp.id] || [])) {
-        const name = nameById.get(tid)
-        if (name) return name
-      }
-      return null
+      return groupTeacherLabels([grp], tg, id => nameById.get(id))[grp.id]
     }
   } catch (err) {
     console.error('loadPunjabiTeacherResolver error:', err)
