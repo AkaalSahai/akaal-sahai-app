@@ -5,6 +5,7 @@ import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 import { loadFormerStaff, formerStaffNameMap } from '../../lib/formerStaff'
+import { medicalStatus, MEDICAL_STATUS_LABEL, hasMedicalNotes } from '../../lib/medical'
 
 function pendingFirst(list) {
   return [...list].sort((a, b) => {
@@ -84,6 +85,7 @@ export default function AdminApplications({ readOnly }) {
       const { error } = await supabase.from('students').insert({
         first_name: app.first_name, middle_name: app.middle_name, last_name: app.last_name,
         date_of_birth: app.date_of_birth, medical_notes: app.medical_notes,
+        has_medical_condition: app.has_medical_condition ?? null,
         house_no: app.house_no, street_name: app.street_name, town: app.town, postcode: app.postcode,
         parent_name: app.parent_name, relationship: app.relationship,
         phone: app.phone, secondary_phone: app.secondary_phone, email: app.email,
@@ -353,7 +355,7 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Secondary Phone" value={app.secondary_phone || '—'} />
                 <Detail label="Email" value={app.email || '—'} />
                 <Detail label="Address" value={[app.house_no, app.street_name, app.town, app.postcode].filter(Boolean).join(', ')} />
-                {app.medical_notes && <Detail label="Medical Notes" value={app.medical_notes} />}
+                <Detail label="Medical Condition / Allergy" value={medicalStatus(app) === 'yes' && hasMedicalNotes(app.medical_notes) ? app.medical_notes : MEDICAL_STATUS_LABEL[medicalStatus(app)]} />
                 <Detail label="Photo Consent" value={app.photo_consent ? 'Yes' : 'No'} />
                 {app.status !== 'pending' && (
                   <Detail label={app.status === 'approved' ? 'Approved By' : 'Rejected By'} value={userMap[app.reviewed_by] || 'Unknown'} />
@@ -445,7 +447,7 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Reason for Transfer" value={tr.reason} />
                 {tr.requested_to_group_name && <Detail label="Requested Destination" value={tr.requested_to_group_name} />}
                 {tr.to_group_id && <Detail label="Moved To" value={groups.find(g => g.id === tr.to_group_id)?.name || '—'} />}
-                {tr.students?.medical_notes && (
+                {hasMedicalNotes(tr.students?.medical_notes) && (
                   <Detail label="Medical Notes" value={tr.students.medical_notes} />
                 )}
                 {tr.status !== 'pending' && (

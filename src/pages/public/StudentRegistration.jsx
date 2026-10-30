@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import PhoneInput from '../../components/PhoneInput'
 import { supabase } from '../../lib/supabase'
+import MedicalQuestion from '../../components/MedicalQuestion'
+import { medicalError, medicalPayload } from '../../lib/medical'
 
 /* ── inline styles ── */
 const S = {
@@ -247,7 +249,7 @@ export default function StudentRegistration() {
     first_name: '', middle_name: '', last_name: '', date_of_birth: '',
     house_no: '', street_name: '', town: '', postcode: '',
     parent_name: '', relationship: '', email: '',
-    medical_notes: '', photo_consent: false, gdpr_consent: false,
+    has_medical_condition: null, medical_notes: '', photo_consent: false, gdpr_consent: false,
   })
   const [phone, setPhone]       = useState('')
   const [secPhone, setSecPhone] = useState('')
@@ -285,6 +287,8 @@ export default function StudentRegistration() {
     if (secPhone && secPhone.length !== 10) e.sec_phone = 'Enter a valid 10-digit UK number (after +44)'
     if (!form.email.trim()) e.email = 'Required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = 'Enter a valid email address'
+    const med = medicalError(form, { required: true })
+    if (med) e.medical = med
     if (!form.gdpr_consent) e.gdpr_consent = 'You must acknowledge this to proceed'
     return e
   }
@@ -297,6 +301,7 @@ export default function StudentRegistration() {
     try {
       const { error } = await supabase.from('parent_applications').insert({
         ...form,
+        ...medicalPayload(form),
         phone: '+44' + phone,
         secondary_phone: secPhone ? '+44' + secPhone : null,
         status: 'pending',
@@ -407,10 +412,8 @@ export default function StudentRegistration() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label>Medical Notes / Allergies</label>
-            <textarea value={form.medical_notes} onChange={set('medical_notes')} placeholder="Leave blank if none" />
-          </div>
+          <MedicalQuestion value={form} error={errors.medical}
+            onChange={v => setForm(f => ({ ...f, has_medical_condition: v.has_medical_condition, medical_notes: v.medical_notes }))} />
 
           <div className="form-group">
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 400, cursor: 'pointer' }}>

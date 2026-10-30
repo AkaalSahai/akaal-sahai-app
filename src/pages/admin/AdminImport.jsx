@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { validateStudentForm, normalizeUkPhone } from '../../lib/studentChecks'
+import { hasMedicalNotes, isNothingAnswer } from '../../lib/medical'
 
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,date_joined,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
 const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,01/09/2020,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
@@ -140,6 +141,8 @@ export default function AdminImport({ readOnly }) {
         last_name: r.last_name.trim(),
         date_of_birth: parseDateToISO(r.date_of_birth) || null,
         medical_notes: r.medical_notes?.trim() || null,
+        // "no"/"none" in the sheet is a parent's No; blank means not recorded
+        has_medical_condition: hasMedicalNotes(r.medical_notes) ? true : isNothingAnswer(r.medical_notes) ? false : null,
         house_no: r.house_no?.trim() || null,
         street_name: r.street_name?.trim() || null,
         town: r.town?.trim() || null,
