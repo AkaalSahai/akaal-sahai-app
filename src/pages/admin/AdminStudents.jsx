@@ -1,5 +1,6 @@
 import { useEffect, useState, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
+import { groupTeacherLabels } from '../../lib/primaryTeachers'
 import MedicalBadge from '../../components/MedicalBadge'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
@@ -125,22 +126,19 @@ export default function AdminStudents({ readOnly }) {
       supabase.from('transfer_requests').select('*')
         .eq('request_type', 'removal').eq('status', 'pending'),
       supabase.from('users').select('id, name, role, extra_roles'),
-      supabase.from('teacher_groups').select('teacher_id, group_id'),
+      supabase.from('teacher_groups').select('teacher_id, group_id, role'),
       loadAttendanceStats(),
     ])
     setAttendance(attMap)
     const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
     setTeacherMap(teacherMap)
-    // A group's teacher can be set via the legacy groups.teacher_id field or via
-    // the teacher_groups junction (multi-teacher groups) — check both, same as
-    // AdminGroups.jsx.
-    const tgGroupMap = {}
-    ;(tg || []).forEach(r => { if (!tgGroupMap[r.group_id] && teacherMap[r.teacher_id]) tgGroupMap[r.group_id] = teacherMap[r.teacher_id] })
+    // Primary teacher(s) per group - several come out as "Harpreet S. & Jaspreet K."
+    const teacherLabels = groupTeacherLabels(g, tg, id => teacherMap[id])
     const noteMap = {}
     ;(n || []).forEach(note => { noteMap[note.student_id] = note })
     setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
-    setGroups((g || []).map(grp => ({ ...grp, teacherName: teacherMap[grp.teacher_id] || tgGroupMap[grp.id] || null })))
+    setGroups((g || []).map(grp => ({ ...grp, teacherName: teacherLabels[grp.id] })))
     setRemovalRequests(removals || [])
     setLoading(false)
   }

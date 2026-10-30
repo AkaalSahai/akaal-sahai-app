@@ -102,7 +102,7 @@ export default function AdminSettings() {
     const { data, error } = await supabase.from('teacher_groups').select('group_id').eq('role', 'covering')
     if (error) { alert(error.message); return }
     const removed = (data || []).length
-    if (removed === 0) { alert("Every group already only has its primary teacher — nothing to reset."); return }
+    if (removed === 0) { alert("Every group already only has its primary teachers — nothing to reset."); return }
     setResetPreview({ removed, groups: new Set((data || []).map(r => r.group_id)).size })
   }
 
@@ -345,9 +345,9 @@ export default function AdminSettings() {
       <div className="card" style={{ marginTop: 20 }}>
         <div className="card-title">Teacher Assignments</div>
         <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginTop: -6, marginBottom: 14 }}>
-          Every group can have one primary teacher and any number of covering
-          teachers. If covering assignments have built up over time, use this
-          to bring every group back down to just its primary teacher.
+          Every group can have one or more primary teachers and any number of
+          covering teachers. If covering assignments have built up over time,
+          use this to bring every group back down to just its primary teachers.
         </p>
         <button className="btn btn-danger btn-sm" onClick={openResetPreview}>
           Reset to Primary Teachers Only
@@ -363,7 +363,7 @@ export default function AdminSettings() {
       {resetPreview && (
         <ConfirmDialog
           danger
-          message={`This removes ${resetPreview.removed} covering teacher${resetPreview.removed === 1 ? '' : 's'} across ${resetPreview.groups} group${resetPreview.groups === 1 ? '' : 's'}, leaving only each group's primary teacher. Anyone removed loses access to that group's register until re-added.`}
+          message={`This removes ${resetPreview.removed} covering teacher${resetPreview.removed === 1 ? '' : 's'} across ${resetPreview.groups} group${resetPreview.groups === 1 ? '' : 's'}, leaving only each group's primary teachers. Anyone removed loses access to that group's register until re-added.`}
           confirmText={resetBusy ? 'Resetting…' : 'Reset'}
           onConfirm={confirmReset}
           onCancel={() => setResetPreview(null)}
