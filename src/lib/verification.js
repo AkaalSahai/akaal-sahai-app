@@ -3,6 +3,8 @@
 // breakdown view, and the Dashboard stat, so this logic can't drift
 // out of sync between files the way isClassDay() once did.
 
+import { normalizeUkPhone } from './studentChecks'
+
 // Fields a teacher actually sees/edits for a student - exactly what
 // TeacherStudents.jsx's save() payload touches. If any of these change
 // after a verification, that sign-off no longer applies.
@@ -30,11 +32,23 @@ function tidyName(v) {
   return typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : v
 }
 
+// Same for phone numbers: "7700 900123", "07700900123" and "+447700900123"
+// are one number, so tidying the format (the admin one-click fix) mustn't
+// undo a verification either.
+const PHONE_FIELDS = new Set(['phone', 'secondary_phone'])
+function samePhone(a, b) {
+  if (a === b) return true
+  const na = normalizeUkPhone(a), nb = normalizeUkPhone(b)
+  return !!na && na === nb
+}
+
 function snapshotMatchesStudent(snapshot, student) {
   if (!snapshot) return false
   return VERIFIED_FIELDS.every(f => {
     const a = snapshot[f] ?? null, b = student[f] ?? null
-    return NAME_FIELDS.has(f) ? tidyName(a) === tidyName(b) : a === b
+    if (NAME_FIELDS.has(f)) return tidyName(a) === tidyName(b)
+    if (PHONE_FIELDS.has(f)) return samePhone(a, b)
+    return a === b
   })
 }
 

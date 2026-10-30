@@ -9,6 +9,8 @@ import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_L
 import { loadGroupStudents, loadPunjabiTeacherResolver, loadExtraClassEnrollments } from '../../lib/classRoster'
 import { loadAttendanceStats } from '../../lib/attendance'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
+import { studentIssues, normalizeUkPhone, validateStudentForm, isValidEmail } from '../../lib/studentChecks'
+import { IssueBadge, IssueList, FieldError, FormWarnings } from '../../components/StudentIssues'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -28,6 +30,8 @@ export default function TeacherStudents() {
   const [editing, setEditing]   = useState(null)   // student id or 'new'
   const [form, setForm]         = useState(EMPTY_FORM)
   const [busy, setBusy]             = useState(false)
+  const [saveTried, setSaveTried]   = useState(false)   // show field errors only after a save attempt
+  const [onlyIssues, setOnlyIssues] = useState(false)
   const [newStudentGroupId, setNewStudentGroupId] = useState(null)
   const [search, setSearch]         = useState('')
   const [sortCol, setSortCol]       = useState('name')
@@ -123,6 +127,9 @@ export default function TeacherStudents() {
   }
 
   async function submitVerification(s) {
+    // Email is required from Oct 2026, and a record with a red problem
+    // (e.g. "Mother" in the phone box) can't be signed off as correct
+    if (!canConfirm(s)) return
     setVerifyBusy(true)
     try {
       const { error } = await supabase.from('student_verifications').insert({
@@ -149,6 +156,7 @@ export default function TeacherStudents() {
     setEditing(null)
     setVerifyingId(null)
     setSearch('')
+    setOnlyIssues(false)
     setLoading(true)
     try {
       const grp = myGroups.find(g => g.id === gid)
@@ -173,12 +181,15 @@ export default function TeacherStudents() {
       postcode: s.postcode || '', medical_notes: s.medical_notes || '',
       photo_consent: s.photo_consent || false,
     })
+    setSaveTried(false)
+    setVerifyingId(null)
     setEditing(s.id)
   }
 
   function startNew() {
     setForm({ ...EMPTY_FORM, date_joined: new Date().toISOString().split('T')[0] })
     setNewStudentGroupId(groupId)
+    setSaveTried(false)
     setEditing('new')
   }
 
@@ -191,6 +202,8 @@ export default function TeacherStudents() {
     if (!form.first_name.trim() || !form.last_name.trim()) {
       alert('First name and last name are required'); return
     }
+    setSaveTried(true)
+    if (Object.keys(validateStudentForm(form, { isNew: editing === 'new' }).errors).length) return
     setBusy(true)
     try {
       const payload = {
@@ -201,8 +214,9 @@ export default function TeacherStudents() {
         date_joined: form.date_joined || null,
         parent_name: form.parent_name.trim() || null,
         relationship: form.relationship.trim() || null,
-        phone: form.phone.trim() || null,
-        secondary_phone: form.secondary_phone.trim() || null,
+        // Phones stored the way the sign-up form stores them (+44...)
+        phone: normalizeUkPhone(form.phone) || form.phone.trim() || null,
+        secondary_phone: normalizeUkPhone(form.secondary_phone) || form.secondary_phone.trim() || null,
         email: form.email.trim() || null,
         house_no: form.house_no.trim() || null,
         street_name: form.street_name.trim() || null,
@@ -259,8 +273,18 @@ export default function TeacherStudents() {
     return <span style={{ marginLeft: 3, fontSize: '.6rem', color: 'var(--primary)' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
   }
 
+  // Data checks - see lib/studentChecks.js. Shown for the teacher's own
+  // (Punjabi) group only - see isPunjabiGroup below. Possible duplicates are
+  // left out here: they're sorted out by admins only.
+  const issuesOf = s => studentIssues(s)
+  const hasRedIssue = s => issuesOf(s).some(i => i.level === 'error')
+  const canConfirm = s => isValidEmail(s.email) && !hasRedIssue(s)
+  const formCheck = editing ? validateStudentForm(form, { isNew: editing === 'new' }) : null
+  const formErr = k => saveTried ? formCheck?.errors[k] : null
+
   const filtered = students.filter(s => {
     const q = search.toLowerCase()
+    if (onlyIssues && !issuesOf(s).length) return false
     return !q || [s.first_name, s.middle_name, s.last_name, s.parent_name]
       .filter(Boolean).join(' ').toLowerCase().includes(q)
   })
@@ -318,6 +342,7 @@ export default function TeacherStudents() {
   const isPunjabiGroup = !selectedGroup?.class_type || selectedGroup.class_type === 'punjabi'
   const canEditHere = canEdit && isPunjabiGroup
   const punjabiGroups = myGroups.filter(g => !g.class_type || g.class_type === 'punjabi')
+  const withIssues = isPunjabiGroup ? students.filter(s => issuesOf(s).length).length : 0
 
   return (
     <>
@@ -347,6 +372,16 @@ export default function TeacherStudents() {
           padding: '10px 14px', marginBottom: 16, fontSize: '.84rem', color: '#1e40af' }}>
           Viewing only — {selectedGroup?.name || 'this class'}'s roster is shown here, but adding, editing, or
           verifying a student's details is done from their Punjabi group.
+        </div>
+      )}
+
+      {isPunjabiGroup && withIssues > 0 && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px',
+          marginBottom: 16, fontSize: '.84rem', color: '#92400e', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>⚠ {withIssues} of your students have details missing or needing a check (marked ⚠ below){canEdit ? ' – please update them when you speak to the parents.' : '.'}</span>
+          <button className="btn btn-outline btn-xs" onClick={() => setOnlyIssues(o => !o)}>
+            {onlyIssues ? 'Show all students' : 'Show only these'}
+          </button>
         </div>
       )}
 
@@ -383,6 +418,7 @@ export default function TeacherStudents() {
             <div className="form-group">
               <label>Date of Birth</label>
               <input type="date" value={form.date_of_birth} onChange={set('date_of_birth')} />
+              <FieldError msg={formErr('date_of_birth')} />
             </div>
             <div className="form-group">
               <label>Date Joined</label>
@@ -406,16 +442,19 @@ export default function TeacherStudents() {
               </select>
             </div>
             <div className="form-group">
-              <label>Phone</label>
+              <label>Phone{editing === 'new' ? ' *' : ''}</label>
               <input value={form.phone} onChange={set('phone')} placeholder="+447700000000" />
+              <FieldError msg={formErr('phone')} />
             </div>
             <div className="form-group">
               <label>Secondary Phone</label>
               <input value={form.secondary_phone} onChange={set('secondary_phone')} placeholder="Optional" />
+              <FieldError msg={formErr('secondary_phone')} />
             </div>
             <div className="form-group">
-              <label>Email</label>
+              <label>Email{editing === 'new' ? ' *' : ''}</label>
               <input type="email" value={form.email} onChange={set('email')} placeholder="parent@example.com" />
+              <FieldError msg={formErr('email')} />
             </div>
           </div>
 
@@ -451,6 +490,12 @@ export default function TeacherStudents() {
             Photo consent given
           </label>
 
+          <FormWarnings warnings={formCheck?.warnings} />
+          {saveTried && Object.keys(formCheck?.errors || {}).length > 0 && (
+            <div style={{ color: '#dc2626', fontSize: '.8rem', fontWeight: 600, marginBottom: 10 }}>
+              Please correct the fields marked in red.
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-success" disabled={busy} onClick={save}>
               {busy ? 'Saving…' : editing === 'new' ? 'Add Student' : 'Save Changes'}
@@ -502,6 +547,7 @@ export default function TeacherStudents() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600 }}>{fullName}</span>
                       <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                      {isPunjabiGroup && <IssueBadge issues={issuesOf(s)} />}
                       {(extraClasses[s.id] || []).map(ec => (
                         <span key={ec.class_type} title={`Also enrolled in ${ec.groupName}`}
                           style={{ fontSize: '.68rem', fontWeight: 700, color: '#7c3aed',
@@ -583,6 +629,7 @@ export default function TeacherStudents() {
                       <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 10 }}>
                         Please review {fullName}'s details below
                       </div>
+                      <IssueList issues={issuesOf(s)} />
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
                         gap: 10, marginBottom: 14, fontSize: '.83rem' }}>
                         <div><strong>Date of birth:</strong> {fmtDate(s.date_of_birth) || '—'}</div>
@@ -595,8 +642,19 @@ export default function TeacherStudents() {
                         <div style={{ gridColumn: '1 / -1' }}><strong>Medical notes:</strong> {s.medical_notes || 'None'}</div>
                         <div><strong>Photo consent:</strong> {s.photo_consent ? 'Yes' : 'No'}</div>
                       </div>
+                      {!canConfirm(s) && (
+                        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px',
+                          marginBottom: 12, fontSize: '.8rem', color: '#b91c1c', fontWeight: 600 }}>
+                          {hasRedIssue(s)
+                            ? 'Please correct the details marked in red'
+                            : 'A parent email address is needed'} before these details can be confirmed.{' '}
+                          {canEditHere
+                            ? <button className="btn btn-outline btn-xs" onClick={() => startEdit(s)}>{hasRedIssue(s) ? 'Edit details' : 'Add email'}</button>
+                            : 'Please ask an admin to update them.'}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn btn-primary btn-sm" disabled={verifyBusy} onClick={() => submitVerification(s)}>
+                        <button className="btn btn-primary btn-sm" disabled={verifyBusy || !canConfirm(s)} onClick={() => submitVerification(s)}>
                           {verifyBusy ? 'Saving…' : '✓ I confirm these details are correct'}
                         </button>
                         <button className="btn btn-outline btn-sm" onClick={() => setVerifyingId(null)}>Cancel</button>

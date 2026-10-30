@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
+import { validateStudentForm, normalizeUkPhone } from '../../lib/studentChecks'
 
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,date_joined,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
 const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,01/09/2020,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
@@ -99,6 +100,13 @@ export default function AdminImport({ readOnly }) {
         errs.push(`Row ${i + 2}: unrecognised date format "${row.date_of_birth}" — use DD/MM/YYYY`)
       if (row.date_joined && !parseDateToISO(row.date_joined))
         errs.push(`Row ${i + 2}: unrecognised date_joined format "${row.date_joined}" — use DD/MM/YYYY`)
+      // Same checks as adding a student by hand: email and phone required,
+      // UK phone numbers, date of birth not in the future and age 4+.
+      // (Also catches shifted columns, e.g. "Mother" landing in phone.)
+      const check = validateStudentForm({ ...row, date_of_birth: parseDateToISO(row.date_of_birth) }, { isNew: true })
+      Object.entries(check.errors).forEach(([field, msg]) => {
+        if (field !== 'first_name') errs.push(`Row ${i + 2}: ${field} – ${msg}${row[field] ? ` ("${row[field]}")` : ''}`)
+      })
       parsed.push(row)
     })
     setRows(parsed); setErrors(errs); setResult(null)
@@ -138,8 +146,8 @@ export default function AdminImport({ readOnly }) {
         postcode: r.postcode?.trim() || null,
         parent_name: r.parent_name?.trim() || null,
         relationship: r.relationship?.trim() || null,
-        phone: r.phone?.trim() || null,
-        secondary_phone: r.secondary_phone?.trim() || null,
+        phone: normalizeUkPhone(r.phone) || r.phone?.trim() || null,
+        secondary_phone: normalizeUkPhone(r.secondary_phone) || r.secondary_phone?.trim() || null,
         email: r.email?.trim() || null,
         photo_consent: ['yes','true','1'].includes(r.photo_consent?.trim().toLowerCase()),
         // Real historical join date if the CSV provides one (e.g. migrating
@@ -196,7 +204,8 @@ export default function AdminImport({ readOnly }) {
 
       <div className="alert alert-info">
         Upload a CSV file with student data. Download the template to see the required format.
-        Groups will be created automatically if they don't exist yet.
+        Groups will be created automatically if they don't exist yet. Every row needs a parent
+        email and a UK phone number.
       </div>
 
       <button className="btn btn-outline" style={{ marginBottom: 16 }} onClick={downloadTemplate}>

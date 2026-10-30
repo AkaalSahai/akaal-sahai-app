@@ -11,11 +11,13 @@ import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 import { loadExtraClassEnrollments } from '../../lib/classRoster'
 import { getVerificationStatus, VERIFICATION_REASON_LABEL } from '../../lib/verification'
 import { exportCSV } from '../../lib/csv'
+import { studentIssues, findDuplicates, ISSUE_TYPES, phoneFormatFix, normalizeUkPhone, validateStudentForm } from '../../lib/studentChecks'
+import { IssueBadge, IssueList, IssuePill, FieldError, FormWarnings } from '../../components/StudentIssues'
 
 // Admin/registrar filter panel - every field starts "off"
 const EMPTY_FILTERS = {
   group: '', extra: '', ageMin: '', ageMax: '', joinedFrom: '', joinedTo: '', area: '',
-  medical: '', consent: '', attendance: '', verification: '', progress: '',
+  medical: '', consent: '', attendance: '', verification: '', progress: '', issues: '',
 }
 const ATTENDANCE_BANDS = { lt50: 'Below 50%', '50to74': '50–74%', '75plus': '75% and above', none: 'No records yet' }
 
@@ -88,6 +90,9 @@ export default function AdminStudents({ readOnly }) {
   const [editingStudentId, setEditingStudentId] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [savingStudent, setSavingStudent] = useState(false)
+  const [editTried, setEditTried] = useState(false)   // show field errors only after a save attempt
+  const [phoneFixOpen, setPhoneFixOpen] = useState(false)
+  const [phoneFixBusy, setPhoneFixBusy] = useState(false)
   const [dialog, setDialog] = useState(null)
   const [teacherMap, setTeacherMap] = useState({})
   const [attendance, setAttendance] = useState({})  // studentId -> { pct, sessions }
@@ -149,6 +154,7 @@ export default function AdminStudents({ readOnly }) {
       town: s.town || '', postcode: s.postcode || '',
       medical_notes: s.medical_notes || '', photo_consent: s.photo_consent || false,
     })
+    setEditTried(false)
     setEditingStudentId(s.id)
   }
 
@@ -165,6 +171,8 @@ export default function AdminStudents({ readOnly }) {
     if (!editForm.first_name.trim() || !editForm.last_name.trim()) {
       alert('First name and last name are required'); return
     }
+    setEditTried(true)
+    if (Object.keys(validateStudentForm(editForm, { isNew: false }).errors).length) return
     setSavingStudent(true)
     try {
       const payload = {
@@ -174,8 +182,9 @@ export default function AdminStudents({ readOnly }) {
         date_of_birth: editForm.date_of_birth || null,
         parent_name: editForm.parent_name.trim() || null,
         relationship: editForm.relationship.trim() || null,
-        phone: editForm.phone.trim() || null,
-        secondary_phone: editForm.secondary_phone.trim() || null,
+        // Phones stored the way the sign-up form stores them (+44...)
+        phone: normalizeUkPhone(editForm.phone) || editForm.phone.trim() || null,
+        secondary_phone: normalizeUkPhone(editForm.secondary_phone) || editForm.secondary_phone.trim() || null,
         email: editForm.email.trim() || null,
         house_no: editForm.house_no.trim() || null,
         street_name: editForm.street_name.trim() || null,
@@ -443,6 +452,23 @@ export default function AdminStudents({ readOnly }) {
     if (!a || a.pct === null || a.pct === undefined) return 'none'
     return a.pct < 50 ? 'lt50' : a.pct < 75 ? '50to74' : '75plus'
   }
+  // Data checks - see lib/studentChecks.js
+  const duplicates = canFilter ? findDuplicates(students) : {}
+  const issueMap = canFilter ? Object.fromEntries(students.map(s => [s.id, studentIssues(s, duplicates)])) : {}
+  const issuesOf = s => issueMap[s.id] || []
+  const issueCounts = {}
+  let seriousCount = 0
+  students.forEach(s => {
+    const iss = issuesOf(s)
+    if (iss.some(i => i.level === 'error')) seriousCount++
+    iss.forEach(i => { issueCounts[i.key] = (issueCounts[i.key] || 0) + 1 })
+  })
+  const phoneFixes = canExport
+    ? students.map(s => ({ s, to: phoneFormatFix(s.phone) })).filter(x => x.to)
+    : []
+  const editCheck = editForm ? validateStudentForm(editForm, { isNew: false }) : null
+  const editErr = k => editTried ? editCheck?.errors[k] : null
+
   const setFilter = k => e => setFilters(f => ({ ...f, [k]: e.target.value }))
   const clearFilter = k => setFilters(f => ({ ...f, [k]: '' }))
 
@@ -480,6 +506,12 @@ export default function AdminStudents({ readOnly }) {
         if (f.verification === 'verified' ? !v.verified : v.verified || v.reason !== f.verification) return false
       }
       if (f.progress === '__none' ? !!s.note?.progress_level : (f.progress && s.note?.progress_level !== f.progress)) return false
+      if (f.issues) {
+        const iss = issuesOf(s)
+        if (f.issues === 'any' ? !iss.length
+          : f.issues === 'serious' ? !iss.some(i => i.level === 'error')
+          : !iss.some(i => i.key === f.issues)) return false
+      }
       return true
     }
     const matchSearch = !q || name.includes(q)
@@ -500,11 +532,32 @@ export default function AdminStudents({ readOnly }) {
     filters.attendance && ['attendance', `Attendance: ${ATTENDANCE_BANDS[filters.attendance]}`],
     filters.verification && ['verification', filters.verification === 'verified' ? 'Verified' : VERIFICATION_REASON_LABEL[filters.verification]],
     filters.progress && ['progress', `Progress: ${filters.progress === '__none' ? 'Not set' : PROGRESS[filters.progress]?.label}`],
+    filters.issues && ['issues', `Details: ${filters.issues === 'any' ? 'Any issue' : filters.issues === 'serious' ? 'Serious issues' : ISSUE_TYPES[filters.issues]?.label}`],
   ].filter(Boolean) : []
   function removeChip(key) {
     if (key === 'age') setFilters(f => ({ ...f, ageMin: '', ageMax: '' }))
     else if (key === 'joined') setFilters(f => ({ ...f, joinedFrom: '', joinedTo: '' }))
     else clearFilter(key)
+  }
+
+  // Admin one-click fix: format only (e.g. 7700900123 -> +447700900123), never
+  // the number itself. Each update only applies if the phone is still what
+  // was previewed, so a change made meanwhile by someone else is left alone.
+  async function applyPhoneFixes() {
+    setDialog(null)
+    setPhoneFixBusy(true)
+    let done = 0
+    for (const { s, to } of phoneFixes) {
+      const { data, error } = await supabase.from('students').update({ phone: to })
+        .eq('id', s.id).eq('phone', s.phone).select('id')
+      if (!error && data?.length) done++
+    }
+    logAction(profile, 'Fixed phone number formats',
+      `${done} of ${phoneFixes.length} students – format only, e.g. 7700900123 → +447700900123`).catch(() => {})
+    setPhoneFixBusy(false)
+    setPhoneFixOpen(false)
+    await load()
+    alert(`${done} phone numbers tidied.${done < phoneFixes.length ? ` ${phoneFixes.length - done} were skipped (changed meanwhile or not saved).` : ''}`)
   }
 
   function downloadCSV() {
@@ -606,6 +659,69 @@ export default function AdminStudents({ readOnly }) {
         ))}
       </div>
     )}
+    {canFilter && (
+      <div className="card">
+        <div className="card-title">
+          Student details check
+          <IssuePill level={seriousCount ? 'error' : 'warning'} active={filters.issues === 'serious'}
+            onClick={() => setFilters(f => ({ ...f, issues: f.issues === 'serious' ? '' : 'serious' }))}>
+            {seriousCount} students with serious issues
+          </IssuePill>
+        </div>
+        <div style={{ fontSize: '.8rem', color: 'var(--muted)', marginBottom: 10 }}>
+          Click a count to list those students. Red = must be fixed, amber = please check or complete.
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {Object.entries(ISSUE_TYPES).filter(([k]) => issueCounts[k]).map(([k, t]) => (
+            <IssuePill key={k} level={t.level} active={filters.issues === k}
+              onClick={() => setFilters(f => ({ ...f, issues: f.issues === k ? '' : k }))}>
+              {t.label}: <strong>{issueCounts[k]}</strong>
+            </IssuePill>
+          ))}
+          {!Object.keys(issueCounts).length && <span style={{ fontSize: '.84rem', color: '#15803d', fontWeight: 600 }}>✓ All student details look complete</span>}
+        </div>
+        {canExport && !readOnly && phoneFixes.length > 0 && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setPhoneFixOpen(o => !o)}>
+                {phoneFixOpen ? 'Hide' : 'Preview'} phone format fix ({phoneFixes.length}) {phoneFixOpen ? '▴' : '▾'}
+              </button>
+              <span style={{ fontSize: '.76rem', color: 'var(--muted)' }}>
+                Only the format changes (e.g. 7700 900123 → +447700900123) – never the number itself.
+              </span>
+            </div>
+            {phoneFixOpen && (
+              <div style={{ marginTop: 10 }}>
+                <div className="table-wrap" style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  <table>
+                    <thead><tr><th>Ref</th><th>Student</th><th>Group</th><th>Phone now</th><th>Will become</th></tr></thead>
+                    <tbody>
+                      {phoneFixes.map(({ s, to }) => (
+                        <tr key={s.id}>
+                          <td>{s.student_ref}</td>
+                          <td>{[s.first_name, s.last_name].filter(Boolean).join(' ')}</td>
+                          <td>{s.groups?.name || '—'}</td>
+                          <td style={{ fontFamily: 'monospace' }}>{s.phone}</td>
+                          <td style={{ fontFamily: 'monospace', color: '#15803d', fontWeight: 700 }}>{to}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} disabled={phoneFixBusy}
+                  onClick={() => setDialog({
+                    message: `Tidy the format of ${phoneFixes.length} phone numbers as listed? The numbers themselves don't change, and this is recorded in the Activity log.`,
+                    confirmText: 'Fix formats',
+                    onConfirm: applyPhoneFixes,
+                  })}>
+                  {phoneFixBusy ? 'Fixing…' : `Fix these ${phoneFixes.length} phone numbers`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )}
     <div className="card">
       <div className="card-title">
         Students ({canFilter && filtered.length !== students.length ? `${filtered.length} of ${students.length}` : filtered.length})
@@ -702,6 +818,14 @@ export default function AdminStudents({ readOnly }) {
               {Object.entries(PROGRESS).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
             </select>
           </FilterField>
+          <FilterField label="Details check">
+            <select value={filters.issues} onChange={setFilter('issues')}>
+              <option value="">Any</option>
+              <option value="serious">Serious issues (red)</option>
+              <option value="any">Any issue (incl. missing email)</option>
+              {Object.entries(ISSUE_TYPES).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
+            </select>
+          </FilterField>
         </div>
       )}
 
@@ -748,6 +872,7 @@ export default function AdminStudents({ readOnly }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             <div className="student-name">{fullName}</div>
                             <MedicalBadge notes={s.medical_notes} studentName={fullName} />
+                            {canFilter && <IssueBadge issues={issuesOf(s)} />}
                             {(extraClasses[s.id] || []).map(ec => (
                               <span key={ec.class_type} title={`Also enrolled in ${ec.groupName}`}
                                 style={{ fontSize: '.68rem', fontWeight: 700, color: '#7c3aed',
@@ -834,6 +959,7 @@ export default function AdminStudents({ readOnly }) {
                               <div className="form-group">
                                 <label>Date of Birth</label>
                                 <input type="date" value={editForm.date_of_birth} onChange={setEdit('date_of_birth')} />
+                                <FieldError msg={editErr('date_of_birth')} />
                               </div>
                             </div>
 
@@ -855,14 +981,17 @@ export default function AdminStudents({ readOnly }) {
                               <div className="form-group">
                                 <label>Phone</label>
                                 <input value={editForm.phone} onChange={setEdit('phone')} placeholder="+447700000000" />
+                                <FieldError msg={editErr('phone')} />
                               </div>
                               <div className="form-group">
                                 <label>Secondary Phone</label>
                                 <input value={editForm.secondary_phone} onChange={setEdit('secondary_phone')} placeholder="Optional" />
+                                <FieldError msg={editErr('secondary_phone')} />
                               </div>
                               <div className="form-group">
                                 <label>Email</label>
                                 <input type="email" value={editForm.email} onChange={setEdit('email')} />
+                                <FieldError msg={editErr('email')} />
                               </div>
                             </div>
 
@@ -896,6 +1025,12 @@ export default function AdminStudents({ readOnly }) {
                               Photo consent given
                             </label>
 
+                            <FormWarnings warnings={editCheck?.warnings} />
+                            {editTried && Object.keys(editCheck?.errors || {}).length > 0 && (
+                              <div style={{ color: '#dc2626', fontSize: '.8rem', fontWeight: 600, marginBottom: 10 }}>
+                                Please correct the fields marked in red.
+                              </div>
+                            )}
                             <div style={{ display: 'flex', gap: 8 }}>
                               <button className="btn btn-success" disabled={savingStudent} onClick={() => saveEditStudent(s.id)}>
                                 {savingStudent ? 'Saving…' : 'Save Changes'}
@@ -905,6 +1040,7 @@ export default function AdminStudents({ readOnly }) {
                           </div>
                         ) : (
                           <>
+                            {canFilter && <IssueList issues={issuesOf(s)} />}
                             <div className="app-details">
                               <Detail label="Parent/Guardian" value={s.parent_name} />
                               <Detail label="Relationship" value={s.relationship} />
