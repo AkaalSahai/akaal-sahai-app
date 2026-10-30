@@ -22,6 +22,15 @@ export function normalizeUkPhone(raw) {
   return /^[1-9]\d{9}$/.test(d) ? '+44' + d : null
 }
 
+// What a +44 prefix box (PhoneInput) should show for a stored number: the
+// 10 digits after +44. Words ("Mother") come out empty so the real number
+// has to be entered.
+export function phoneDigits(raw) {
+  const n = normalizeUkPhone(raw)
+  if (n) return n.slice(3)
+  return String(raw || '').replace(/\D/g, '').replace(/^(44|0)/, '').slice(0, 10)
+}
+
 // Stored in an accepted format already
 export function isPhoneWellFormatted(raw) {
   if (!raw) return false

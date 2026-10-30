@@ -1,4 +1,4 @@
-export default function PhoneInput({ value, onChange, id, required = false }) {
+export default function PhoneInput({ value, onChange, id, required = false, placeholder = '7700 000000' }) {
   function handleInput(e) {
     const digits = e.target.value.replace(/\D/g, '').replace(/^0/, '').slice(0, 10)
     onChange(digits)
@@ -12,7 +12,7 @@ export default function PhoneInput({ value, onChange, id, required = false }) {
         inputMode="numeric"
         value={value}
         onChange={handleInput}
-        placeholder="7700 000000"
+        placeholder={placeholder}
         maxLength={10}
         required={required}
       />

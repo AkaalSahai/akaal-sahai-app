@@ -11,7 +11,10 @@ import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
 import { loadExtraClassEnrollments } from '../../lib/classRoster'
 import { getVerificationStatus, VERIFICATION_REASON_LABEL } from '../../lib/verification'
 import { exportCSV } from '../../lib/csv'
-import { studentIssues, findDuplicates, ISSUE_TYPES, phoneFormatFix, normalizeUkPhone, validateStudentForm } from '../../lib/studentChecks'
+import { studentIssues, findDuplicates, ISSUE_TYPES, phoneFormatFix, normalizeUkPhone, validateStudentForm, phoneDigits } from '../../lib/studentChecks'
+import PhoneInput from '../../components/PhoneInput'
+import MedicalQuestion from '../../components/MedicalQuestion'
+import { medicalStatus, MEDICAL_STATUS_LABEL, medicalAnswerFor, medicalPayload, medicalError, hasMedicalNotes } from '../../lib/medical'
 import { IssueBadge, IssueList, IssuePill, FieldError, FormWarnings } from '../../components/StudentIssues'
 
 // Admin/registrar filter panel - every field starts "off"
@@ -149,10 +152,12 @@ export default function AdminStudents({ readOnly }) {
       first_name: s.first_name || '', middle_name: s.middle_name || '', last_name: s.last_name || '',
       date_of_birth: s.date_of_birth || '',
       parent_name: s.parent_name || '', relationship: s.relationship || '',
-      phone: s.phone || '', secondary_phone: s.secondary_phone || '',
+      phone: phoneDigits(s.phone), secondary_phone: phoneDigits(s.secondary_phone),
       email: s.email || '', house_no: s.house_no || '', street_name: s.street_name || '',
       town: s.town || '', postcode: s.postcode || '',
-      medical_notes: s.medical_notes || '', photo_consent: s.photo_consent || false,
+      has_medical_condition: medicalAnswerFor(s),
+      medical_notes: hasMedicalNotes(s.medical_notes) ? s.medical_notes : '',
+      photo_consent: s.photo_consent || false,
     })
     setEditTried(false)
     setEditingStudentId(s.id)
@@ -173,6 +178,7 @@ export default function AdminStudents({ readOnly }) {
     }
     setEditTried(true)
     if (Object.keys(validateStudentForm(editForm, { isNew: false }).errors).length) return
+    if (medicalError(editForm, { required: false })) return
     setSavingStudent(true)
     try {
       const payload = {
@@ -190,7 +196,7 @@ export default function AdminStudents({ readOnly }) {
         street_name: editForm.street_name.trim() || null,
         town: editForm.town.trim() || null,
         postcode: editForm.postcode.trim() || null,
-        medical_notes: editForm.medical_notes.trim() || null,
+        ...medicalPayload(editForm),
         photo_consent: editForm.photo_consent,
       }
       const { error } = await supabase.from('students').update(payload).eq('id', studentId)
@@ -496,8 +502,7 @@ export default function AdminStudents({ readOnly }) {
         const a = f.area.trim().toLowerCase()
         if (![s.town, s.postcode, s.street_name].filter(Boolean).join(' ').toLowerCase().includes(a)) return false
       }
-      if (f.medical === 'yes' && !s.medical_notes?.trim()) return false
-      if (f.medical === 'no' && s.medical_notes?.trim()) return false
+      if (f.medical && medicalStatus(s) !== f.medical) return false
       if (f.consent === 'yes' && !s.photo_consent) return false
       if (f.consent === 'no' && s.photo_consent) return false
       if (f.attendance && attendanceBand(s) !== f.attendance) return false
@@ -527,7 +532,7 @@ export default function AdminStudents({ readOnly }) {
     (filters.ageMin !== '' || filters.ageMax !== '') && ['age', `Age ${filters.ageMin || '…'}–${filters.ageMax || '…'}`],
     (filters.joinedFrom || filters.joinedTo) && ['joined', `Joined ${filters.joinedFrom ? fmtDate(filters.joinedFrom) : '…'} to ${filters.joinedTo ? fmtDate(filters.joinedTo) : '…'}`],
     filters.area && ['area', `Area: ${filters.area}`],
-    filters.medical && ['medical', filters.medical === 'yes' ? 'Has medical notes' : 'No medical notes'],
+    filters.medical && ['medical', `Medical: ${{ yes: 'Yes', no: 'No', unknown: 'Not recorded' }[filters.medical]}`],
     filters.consent && ['consent', `Photo consent: ${filters.consent === 'yes' ? 'Yes' : 'No'}`],
     filters.attendance && ['attendance', `Attendance: ${ATTENDANCE_BANDS[filters.attendance]}`],
     filters.verification && ['verification', filters.verification === 'verified' ? 'Verified' : VERIFICATION_REASON_LABEL[filters.verification]],
@@ -578,7 +583,8 @@ export default function AdminStudents({ readOnly }) {
       { label: 'Email',           get: s => s.email },
       { label: 'Address',         get: s => [s.house_no, s.street_name, s.town].filter(Boolean).join(', ') },
       { label: 'Postcode',        get: s => s.postcode },
-      { label: 'Medical Notes',   get: s => s.medical_notes },
+      { label: 'Medical Condition', get: s => ({ yes: 'Yes', no: 'No', unknown: 'Not recorded' })[medicalStatus(s)] },
+      { label: 'Medical Notes',   get: s => hasMedicalNotes(s.medical_notes) ? s.medical_notes : '' },
       { label: 'Photo Consent',   get: s => s.photo_consent ? 'Yes' : 'No' },
       { label: 'Date Joined',     get: s => s.date_joined ? fmtDate(s.date_joined) : '' },
       { label: 'Attendance %',    get: s => attendance[s.id]?.pct ?? '' },
@@ -788,9 +794,9 @@ export default function AdminStudents({ readOnly }) {
           <FilterField label="Town / postcode">
             <input type="text" placeholder="e.g. UB1 or Southall" value={filters.area} onChange={setFilter('area')} />
           </FilterField>
-          <FilterField label="Medical notes">
+          <FilterField label="Medical condition / allergy">
             <select value={filters.medical} onChange={setFilter('medical')}>
-              <option value="">Any</option><option value="yes">Has medical notes</option><option value="no">No medical notes</option>
+              <option value="">Any</option><option value="yes">Yes</option><option value="no">No (parent answered No)</option><option value="unknown">Not recorded</option>
             </select>
           </FilterField>
           <FilterField label="Photo consent">
@@ -980,12 +986,12 @@ export default function AdminStudents({ readOnly }) {
                               </div>
                               <div className="form-group">
                                 <label>Phone</label>
-                                <input value={editForm.phone} onChange={setEdit('phone')} placeholder="+447700000000" />
+                                <PhoneInput value={editForm.phone} onChange={v => setEditForm(f => ({ ...f, phone: v }))} />
                                 <FieldError msg={editErr('phone')} />
                               </div>
                               <div className="form-group">
                                 <label>Secondary Phone</label>
-                                <input value={editForm.secondary_phone} onChange={setEdit('secondary_phone')} placeholder="Optional" />
+                                <PhoneInput value={editForm.secondary_phone} onChange={v => setEditForm(f => ({ ...f, secondary_phone: v }))} placeholder="Optional" />
                                 <FieldError msg={editErr('secondary_phone')} />
                               </div>
                               <div className="form-group">
@@ -1016,17 +1022,17 @@ export default function AdminStudents({ readOnly }) {
                             </div>
 
                             <div style={{ fontWeight: 600, fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Medical & Consent</div>
-                            <div className="form-group" style={{ marginBottom: 10 }}>
-                              <label>Medical Notes / Conditions</label>
-                              <textarea value={editForm.medical_notes} onChange={setEdit('medical_notes')} rows={3} />
-                            </div>
+                            <MedicalQuestion value={editForm} required={false}
+                              onChange={v => setEditForm(f => ({ ...f, has_medical_condition: v.has_medical_condition, medical_notes: v.medical_notes }))}
+                              error={editTried ? medicalError(editForm, { required: false }) : null} />
                             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.85rem', marginBottom: 16, cursor: 'pointer' }}>
                               <input type="checkbox" checked={editForm.photo_consent} onChange={setEditCheck('photo_consent')} style={{ width: 'auto' }} />
                               Photo consent given
                             </label>
 
-                            <FormWarnings warnings={editCheck?.warnings} />
-                            {editTried && Object.keys(editCheck?.errors || {}).length > 0 && (
+                            <FormWarnings warnings={[...(editCheck?.warnings || []),
+                              ...(editForm.has_medical_condition == null ? ['Medical question not answered yet - please ask the parent'] : [])]} />
+                            {editTried && (Object.keys(editCheck?.errors || {}).length > 0 || medicalError(editForm, { required: false })) && (
                               <div style={{ color: '#dc2626', fontSize: '.8rem', fontWeight: 600, marginBottom: 10 }}>
                                 Please correct the fields marked in red.
                               </div>
@@ -1048,7 +1054,7 @@ export default function AdminStudents({ readOnly }) {
                               <Detail label="Secondary Phone" value={s.secondary_phone || '—'} />
                               <Detail label="Email" value={s.email || '—'} />
                               <Detail label="Address" value={[s.house_no, s.street_name, s.town, s.postcode].filter(Boolean).join(', ')} />
-                              {s.medical_notes && <Detail label="Medical Notes" value={s.medical_notes} />}
+                              <Detail label="Medical Condition / Allergy" value={medicalStatus(s) === 'yes' && hasMedicalNotes(s.medical_notes) ? s.medical_notes : MEDICAL_STATUS_LABEL[medicalStatus(s)]} />
                               <Detail label="Photo Consent" value={s.photo_consent ? 'Yes' : 'No'} />
                               {s.note?.progress_level && (
                                 <Detail label="Teacher Assessment"

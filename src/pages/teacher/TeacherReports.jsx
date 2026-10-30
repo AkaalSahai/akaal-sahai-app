@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
 import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
+import { hasMedicalNotes } from '../../lib/medical'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -274,7 +275,7 @@ export default function TeacherReports() {
                       </span>
                     )}
                     {note.progress_level && progressBadge(note.progress_level)}
-                    {s.medical_notes && (
+                    {hasMedicalNotes(s.medical_notes) && (
                       <span style={{ fontSize: '.7rem', color: 'var(--danger)', fontWeight: 600 }}>⚕ Medical</span>
                     )}
                   </div>
@@ -304,7 +305,7 @@ export default function TeacherReports() {
 
               {isOpen && (
                 <div style={{ paddingBottom: 16, paddingLeft: 4 }}>
-                  {s.medical_notes && (
+                  {hasMedicalNotes(s.medical_notes) && (
                     <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 8,
                       fontSize: '.8rem', color: '#991b1b', border: '1px solid #fecaca' }}>
                       <strong>Medical note:</strong> {s.medical_notes}

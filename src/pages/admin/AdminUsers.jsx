@@ -4,6 +4,8 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
+import PhoneInput from '../../components/PhoneInput'
+import { phoneDigits, normalizeUkPhone } from '../../lib/studentChecks'
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-user-action`
 
@@ -327,7 +329,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   }
 
   function openEdit(u) {
-    setEditPanel(prev => ({ ...prev, [u.id]: { name: u.name || '', email: u.email || '', phone: u.phone || '' } }))
+    setEditPanel(prev => ({ ...prev, [u.id]: { name: u.name || '', email: u.email || '', phone: phoneDigits(u.phone) } }))
   }
 
   function closeEdit(userId) {
@@ -338,11 +340,14 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     const draft = editPanel[userId]
     if (!draft) return
     const u = users.find(x => x.id === userId)
+    if (draft.phone && draft.phone.length !== 10) { alert('Contact number must be 10 digits after +44, e.g. 7700 900123'); return }
     setBusy(userId)
     try {
       const updates = {}
       if (draft.name.trim()  !== (u.name  || '')) updates.name  = draft.name.trim()
-      if (draft.phone.trim() !== (u.phone || '')) updates.phone = draft.phone.trim() || null
+      // Prefix box holds the 10 digits after +44; only save if the number really changed
+      const newPhone = draft.phone ? '+44' + draft.phone : null
+      if (newPhone !== (normalizeUkPhone(u.phone) || u.phone || null)) updates.phone = newPhone
 
       if (Object.keys(updates).length) {
         const { error } = await supabase.from('users').update(updates).eq('id', userId)
@@ -688,10 +693,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                       </div>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label style={{ fontSize: '.76rem' }}>Contact Number</label>
-                        <input type="tel" value={editPanel[u.id].phone}
-                          onChange={e => setEditPanel(prev => ({ ...prev, [u.id]: { ...prev[u.id], phone: e.target.value } }))}
-                          placeholder="e.g. 07700 900000"
-                          style={{ fontSize: '.85rem', padding: '7px 10px' }} />
+                        <PhoneInput value={editPanel[u.id].phone}
+                          onChange={v => setEditPanel(prev => ({ ...prev, [u.id]: { ...prev[u.id], phone: v } }))} />
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>

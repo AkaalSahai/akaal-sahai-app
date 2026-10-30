@@ -9,7 +9,10 @@ import { getVerificationStatus, buildVerificationSnapshot, VERIFICATION_REASON_L
 import { loadGroupStudents, loadPunjabiTeacherResolver, loadExtraClassEnrollments } from '../../lib/classRoster'
 import { loadAttendanceStats } from '../../lib/attendance'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
-import { studentIssues, normalizeUkPhone, validateStudentForm, isValidEmail } from '../../lib/studentChecks'
+import { studentIssues, normalizeUkPhone, validateStudentForm, isValidEmail, phoneDigits } from '../../lib/studentChecks'
+import PhoneInput from '../../components/PhoneInput'
+import MedicalQuestion from '../../components/MedicalQuestion'
+import { medicalStatus, MEDICAL_STATUS_LABEL, medicalAnswerFor, medicalPayload, medicalError, hasMedicalNotes } from '../../lib/medical'
 import { IssueBadge, IssueList, FieldError, FormWarnings } from '../../components/StudentIssues'
 
 const EMPTY_FORM = {
@@ -17,7 +20,7 @@ const EMPTY_FORM = {
   date_joined: '',
   parent_name: '', relationship: '', phone: '', secondary_phone: '',
   email: '', house_no: '', street_name: '', town: '', postcode: '',
-  medical_notes: '', photo_consent: false,
+  has_medical_condition: null, medical_notes: '', photo_consent: false,
 }
 
 export default function TeacherStudents() {
@@ -175,10 +178,12 @@ export default function TeacherStudents() {
       last_name: s.last_name || '', date_of_birth: s.date_of_birth || '',
       date_joined: s.date_joined || '',
       parent_name: s.parent_name || '', relationship: s.relationship || '',
-      phone: s.phone || '', secondary_phone: s.secondary_phone || '',
+      phone: phoneDigits(s.phone), secondary_phone: phoneDigits(s.secondary_phone),
       email: s.email || '', house_no: s.house_no || '',
       street_name: s.street_name || '', town: s.town || '',
-      postcode: s.postcode || '', medical_notes: s.medical_notes || '',
+      postcode: s.postcode || '',
+      has_medical_condition: medicalAnswerFor(s),
+      medical_notes: hasMedicalNotes(s.medical_notes) ? s.medical_notes : '',
       photo_consent: s.photo_consent || false,
     })
     setSaveTried(false)
@@ -204,6 +209,7 @@ export default function TeacherStudents() {
     }
     setSaveTried(true)
     if (Object.keys(validateStudentForm(form, { isNew: editing === 'new' }).errors).length) return
+    if (medicalError(form, { required: editing === 'new' })) return
     setBusy(true)
     try {
       const payload = {
@@ -222,7 +228,7 @@ export default function TeacherStudents() {
         street_name: form.street_name.trim() || null,
         town: form.town.trim() || null,
         postcode: form.postcode.trim() || null,
-        medical_notes: form.medical_notes.trim() || null,
+        ...medicalPayload(form),
         photo_consent: form.photo_consent,
       }
 
@@ -443,12 +449,12 @@ export default function TeacherStudents() {
             </div>
             <div className="form-group">
               <label>Phone{editing === 'new' ? ' *' : ''}</label>
-              <input value={form.phone} onChange={set('phone')} placeholder="+447700000000" />
+              <PhoneInput value={form.phone} onChange={v => setForm(f => ({ ...f, phone: v }))} />
               <FieldError msg={formErr('phone')} />
             </div>
             <div className="form-group">
               <label>Secondary Phone</label>
-              <input value={form.secondary_phone} onChange={set('secondary_phone')} placeholder="Optional" />
+              <PhoneInput value={form.secondary_phone} onChange={v => setForm(f => ({ ...f, secondary_phone: v }))} placeholder="Optional" />
               <FieldError msg={formErr('secondary_phone')} />
             </div>
             <div className="form-group">
@@ -479,19 +485,17 @@ export default function TeacherStudents() {
           </div>
 
           <div style={{ fontWeight: 600, fontSize: '.8rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Medical & Consent</div>
-          <div className="form-group" style={{ marginBottom: 10 }}>
-            <label>Medical Notes / Conditions</label>
-            <textarea value={form.medical_notes} onChange={set('medical_notes')}
-              placeholder="Any allergies, conditions or medical information the teacher should be aware of…"
-              rows={3} />
-          </div>
+          <MedicalQuestion value={form} required={editing === 'new'}
+            onChange={v => setForm(f => ({ ...f, has_medical_condition: v.has_medical_condition, medical_notes: v.medical_notes }))}
+            error={saveTried ? medicalError(form, { required: editing === 'new' }) : null} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.85rem', marginBottom: 16, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.photo_consent} onChange={setCheck('photo_consent')} style={{ width: 'auto' }} />
             Photo consent given
           </label>
 
-          <FormWarnings warnings={formCheck?.warnings} />
-          {saveTried && Object.keys(formCheck?.errors || {}).length > 0 && (
+          <FormWarnings warnings={[...(formCheck?.warnings || []),
+            ...(editing !== 'new' && form.has_medical_condition == null ? ['Medical question not answered yet - please ask the parent'] : [])]} />
+          {saveTried && (Object.keys(formCheck?.errors || {}).length > 0 || medicalError(form, { required: editing === 'new' })) && (
             <div style={{ color: '#dc2626', fontSize: '.8rem', fontWeight: 600, marginBottom: 10 }}>
               Please correct the fields marked in red.
             </div>
@@ -639,7 +643,7 @@ export default function TeacherStudents() {
                         <div><strong>Secondary phone:</strong> {s.secondary_phone || '—'}</div>
                         <div><strong>Email:</strong> {s.email || '—'}</div>
                         <div><strong>Address:</strong> {[s.house_no, s.street_name, s.town, s.postcode].filter(Boolean).join(', ') || '—'}</div>
-                        <div style={{ gridColumn: '1 / -1' }}><strong>Medical notes:</strong> {s.medical_notes || 'None'}</div>
+                        <div style={{ gridColumn: '1 / -1' }}><strong>Medical condition / allergy:</strong> {medicalStatus(s) === 'yes' && hasMedicalNotes(s.medical_notes) ? s.medical_notes : MEDICAL_STATUS_LABEL[medicalStatus(s)]}</div>
                         <div><strong>Photo consent:</strong> {s.photo_consent ? 'Yes' : 'No'}</div>
                       </div>
                       {!canConfirm(s) && (

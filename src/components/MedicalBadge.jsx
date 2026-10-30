@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { logAction } from '../lib/audit'
+import { hasMedicalNotes } from '../lib/medical'
 
 export default function MedicalBadge({ notes, studentName }) {
   const { profile } = useAuth()
   const [open, setOpen] = useState(false)
-  if (!notes?.trim()) return null
+  if (!hasMedicalNotes(notes)) return null   // empty, or the parent wrote "no" / "none"
 
   return (
     <>
