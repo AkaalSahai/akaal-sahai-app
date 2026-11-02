@@ -1,0 +1,33 @@
+-- One-time, approved 02-11-2026: 28 current students from the 8 July 2026
+-- import had their details shifted along by one field (three for one
+-- record) - a comma inside the medical notes or an extra address line
+-- split one value into two columns, so the phone box held "Mother"/
+-- "Father", the parent name box a postcode, and so on.
+--
+-- Each record was moved back field by field (medical, house no., street,
+-- town, postcode, parent, relationship, phone, second phone, email) with
+-- explicit per-student values, each update only applying if the phone was
+-- still the shifted value. The per-student statements are NOT kept in this
+-- repo because they contain personal data; the before values are in the
+-- backup table below and the after values are in students.
+--
+-- Left for a person to check (shown to the user):
+--   AS-0022 two parents named, relationship unknown
+--   AS-0130 postcode looks mistyped
+--   AS-0249 phone number lost in the import; house number unclear
+-- Second phones / emails that fell off the end of the row were lost in the
+-- import and can only be recovered from the original spreadsheet.
+--
+-- Result: 28 backed up, 28 updated, 0 phone boxes with words left.
+-- Projector verified count 140 -> 139 (AS-0054's details changed, so its
+-- earlier teacher verification no longer matches - expected).
+--
+-- Backup: mixed_fields_fix_backup_20261102 (full student rows), RLS on,
+-- no app access. Drop once happy: drop table mixed_fields_fix_backup_20261102;
+--
+-- Undo (restores the shifted values):
+--   update students s set medical_notes = b.medical_notes, house_no = b.house_no,
+--     street_name = b.street_name, town = b.town, postcode = b.postcode,
+--     parent_name = b.parent_name, relationship = b.relationship, phone = b.phone,
+--     secondary_phone = b.secondary_phone, email = b.email
+--   from mixed_fields_fix_backup_20261102 b where b.id = s.id;
