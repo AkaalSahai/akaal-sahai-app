@@ -31,3 +31,10 @@
 --     parent_name = b.parent_name, relationship = b.relationship, phone = b.phone,
 --     secondary_phone = b.secondary_phone, email = b.email
 --   from mixed_fields_fix_backup_20261102 b where b.id = s.id;
+
+-- Follow-up, approved 02-11-2026: 3 more students with a parent's name in
+-- the relationship box (AS-0038 and AS-0197 shifted the same way; AS-0050
+-- had two parents' names split across the boxes). AS-0197's postcode and
+-- relationship were taken from their sibling's record (same phone and
+-- address). AS-0600 (every contact box "n/a") left for the teacher/family.
+-- Backup: relationship_fix_backup_20261102 (same undo pattern as above).
