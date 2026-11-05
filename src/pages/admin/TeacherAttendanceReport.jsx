@@ -11,6 +11,7 @@ import {
   todayISO, daysAgoISO, tsToISO, shortDate, pctText, pctColor, statusTag,
   buildReport, buildPdf,
 } from '../../lib/teacherAttendanceReport'
+import { registerByKey, onRegister } from '../../lib/teacherRegisters'
 
 const PRESETS = [
   { id: 'all', label: 'All time' },
@@ -20,13 +21,14 @@ const PRESETS = [
 ]
 
 // PostgREST caps responses at 1000 rows, so page through.
-async function fetchAllAttendance(from, to) {
+async function fetchAllAttendance(from, to, classType) {
   const PAGE = 1000
   const out = []
   for (let start = 0; ; start += PAGE) {
     let q = supabase.from('teacher_attendance')
       .select('teacher_id, session_date, status, notes')
       .lte('session_date', to)
+      .eq('class_type', classType)
       .order('session_date').order('id')
       .range(start, start + PAGE - 1)
     if (from) q = q.gte('session_date', from)
@@ -40,7 +42,11 @@ async function fetchAllAttendance(from, to) {
 
 
 
-export default function TeacherAttendanceReport({ onPickDate }) {
+// classType: 'punjabi' (everyone) or 'gatka'/'kirtan' (ticked teachers, and
+// anyone with marks on that register).
+export default function TeacherAttendanceReport({ onPickDate, classType = 'punjabi' }) {
+  const extra = classType !== 'punjabi'
+  const reg = registerByKey(classType)
   const { profile } = useAuth()
   const [preset, setPreset]   = useState('all')
   const [from, setFrom]       = useState('')
@@ -67,11 +73,13 @@ export default function TeacherAttendanceReport({ onPickDate }) {
     setLoading(true); setError(null)
     try {
       const [records, { data: teacherRows, error: tErr }, { data: tgRows }, { data: groupRows }, archRows] = await Promise.all([
-        fetchAllAttendance(from, to),
+        fetchAllAttendance(from, to, classType),
         // Teachers and registrars, whether it's their primary or an extra role
-        supabase.from('users').select('id, name, created_at').or(TEACHING_STAFF_FILTER),
-        supabase.from('teacher_groups').select('teacher_id, groups(name)').eq('role', 'primary'),
-        supabase.from('groups').select('name, teacher_id'),
+        supabase.from('users').select('id, name, created_at, register_classes').or(TEACHING_STAFF_FILTER),
+        extra
+          ? supabase.from('teacher_groups').select('teacher_id, groups(name, class_type)')
+          : supabase.from('teacher_groups').select('teacher_id, groups(name)').eq('role', 'primary'),
+        extra ? { data: [] } : supabase.from('groups').select('name, teacher_id'),
         // Staff who have left - name, joined/left dates and groups only
         loadFormerStaff(),
       ])
@@ -85,12 +93,16 @@ export default function TeacherAttendanceReport({ onPickDate }) {
         if (!primaryGroups[teacherId]) primaryGroups[teacherId] = []
         if (!primaryGroups[teacherId].includes(name)) primaryGroups[teacherId].push(name)
       }
-      ;(tgRows || []).forEach(r => addPrimary(r.teacher_id, r.groups?.name))
+      // Gatka/Kirtan: the teacher's groups of that class instead, any role
+      ;(tgRows || []).forEach(r => {
+        if (!extra || r.groups?.class_type === classType) addPrimary(r.teacher_id, r.groups?.name)
+      })
       ;(groupRows || []).forEach(g => addPrimary(g.teacher_id, g.name))
       Object.values(primaryGroups).forEach(list => list.sort())
 
       const people = {}
-      ;(teacherRows || []).forEach(t => {
+      const marked = new Set(records.map(r => r.teacher_id))
+      ;(teacherRows || []).filter(t => onRegister(t, classType) || marked.has(t.id)).forEach(t => {
         people[t.id] = {
           id: t.id, name: t.name,
           groups: primaryGroups[t.id] || [],
@@ -116,7 +128,9 @@ export default function TeacherAttendanceReport({ onPickDate }) {
         })
       }
 
-      const { classDays, rows } = buildReport(Object.values(people), records)
+      // Gatka/Kirtan aren't auto-marked absent, and days nobody marked stay
+      // blank rather than counting as absent (agreed 05-11-2026).
+      const { classDays, rows } = buildReport(Object.values(people), records, { countUnmarked: !extra })
       setData({ classDays, rows })
       // Log the first view only - not every filter change
       if (!loggedView.current) {
@@ -128,7 +142,7 @@ export default function TeacherAttendanceReport({ onPickDate }) {
     } finally {
       setLoading(false)
     }
-  }, [from, to, profile])
+  }, [from, to, profile, classType, extra])
 
   useEffect(() => { load() }, [load])
 
@@ -157,13 +171,15 @@ export default function TeacherAttendanceReport({ onPickDate }) {
 
   const rangeLabel = `${from ? fmtDate(from) : 'Start'} to ${fmtDate(to)}`
   const exportLabel = rangeLabel + (search.trim() ? `  ·  Filtered by name: "${search.trim()}"` : '')
-  const fileStem = `teacher-attendance-${from || 'all'}-to-${to}`
+  const fileStem = `teacher-attendance-${extra ? classType + '-' : ''}${from || 'all'}-to-${to}`
+  const title = extra ? `${reg.label} Teacher Attendance Report` : 'Teacher Attendance Report'
+  const groupLabel = extra ? `${reg.label} group` : 'Primary group'
 
   function downloadCSV() {
     const cols = [
       { label: 'Teacher',   get: r => r.name },
       { label: 'Status',    get: r => statusTag(r) || 'Current' },
-      { label: 'Primary group', get: r => r.groups.join(', ') },
+      { label: groupLabel, get: r => r.groups.join(', ') },
       { label: 'Joined',    get: r => r.joined ? fmtDate(r.joined) : '' },
       { label: 'Present',   get: r => r.counts.present },
       { label: 'Late',      get: r => r.counts.late },
@@ -182,7 +198,7 @@ export default function TeacherAttendanceReport({ onPickDate }) {
     try {
       const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      buildPdf(doc, autoTable, { classDays: data.classDays, rows, rangeLabel: exportLabel })
+      buildPdf(doc, autoTable, { classDays: data.classDays, rows, rangeLabel: exportLabel, title, groupLabel, countUnmarked: !extra })
       doc.save(`${fileStem}.pdf`)
       logAction(profile, 'Downloaded teacher attendance report', `PDF, ${exportLabel}`).catch(() => {})
     } catch (err) {
@@ -209,7 +225,7 @@ export default function TeacherAttendanceReport({ onPickDate }) {
   return (
     <div className="card">
       <div className="card-title">
-        Teacher Attendance Report
+        {title}
         <div style={{ display: 'flex', gap: 6 }}>
           <button className="btn btn-outline btn-sm" onClick={downloadCSV} disabled={!data || loading}>Download CSV</button>
           <button className="btn btn-primary btn-sm" onClick={downloadPDF} disabled={!data || loading || pdfBusy}>
@@ -258,7 +274,7 @@ export default function TeacherAttendanceReport({ onPickDate }) {
             <thead>
               <tr>
                 {th('name', 'Teacher')}
-                {th('groups', 'Primary group')}
+                {th('groups', groupLabel)}
                 {th('joined', 'Joined')}
                 {th('present', 'Present')}
                 {th('late', 'Late')}
@@ -269,6 +285,9 @@ export default function TeacherAttendanceReport({ onPickDate }) {
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={9} style={{ color: 'var(--muted)', fontSize: '.85rem' }}>No teachers ticked for {reg.label}.</td></tr>
+              )}
               {rows.map(r => (
                 <Fragment key={r.id}>
                   <tr style={{ cursor: 'pointer', background: expanded === r.id ? '#f8fafc' : undefined }}
@@ -327,7 +346,9 @@ export default function TeacherAttendanceReport({ onPickDate }) {
       ) : (
         <>
           <div style={{ fontSize: '.74rem', color: 'var(--muted)', marginBottom: 8 }}>
-            P Present · L Late · A Absent · <span style={{ color: '#ea580c', fontWeight: 700 }}>A⚠ Not marked (counted absent)</span> · H Holiday · blank = before joining / after leaving.
+            P Present · L Late · A Absent · {extra
+              ? <>H Holiday · blank = not marked (not counted).</>
+              : <><span style={{ color: '#ea580c', fontWeight: 700 }}>A⚠ Not marked (counted absent)</span> · H Holiday · blank = before joining / after leaving.</>}
             {onPickDate && ' Click a date to open that day\'s register.'}
           </div>
           <div className="table-wrap">

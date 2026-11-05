@@ -5,6 +5,7 @@ import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import TeacherAttendanceReport from './TeacherAttendanceReport'
+import { TEACHER_REGISTERS, registerByKey, onRegister, latestClassDay } from '../../lib/teacherRegisters'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
@@ -15,6 +16,7 @@ const STATUS_BORDER = { present: '#bbf7d0', absent: '#fecaca', late: '#fde68a', 
 
 export default function AdminTeacherRegister({ readOnly }) {
   const { profile } = useAuth()
+  const [classType, setClassType] = useState('punjabi')
   const [date, setDate]       = useState(todayISO)
   const [teachers, setTeachers] = useState([])
   const [attendance, setAttendance] = useState({})   // teacher_id → { id, status, notes }
@@ -26,16 +28,18 @@ export default function AdminTeacherRegister({ readOnly }) {
     setLoading(true)
     const [{ data: teacherRows }, { data: tgRows }, { data: attRows }] = await Promise.all([
       // Teachers and registrars, whether it's their primary or an extra role
-      supabase.from('users').select('id, name, group_id').or(TEACHING_STAFF_FILTER).order('name'),
-      supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
-      supabase.from('teacher_attendance').select('id, teacher_id, status, notes').eq('session_date', date),
+      supabase.from('users').select('id, name, group_id, register_classes').or(TEACHING_STAFF_FILTER).order('name'),
+      supabase.from('teacher_groups').select('teacher_id, groups(id, name, class_type)'),
+      supabase.from('teacher_attendance').select('id, teacher_id, status, notes')
+        .eq('session_date', date).eq('class_type', classType),
     ])
 
     // Build group map per teacher
     const tgMap = {}
     ;(tgRows || []).forEach(r => {
       if (!tgMap[r.teacher_id]) tgMap[r.teacher_id] = []
-      if (r.groups) tgMap[r.teacher_id].push(r.groups.name)
+      // Gatka/Kirtan register: just that class's groups
+      if (r.groups && (classType === 'punjabi' || r.groups.class_type === classType)) tgMap[r.teacher_id].push(r.groups.name)
     })
 
     // For teachers only in groups.teacher_id (not teacher_groups), fetch their group name
@@ -50,7 +54,8 @@ export default function AdminTeacherRegister({ readOnly }) {
       ;(pGroups || []).forEach(g => { primaryGroupMap[g.id] = g.name })
     }
 
-    const enriched = (teacherRows || []).map(t => ({
+    // Gatka/Kirtan: only the teachers ticked for that class
+    const enriched = (teacherRows || []).filter(t => onRegister(t, classType)).map(t => ({
       ...t,
       groupNames: tgMap[t.id] || (t.group_id && primaryGroupMap[t.group_id] ? [primaryGroupMap[t.group_id]] : []),
     }))
@@ -61,7 +66,16 @@ export default function AdminTeacherRegister({ readOnly }) {
     setTeachers(enriched)
     setAttendance(attMap)
     setLoading(false)
-  }, [date])
+  }, [date, classType])
+
+  function pickClass(key) {
+    setClassType(key)
+    setDate(key === 'punjabi' ? todayISO() : latestClassDay(key))
+  }
+
+  const reg = registerByKey(classType)
+  // "Gatka 09-11-2026" in the activity log; Punjabi stays as before
+  const logDate = classType === 'punjabi' ? date : `${reg.label} ${date}`
 
   useEffect(() => { load() }, [load])
 
@@ -75,19 +89,19 @@ export default function AdminTeacherRegister({ readOnly }) {
           // Tap same status → clear
           await supabase.from('teacher_attendance').delete().eq('id', existing.id)
           setAttendance(prev => { const n = { ...prev }; delete n[teacher.id]; return n })
-          logAction(profile, 'Marked teacher attendance', `${teacher.name}: cleared (${date})`).catch(() => {})
+          logAction(profile, 'Marked teacher attendance', `${teacher.name}: cleared (${logDate})`).catch(() => {})
         } else {
           await supabase.from('teacher_attendance').update({ status, marked_by: profile.id }).eq('id', existing.id)
           setAttendance(prev => ({ ...prev, [teacher.id]: { ...prev[teacher.id], status } }))
-          logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${date})`).catch(() => {})
+          logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${logDate})`).catch(() => {})
         }
       } else {
         const { data, error } = await supabase.from('teacher_attendance').insert({
-          teacher_id: teacher.id, session_date: date, status, marked_by: profile.id,
+          teacher_id: teacher.id, session_date: date, status, marked_by: profile.id, class_type: classType,
         }).select('id').single()
         if (error) throw error
         setAttendance(prev => ({ ...prev, [teacher.id]: { id: data.id, status, notes: '' } }))
-        logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${date})`).catch(() => {})
+        logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${logDate})`).catch(() => {})
       }
     } catch (err) {
       logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${err.message}`, false).catch(() => {})
@@ -124,6 +138,22 @@ export default function AdminTeacherRegister({ readOnly }) {
 
   return (
     <>
+      {/* Which register: Punjabi (everyone) or Gatka/Kirtan (ticked teachers only) */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        {TEACHER_REGISTERS.map(r => (
+          <button key={r.key} onClick={() => pickClass(r.key)}
+            style={{ padding: '7px 14px', borderRadius: 8, fontSize: '.82rem', fontWeight: 700, fontFamily: 'inherit',
+              cursor: 'pointer', border: `1px solid ${classType === r.key ? 'var(--primary)' : 'var(--border)'}`,
+              background: classType === r.key ? 'var(--primary)' : 'white',
+              color: classType === r.key ? 'white' : 'var(--muted)' }}>
+            {r.label}
+          </button>
+        ))}
+        <span style={{ fontSize: '.78rem', color: 'var(--muted)', marginLeft: 4 }}>
+          {reg.dayNames}{classType !== 'punjabi' && ' · teachers ticked on the Users page'}
+        </span>
+      </div>
+
       {/* Date selector + summary tiles */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 16 }}>
         <div className="card" style={{ flex: '0 0 auto', margin: 0, padding: '14px 16px' }}>
@@ -153,7 +183,7 @@ export default function AdminTeacherRegister({ readOnly }) {
       </div>
 
       {/* Reminder while today's register is incomplete on a class day */}
-      {!readOnly && date === todayISO() && [5, 6].includes(new Date().getDay()) && unmarked > 0 && teachers.length > 0 && (
+      {!readOnly && classType === 'punjabi' && date === todayISO() && [5, 6].includes(new Date().getDay()) && unmarked > 0 && teachers.length > 0 && (
         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px',
           marginBottom: 16, fontSize: '.86rem', fontWeight: 600, color: '#92400e' }}>
           ⏰ {unmarked} of {teachers.length} staff not marked yet today — please complete the Teacher Register before the end of class.
@@ -163,7 +193,7 @@ export default function AdminTeacherRegister({ readOnly }) {
       {/* Register table */}
       <div className="card">
         <div className="card-title">
-          Teacher Register — {date === todayISO() ? 'Today' : fmtDate(date)}
+          {classType === 'punjabi' ? 'Teacher Register' : `${reg.label} Teacher Register`} — {date === todayISO() ? 'Today' : fmtDate(date)}
           {readOnly && (
             <span style={{ fontSize: '.75rem', fontWeight: 400, color: '#94a3b8' }}>View only</span>
           )}
@@ -171,7 +201,9 @@ export default function AdminTeacherRegister({ readOnly }) {
 
         {teachers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
-            No teachers found. Add teacher accounts first.
+            {classType === 'punjabi'
+              ? 'No teachers found. Add teacher accounts first.'
+              : `No teachers ticked for ${reg.label}. An admin can tick them on the Users page.`}
           </div>
         ) : (
           <div className="table-wrap">
@@ -287,7 +319,7 @@ export default function AdminTeacherRegister({ readOnly }) {
       </div>
 
       {/* Attendance report */}
-      <TeacherAttendanceReport onPickDate={d => { setDate(d); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
+      <TeacherAttendanceReport classType={classType} onPickDate={d => { setDate(d); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />
     </>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, Fragment } from 'react'
+import { registerByKey } from '../../lib/teacherRegisters'
 import { supabase } from '../../lib/supabase'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useAuth } from '../../hooks/useAuth'
@@ -183,7 +184,7 @@ function TeacherDetailPanel({ u, onClose }) {
 
   useEffect(() => {
     supabase.from('teacher_attendance')
-      .select('session_date, status, notes')
+      .select('session_date, status, notes, class_type')
       .eq('teacher_id', u.original_id)
       .order('session_date', { ascending: false })
       .then(({ data }) => { setAttend(data || []); setLoading(false) })
@@ -247,7 +248,10 @@ function TeacherDetailPanel({ u, onClose }) {
                   <tbody>
                     {attend.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontSize: '.78rem' }}>{fmtDate(r.session_date)}</td>
+                        <td style={{ fontSize: '.78rem' }}>
+                          {fmtDate(r.session_date)}
+                          {r.class_type && r.class_type !== 'punjabi' && <span style={{ color: 'var(--muted)' }}> · {registerByKey(r.class_type).label}</span>}
+                        </td>
                         <td>
                           <span style={{
                             background: ATT_STATUS_BG[r.status] || '#f8fafc',

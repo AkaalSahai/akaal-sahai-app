@@ -5,7 +5,8 @@ import { fmtDate } from './dates'
 // marked; a teacher only "owes" class days on/after their joining date
 // (account created_at), and - if they've left - on/before their leaving date.
 // Unmarked owed days, and absences auto-recorded because nobody marked them,
-// count as absent but are flagged separately.
+// count as absent but are flagged separately. With countUnmarked: false
+// (Gatka/Kirtan registers) days nobody marked are left blank and not counted.
 
 export const STATUS_COLOR = { present: '#16a34a', absent: '#dc2626', late: '#d97706', holiday: '#0284c7', unmarked: '#dc2626' }
 export const STATUS_BG    = { present: '#f0fdf4', absent: '#fef2f2', late: '#fffbeb', holiday: '#f0f9ff', unmarked: '#fff7ed' }
@@ -33,7 +34,7 @@ export function statusTag(r) {
   return ''
 }
 
-export function buildReport(people, records) {
+export function buildReport(people, records, { countUnmarked = true } = {}) {
   const classDays = [...new Set(records.map(r => r.session_date))].sort()
   const byPerson = {}
   records.forEach(r => {
@@ -62,7 +63,7 @@ export function buildReport(people, records) {
         const st = rec.status === 'absent' && (rec.notes || '').startsWith('Auto:') ? 'unmarked' : rec.status
         days[d] = { status: st, notes: rec.notes || '' }
         if (counts[st] !== undefined) counts[st]++
-      } else if (owed && (p.left || p.otherRole ? recDates.length > 0 : true)) {
+      } else if (countUnmarked && owed && (p.left || p.otherRole ? recDates.length > 0 : true)) {
         days[d] = { status: 'unmarked', notes: '' }
         counts.unmarked++
       }
@@ -77,19 +78,22 @@ export function buildReport(people, records) {
 }
 
 // Fills a landscape A4 jsPDF doc: summary table, then the register grid.
-export function buildPdf(doc, autoTable, { classDays, rows, rangeLabel }) {
+export function buildPdf(doc, autoTable, { classDays, rows, rangeLabel,
+  title = 'Teacher Attendance Report', groupLabel = 'Primary group', countUnmarked = true }) {
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
 
   doc.setFontSize(16); doc.setFont('helvetica', 'bold')
-  doc.text('Teacher Attendance Report', 14, 15)
+  doc.text(title, 14, 15)
   doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
   doc.text(`${rangeLabel}  ·  ${classDays.length} class days  ·  Generated ${fmtDate(new Date())}`, 14, 21)
-  doc.text('Attendance % = (Present + Late) / (Present + Late + Absent + Not marked). Holidays excluded. Days count from each teacher\'s joining date.', 14, 26)
+  doc.text(countUnmarked
+    ? 'Attendance % = (Present + Late) / (Present + Late + Absent + Not marked). Holidays excluded. Days count from each teacher\'s joining date.'
+    : 'Attendance % = (Present + Late) / (Present + Late + Absent). Holidays and days not marked are not counted.', 14, 26)
   doc.setTextColor(0)
 
   autoTable(doc, {
     startY: 30,
-    head: [['Teacher', 'Primary group', 'Joined', 'Present', 'Late', 'Absent', 'Not marked*', 'Holiday', 'Attendance %']],
+    head: [['Teacher', groupLabel, 'Joined', 'Present', 'Late', 'Absent', 'Not marked*', 'Holiday', 'Attendance %']],
     body: rows.map(r => [
       r.name + (statusTag(r) ? ` (${statusTag(r)})` : ''),
       r.groups.join(', '),
@@ -109,14 +113,18 @@ export function buildPdf(doc, autoTable, { classDays, rows, rangeLabel }) {
   })
 
   doc.setFontSize(8); doc.setTextColor(100)
-  doc.text('* Not marked: no attendance was recorded for that day — counted as absent.', 14, doc.lastAutoTable.finalY + 5)
+  doc.text(countUnmarked
+    ? '* Not marked: no attendance was recorded for that day — counted as absent.'
+    : '* Days nobody marked are left blank and not counted.', 14, doc.lastAutoTable.finalY + 5)
   doc.setTextColor(0)
 
   doc.addPage()
   doc.setFontSize(13); doc.setFont('helvetica', 'bold')
   doc.text('Register grid', 14, 15)
   doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100)
-  doc.text('P = Present   L = Late   A = Absent   A* = Not marked (counted as absent)   H = Holiday   blank = before joining / after leaving', 14, 20)
+  doc.text(countUnmarked
+    ? 'P = Present   L = Late   A = Absent   A* = Not marked (counted as absent)   H = Holiday   blank = before joining / after leaving'
+    : 'P = Present   L = Late   A = Absent   H = Holiday   blank = not marked (not counted)', 14, 20)
   doc.setTextColor(0)
 
   autoTable(doc, {
