@@ -89,8 +89,6 @@ export default function AdminStudents({ readOnly }) {
   const [editBusy, setEditBusy] = useState(null)
   const [sortCol, setSortCol] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
-  const [removalRequests, setRemovalRequests] = useState([])
-  const [removalBusy, setRemovalBusy] = useState(null)
   const [editingStudentId, setEditingStudentId] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [savingStudent, setSavingStudent] = useState(false)
@@ -98,7 +96,6 @@ export default function AdminStudents({ readOnly }) {
   const [phoneFixOpen, setPhoneFixOpen] = useState(false)
   const [phoneFixBusy, setPhoneFixBusy] = useState(false)
   const [dialog, setDialog] = useState(null)
-  const [teacherMap, setTeacherMap] = useState({})
   const [attendance, setAttendance] = useState({})  // studentId -> { pct, sessions }
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
@@ -119,12 +116,10 @@ export default function AdminStudents({ readOnly }) {
   useEffect(() => { if (canFilter) loadVerifications() }, [canFilter])
 
   async function load() {
-    const [{ data: s }, { data: g }, { data: n }, { data: removals }, { data: us }, { data: tg }, attMap] = await Promise.all([
+    const [{ data: s }, { data: g }, { data: n }, { data: us }, { data: tg }, attMap] = await Promise.all([
       supabase.from('students').select('*, groups(id, name, class_type)').eq('active', true).order('first_name').order('last_name'),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
-      supabase.from('transfer_requests').select('*')
-        .eq('request_type', 'removal').eq('status', 'pending'),
       supabase.from('users').select('id, name, role, extra_roles'),
       supabase.from('teacher_groups').select('teacher_id, group_id, role'),
       loadAttendanceStats(),
@@ -132,14 +127,12 @@ export default function AdminStudents({ readOnly }) {
     setAttendance(attMap)
     const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
-    setTeacherMap(teacherMap)
     // Primary teacher(s) per group - several come out as "Harpreet S. & Jaspreet K."
     const teacherLabels = groupTeacherLabels(g, tg, id => teacherMap[id])
     const noteMap = {}
     ;(n || []).forEach(note => { noteMap[note.student_id] = note })
     setStudents((s || []).map(st => ({ ...st, note: noteMap[st.id] || null })))
     setGroups((g || []).map(grp => ({ ...grp, teacherName: teacherLabels[grp.id] })))
-    setRemovalRequests(removals || [])
     setLoading(false)
   }
 
@@ -390,43 +383,6 @@ export default function AdminStudents({ readOnly }) {
     })
   }
 
-  async function approveRemoval(req) {
-    setRemovalBusy(req.id)
-    try {
-      const requesterName = teacherMap[req.requested_by] || null
-      const result = await supabase.from('students').update({
-        active: false,
-        archived_at: new Date().toISOString(),
-        archived_by_id: profile.id,
-        archived_by_name: profile.name,
-        deletion_reason: req.reason || null,
-        deletion_requested_by_name: requesterName,
-      }).eq('id', req.student_id)
-      let e1 = result.error
-      if (e1?.message?.includes('archived_at')) {
-        // Migration not run yet — still remove the student, just without the
-        // archive fields the Archive tab needs to show them.
-        const fallback = await supabase.from('students').update({ active: false }).eq('id', req.student_id)
-        e1 = fallback.error
-      }
-      if (e1) throw e1
-      await supabase.from('transfer_requests').update({ status: 'approved' }).eq('id', req.id)
-      logAction(profile, 'Approved student removal', req.student_name).catch(() => {})
-      load()
-    } catch (err) { alert('Error: ' + err.message) }
-    finally { setRemovalBusy(null) }
-  }
-
-  async function rejectRemoval(req) {
-    setRemovalBusy(req.id)
-    try {
-      await supabase.from('transfer_requests').update({ status: 'rejected' }).eq('id', req.id)
-      logAction(profile, 'Rejected student removal', req.student_name).catch(() => {})
-      load()
-    } catch (err) { alert('Error: ' + err.message) }
-    finally { setRemovalBusy(null) }
-  }
-
   function calcAge(dob) {
     if (!dob) return null
     const d = new Date(dob), now = new Date()
@@ -628,41 +584,6 @@ export default function AdminStudents({ readOnly }) {
   return (
     <>
     {dialog && <ConfirmDialog {...dialog} onCancel={() => setDialog(null)} />}
-    {removalRequests.length > 0 && (
-      <div className="card" style={{ borderTop: '3px solid #dc2626' }}>
-        <div className="card-title" style={{ color: '#991b1b' }}>
-          Pending Removal Requests ({removalRequests.length})
-        </div>
-        {removalRequests.map(req => (
-          <div key={req.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 0',
-            borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 160 }}>
-              <div style={{ fontWeight: 700, fontSize: '.92rem' }}>{req.student_name}</div>
-              <div style={{ fontSize: '.78rem', color: 'var(--muted)', marginTop: 2 }}>
-                Group: {req.from_group_name || 'Unknown'}
-              </div>
-              {req.reason && (
-                <div style={{ fontSize: '.82rem', marginTop: 5, color: '#374151' }}>
-                  <strong>Reason:</strong> {req.reason}
-                </div>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignSelf: 'center' }}>
-              <button className="btn btn-danger btn-sm"
-                disabled={removalBusy === req.id}
-                onClick={() => approveRemoval(req)}>
-                {removalBusy === req.id ? 'Processing…' : 'Approve'}
-              </button>
-              <button className="btn btn-outline btn-sm"
-                disabled={removalBusy === req.id}
-                onClick={() => rejectRemoval(req)}>
-                Reject
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
     {canFilter && (
       <div className="card">
         <div className="card-title">
