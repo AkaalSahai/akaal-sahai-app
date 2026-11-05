@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../hooks/useAuth'
 import { logAction } from '../lib/audit'
 import { hasMedicalNotes } from '../lib/medical'
@@ -23,7 +24,9 @@ export default function MedicalBadge({ notes, studentName }) {
         ⚕ Medical
       </button>
 
-      {open && (
+      {/* Drawn on <body>: inside a pinned (sticky) table cell it was trapped
+          under the column headings and the rows below */}
+      {open && createPortal(
         <div
           onClick={() => setOpen(false)}
           style={{
@@ -70,7 +73,8 @@ export default function MedicalBadge({ notes, studentName }) {
               Tap outside or ✕ to close
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
