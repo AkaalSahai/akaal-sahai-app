@@ -33,7 +33,9 @@ function calcAgeRange(students) {
 }
 
 export default function AdminApplications({ readOnly }) {
-  const { profile } = useAuth()
+  const { profile, hasRole } = useAuth()
+  // DBS numbers: admins and registrars only - not adminView (agreed 05-11-2026)
+  const canSeeDbs = hasRole('admin') || hasRole('registrar')
   const [tab, setTab]               = useState('students')
   const [studentApps, setStudentApps] = useState([])
   const [teacherApps, setTeacherApps] = useState([])
@@ -46,13 +48,15 @@ export default function AdminApplications({ readOnly }) {
   const [busy, setBusy]             = useState(null)
   const [showGroupsSidebar, setShowGroupsSidebar] = useState(false)  // mobile only — desktop always shows it
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(canSeeDbs) }, [canSeeDbs])
 
-  async function load() {
+  async function load(withDbs = canSeeDbs) {
     try {
       const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: rm }, { data: us }, { data: tg }, former] = await Promise.all([
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
-        supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
+        supabase.from('teacher_applications')
+          .select(withDbs ? '*' : 'id, full_name, email, phone, preferred_group, experience, status, reviewed_at, created_at, auth_user_id, assigned_group_id, reviewed_by')
+          .order('created_at', { ascending: false }),
         supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
@@ -451,7 +455,7 @@ export default function AdminApplications({ readOnly }) {
                 <Detail label="Email" value={app.email} />
                 <Detail label="Phone" value={app.phone} />
                 <Detail label="Preferred Group" value={app.preferred_group || '—'} />
-                <Detail label="DBS Number" value={app.dbs_number || '—'} />
+                {canSeeDbs && <Detail label="DBS Number" value={app.dbs_number || '—'} />}
                 <Detail label="Experience" value={app.experience || '—'} />
                 {app.status !== 'pending' && (
                   <Detail label={app.status === 'approved' ? 'Approved By' : 'Rejected By'} value={userMap[app.reviewed_by] || 'Unknown'} />
