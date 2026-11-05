@@ -264,7 +264,9 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     setBusy(userId)
     try {
       const u = users.find(x => x.id === userId)
-      const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId)
+      // The new main role mustn't also stay an extra role (it showed twice)
+      const { error } = await supabase.from('users')
+        .update({ role: newRole, extra_roles: (u?.extra_roles || []).filter(r => r !== newRole) }).eq('id', userId)
       if (error) throw error
       logAction(myProfile, 'Changed primary role', `${u?.name}: ${u?.role} → ${newRole}`).catch(() => {})
       load()
@@ -286,7 +288,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   }
 
   async function saveExtraRoles(userId, currentExtras) {
-    const draft = getDraft(userId, currentExtras)
+    const mainRole = users.find(x => x.id === userId)?.role
+    const draft = getDraft(userId, currentExtras).filter(r => r !== mainRole)
     setBusy(userId)
     try {
       const { error } = await supabase.from('users').update({ extra_roles: draft }).eq('id', userId)
@@ -533,7 +536,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                   {!readOnly && !roleOpen[u.id] ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center' }}>
                       <span className={`tag tag-${u.role}`}>{u.role}</span>
-                      {(u.extra_roles || []).map(r => <span key={r} className={`tag tag-${r}`}>{r}</span>)}
+                      {(u.extra_roles || []).filter(r => r !== u.role).map(r => <span key={r} className={`tag tag-${r}`}>{r}</span>)}
                       <button onClick={() => setRoleOpen(o => ({ ...o, [u.id]: true }))} title="Change role"
                         style={{ fontSize: '.7rem', padding: '1px 6px', borderRadius: 5, border: '1px solid var(--border)',
                           background: 'white', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
@@ -586,7 +589,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                   ) : (
                     <div>
                       <span className={`tag tag-${u.role}`}>{u.role}</span>
-                      {(u.extra_roles || []).map(r => <span key={r} className={`tag tag-${r}`} style={{ marginLeft: 3 }}>{r}</span>)}
+                      {(u.extra_roles || []).filter(r => r !== u.role).map(r => <span key={r} className={`tag tag-${r}`} style={{ marginLeft: 3 }}>{r}</span>)}
                     </div>
                   )}
                 </td>
