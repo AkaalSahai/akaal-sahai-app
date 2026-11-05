@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import PhoneInput from '../../components/PhoneInput'
+import TeacherDetails from '../../components/TeacherDetails'
 import { phoneDigits, normalizeUkPhone } from '../../lib/studentChecks'
 import { isTeachingStaff } from '../../lib/staff'
 import { EXTRA_REGISTERS, registerByKey } from '../../lib/teacherRegisters'
@@ -30,7 +31,8 @@ const ROLES = ['admin','registrar','teacher','adminView']
 const PRIMARY_ROLES = [...ROLES, 'dashboard']
 
 export default function AdminUsers({ readOnly, canToggleEditStudents }) {
-  const { profile: myProfile } = useAuth()
+  const { profile: myProfile, hasRole } = useAuth()
+  const canSeeDetails = hasRole('admin')   // teacher details are admin-only
   const [users, setUsers]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -42,6 +44,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const [savedMsg, setSavedMsg]     = useState({})
   const [roleOpen, setRoleOpen]     = useState({})   // role editor shown for these users
   const [editPanel, setEditPanel]   = useState({})  // userId → {name, email, phone}
+  const [detailsOpen, setDetailsOpen] = useState({})  // userId → Details panel shown
   const [sortCol, setSortCol]       = useState(null)
   const [sortDir, setSortDir]       = useState('asc')
   const [dialog, setDialog]         = useState(null)
@@ -511,7 +514,20 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
             {sorted.map(u => (
               <Fragment key={u.id}>
               <tr>
-                <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{u.name}</td>
+                <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {u.name}
+                  {canSeeDetails && (
+                    <button onClick={() => setDetailsOpen(o => ({ ...o, [u.id]: !o[u.id] }))}
+                      title="Show everything about this person"
+                      style={{ marginLeft: 6, fontSize: '.7rem', padding: '1px 7px', borderRadius: 5, fontFamily: 'inherit',
+                        cursor: 'pointer', fontWeight: 600,
+                        border: `1px solid ${detailsOpen[u.id] ? 'var(--primary)' : 'var(--border)'}`,
+                        background: detailsOpen[u.id] ? '#e0e7ff' : 'white',
+                        color: detailsOpen[u.id] ? 'var(--primary)' : 'var(--muted)' }}>
+                      Details
+                    </button>
+                  )}
+                </td>
                 <td>
                   {/* Role shown as labels; the editor opens on demand so rows stay short */}
                   {!readOnly && !roleOpen[u.id] ? (
@@ -755,6 +771,16 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                   </td>
                 )}
               </tr>
+              {detailsOpen[u.id] && canSeeDetails && (
+                <tr>
+                  <td colSpan={readOnly ? 9 : 12} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                    <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
+                      {u.name}
+                    </div>
+                    <TeacherDetails user={u} nameOf={id => users.find(x => x.id === id)?.name} />
+                  </td>
+                </tr>
+              )}
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
                   <td colSpan={12} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
