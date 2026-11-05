@@ -5,7 +5,7 @@ import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import TeacherAttendanceReport from './TeacherAttendanceReport'
-import { TEACHER_REGISTERS, registerByKey, onRegister, latestClassDay } from '../../lib/teacherRegisters'
+import { registerByKey, onRegister, latestClassDay, registersCanMark } from '../../lib/teacherRegisters'
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
@@ -15,9 +15,11 @@ const STATUS_BG     = { present: '#f0fdf4', absent: '#fef2f2', late: '#fffbeb', 
 const STATUS_BORDER = { present: '#bbf7d0', absent: '#fecaca', late: '#fde68a', holiday: '#bae6fd' }
 
 export default function AdminTeacherRegister({ readOnly }) {
-  const { profile } = useAuth()
-  const [classType, setClassType] = useState('punjabi')
-  const [date, setDate]       = useState(todayISO)
+  const { profile, hasRole } = useAuth()
+  // Gatka-only/Kirtan-only people just see their register(s)
+  const registers = registersCanMark(profile, hasRole('admin'))
+  const [classType, setClassType] = useState(() => registers[0]?.key || 'punjabi')
+  const [date, setDate]       = useState(() => classType === 'punjabi' ? todayISO() : latestClassDay(classType))
   const [teachers, setTeachers] = useState([])
   const [attendance, setAttendance] = useState({})   // teacher_id → { id, status, notes }
   const [loading, setLoading] = useState(true)
@@ -140,7 +142,7 @@ export default function AdminTeacherRegister({ readOnly }) {
     <>
       {/* Which register: Punjabi (everyone) or Gatka/Kirtan (ticked teachers only) */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-        {TEACHER_REGISTERS.map(r => (
+        {registers.map(r => (
           <button key={r.key} onClick={() => pickClass(r.key)}
             style={{ padding: '7px 14px', borderRadius: 8, fontSize: '.82rem', fontWeight: 700, fontFamily: 'inherit',
               cursor: 'pointer', border: `1px solid ${classType === r.key ? 'var(--primary)' : 'var(--border)'}`,

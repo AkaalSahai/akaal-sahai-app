@@ -26,3 +26,16 @@ export function latestClassDay(key, today = new Date()) {
   for (let i = 0; i < 7 && !days.includes(d.getDay()); i++) d.setDate(d.getDate() - 1)
   return localISO(d)
 }
+
+// Registers this person may mark: everything for admins and Register
+// Managers; otherwise just the ones an admin gave them on the Users page
+// (users.register_manager_classes, e.g. Gatka only).
+export function registersCanMark(profile, isAdmin) {
+  if (isAdmin || profile?.can_manage_teacher_register) return TEACHER_REGISTERS
+  const keys = profile?.register_manager_classes || []
+  return TEACHER_REGISTERS.filter(r => keys.includes(r.key))
+}
+
+export function canOpenTeacherRegister(profile) {
+  return !!profile?.can_manage_teacher_register || (profile?.register_manager_classes || []).length > 0
+}

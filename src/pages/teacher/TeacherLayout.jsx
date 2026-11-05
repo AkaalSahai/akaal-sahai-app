@@ -11,6 +11,7 @@ import AdminTeacherRegister from '../admin/AdminTeacherRegister'
 import TeacherStudents from './TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import BroadcastBanner from '../../components/BroadcastBanner'
+import { canOpenTeacherRegister } from '../../lib/teacherRegisters'
 import NotificationBell from '../../components/NotificationBell'
 
 export default function TeacherLayout() {
@@ -27,7 +28,8 @@ export default function TeacherLayout() {
 
   const showAdminTabs = isRegistrar || isAdminView
   const showUserTab   = isAdmin
-  const canManageTeacherRegister = !!myProfile?.can_manage_teacher_register
+  // Full Register Managers, or Gatka/Kirtan-only access
+  const canManageTeacherRegister = canOpenTeacherRegister(myProfile)
 
   const tabs = [
     { id: 'register',    label: 'Daily Register' },

@@ -12,13 +12,15 @@ import TeacherReports from '../teacher/TeacherReports'
 import TeacherStudents from '../teacher/TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import NotificationBell from '../../components/NotificationBell'
+import { canOpenTeacherRegister } from '../../lib/teacherRegisters'
 import BroadcastBanner from '../../components/BroadcastBanner'
 
 export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
   const { hasRole, profile } = useAuth()
   const isTeacher     = hasRole('teacher')
-  const canManageTeacherRegister = !!profile?.can_manage_teacher_register
+  // Full Register Managers, or Gatka/Kirtan-only access
+  const canManageTeacherRegister = canOpenTeacherRegister(profile)
 
   const tabs = [
     { id: 'dashboard',    label: 'Dashboard'    },

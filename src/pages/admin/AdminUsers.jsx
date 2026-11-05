@@ -84,7 +84,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   async function load() {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, register_classes, last_login, last_seen, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, register_classes, register_manager_classes, last_login, last_seen, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name, teacher_id'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
@@ -319,17 +319,23 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
-  // Gatka/Kirtan Teacher Register: only ticked teachers are listed
-  async function toggleRegisterClass(userId, key) {
+  // Gatka/Kirtan Teacher Register. register_classes: who is listed on it;
+  // register_manager_classes: who may mark it without being a full Register Manager.
+  async function toggleRegisterClass(userId, key, column = 'register_classes') {
     const u = users.find(x => x.id === userId)
-    const current = u?.register_classes || []
+    const current = u?.[column] || []
     const on = !current.includes(key)
     const updated = on ? [...current, key] : current.filter(k => k !== key)
     try {
-      const { error } = await supabase.from('users').update({ register_classes: updated }).eq('id', userId)
+      const { error } = await supabase.from('users').update({ [column]: updated }).eq('id', userId)
       if (error) throw error
-      logAction(myProfile, 'Changed teacher registers', `${u?.name}: ${on ? 'added to' : 'removed from'} ${registerByKey(key).label} register`).catch(() => {})
-      setUsers(prev => prev.map(x => x.id === userId ? { ...x, register_classes: updated } : x))
+      const label = registerByKey(key).label
+      if (column === 'register_classes') {
+        logAction(myProfile, 'Changed teacher registers', `${u?.name}: ${on ? 'added to' : 'removed from'} ${label} register`).catch(() => {})
+      } else {
+        logAction(myProfile, 'Toggled Teacher Register manager permission', `${u?.name}: ${label} register ${on ? 'enabled' : 'disabled'}`).catch(() => {})
+      }
+      setUsers(prev => prev.map(x => x.id === userId ? { ...x, [column]: updated } : x))
     } catch (err) { alert('Error: ' + err.message) }
   }
 
@@ -619,6 +625,25 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                     <span style={{ fontSize: '.75rem', color: u.can_manage_teacher_register ? '#15803d' : '#94a3b8', fontWeight: 600 }}>
                       {u.can_manage_teacher_register ? 'Enabled' : 'Disabled'}
                     </span>
+                  )}
+                  {/* Or just one register, e.g. Gatka only */}
+                  {!u.can_manage_teacher_register && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>
+                      {EXTRA_REGISTERS.map(r => {
+                        const on = (u.register_manager_classes || []).includes(r.key)
+                        const chip = { padding: '2px 8px', borderRadius: 20, fontSize: '.68rem', fontWeight: 700, fontFamily: 'inherit',
+                          border: 'none', whiteSpace: 'nowrap', background: on ? '#dcfce7' : '#f1f5f9', color: on ? '#15803d' : '#94a3b8' }
+                        return !readOnly ? (
+                          <button key={r.key} onClick={() => toggleRegisterClass(u.id, r.key, 'register_manager_classes')}
+                            style={{ ...chip, cursor: 'pointer' }}
+                            title={on ? `Can mark the ${r.label} register - click to remove` : `Let them mark the ${r.label} register only`}>
+                            {on ? `✓ ${r.label} only` : `${r.label} only`}
+                          </button>
+                        ) : on ? (
+                          <span key={r.key} style={chip}>✓ {r.label} only</span>
+                        ) : null
+                      })}
+                    </div>
                   )}
                 </td>
                 <td>
