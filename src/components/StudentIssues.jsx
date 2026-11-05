@@ -17,7 +17,7 @@ export function IssueBadge({ issues }) {
   return (
     <span title={shown.map(i => '• ' + i.label).join('\n')}
       style={{ ...STYLE[level], fontSize: '.68rem', fontWeight: 700, borderRadius: 10,
-        padding: '1px 7px', whiteSpace: 'nowrap', cursor: 'help' }}>
+        padding: '1px 7px', cursor: 'help', maxWidth: '100%', lineHeight: 1.4 }}>
       ⚠ {shown.length === 1 ? shown[0].label : `${shown.length} details to check`}
     </span>
   )
@@ -31,7 +31,7 @@ export function IssueList({ issues }) {
         Details to check:
       </span>
       {issues.map(i => (
-        <span key={i.key} style={{ ...STYLE[i.level], fontSize: '.74rem', fontWeight: 600, borderRadius: 99, padding: '2px 9px' }}>
+        <span key={i.key} style={{ ...STYLE[i.level], fontSize: '.74rem', fontWeight: 600, borderRadius: 12, padding: '2px 9px', maxWidth: '100%', lineHeight: 1.4 }}>
           {i.level === 'error' ? '⚠ ' : ''}{i.label}
         </span>
       ))}
