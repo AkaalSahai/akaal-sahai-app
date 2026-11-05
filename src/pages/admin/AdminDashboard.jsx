@@ -296,6 +296,8 @@ export default function AdminDashboard({ setTab }) {
       { data: allSessionDates },
       { count: pendingStudents },
       { count: pendingTeachers },
+      { count: pendingTransfers },
+      { count: pendingRemovals },
       { data: scRows },
       { data: groupRows },
       { data: teacherRows },
@@ -317,6 +319,8 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('attendance_sessions').select('session_date, group_id'),
       supabase.from('parent_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('transfer_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('request_type', 'transfer'),
+      supabase.from('transfer_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('request_type', 'removal'),
       supabase.from('student_classes').select('student_id, group_id'),
       supabase.from('groups').select('id, name, class_type, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
       supabase.from('users').select('id, name, last_login, last_seen').or(TEACHING_STAFF_FILTER).order('name'),
@@ -440,7 +444,7 @@ export default function AdminDashboard({ setTab }) {
 
     const result = {
       totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType, sessionDays,
-      pendingStudents, pendingTeachers,
+      pendingStudents, pendingTeachers, pendingTransfers, pendingRemovals,
       enrichedGroups, lowestStudents, leastActive,
       todayCount: doneGroupIds.size,
       unassignedStudents: unassignedStudents || 0,
@@ -620,13 +624,21 @@ export default function AdminDashboard({ setTab }) {
   )
 
   const { totalStudents, totalGroups, totalTeachers, totalSessions, sessionsByType,
-    pendingStudents, pendingTeachers, unassignedStudents,
+    pendingStudents, pendingTeachers, pendingTransfers, pendingRemovals, unassignedStudents,
     enrichedGroups, lowestStudents, leastActive, todayCount,
     groupsFullyVerified, groupsWithStudentsCount } = data
 
   const notDoneGroups = enrichedGroups.filter(g => !g.doneToday)
   const classDay      = isAnyClassDay(classTypesMeta)
   const totalPending  = (pendingStudents || 0) + (pendingTeachers || 0)
+    + (pendingTransfers || 0) + (pendingRemovals || 0)
+  const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`
+  const pendingBreakdown = [
+    pendingStudents > 0 && plural(pendingStudents, 'student'),
+    pendingTeachers > 0 && plural(pendingTeachers, 'teacher'),
+    pendingTransfers > 0 && plural(pendingTransfers, 'transfer'),
+    pendingRemovals > 0 && plural(pendingRemovals, 'removal'),
+  ].filter(Boolean).join(' · ')
   const sessionsByTypeLabel = Object.entries(sessionsByType || {})
     .sort((a, b) => b[1] - a[1])
     .map(([ct, n]) => `${classTypesMeta[ct]?.label || ct} ${n}`)
@@ -652,13 +664,10 @@ export default function AdminDashboard({ setTab }) {
           <span style={{ fontSize: '1.15rem' }}>📋</span>
           <div style={{ flex: 1 }}>
             <span style={{ fontWeight: 700, color: '#92400e' }}>
-              {totalPending} pending application{totalPending > 1 ? 's' : ''} awaiting review
+              {totalPending} awaiting review
             </span>
             <span style={{ fontSize: '.78rem', color: '#b45309', marginLeft: 8 }}>
-              {[
-                pendingStudents > 0 && `${pendingStudents} student${pendingStudents > 1 ? 's' : ''}`,
-                pendingTeachers > 0 && `${pendingTeachers} teacher${pendingTeachers > 1 ? 's' : ''}`,
-              ].filter(Boolean).join(' · ')}
+              {pendingBreakdown}
             </span>
           </div>
           <span style={{ fontWeight: 700, color: '#d97706', whiteSpace: 'nowrap' }}>Review →</span>
@@ -741,7 +750,7 @@ export default function AdminDashboard({ setTab }) {
           {
             label: 'Pending',
             value: totalPending,
-            sub: totalPending === 0 ? 'Nothing pending' : `application${totalPending > 1 ? 's' : ''} to review`,
+            sub: totalPending === 0 ? 'Nothing pending' : pendingBreakdown,
             accent: totalPending > 0 ? '#dc2626' : '#16a34a',
             subColor: totalPending > 0 ? '#dc2626' : '#16a34a',
             tab: 'applications',
