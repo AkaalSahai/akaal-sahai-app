@@ -6,6 +6,8 @@ import { logAction } from '../../lib/audit'
 import { fmtDate } from '../../lib/dates'
 import PhoneInput from '../../components/PhoneInput'
 import { phoneDigits, normalizeUkPhone } from '../../lib/studentChecks'
+import { isTeachingStaff } from '../../lib/staff'
+import { EXTRA_REGISTERS, registerByKey } from '../../lib/teacherRegisters'
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-user-action`
 
@@ -82,7 +84,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   async function load() {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, last_login, last_seen, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, register_classes, last_login, last_seen, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name, teacher_id'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
@@ -317,6 +319,20 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  // Gatka/Kirtan Teacher Register: only ticked teachers are listed
+  async function toggleRegisterClass(userId, key) {
+    const u = users.find(x => x.id === userId)
+    const current = u?.register_classes || []
+    const on = !current.includes(key)
+    const updated = on ? [...current, key] : current.filter(k => k !== key)
+    try {
+      const { error } = await supabase.from('users').update({ register_classes: updated }).eq('id', userId)
+      if (error) throw error
+      logAction(myProfile, 'Changed teacher registers', `${u?.name}: ${on ? 'added to' : 'removed from'} ${registerByKey(key).label} register`).catch(() => {})
+      setUsers(prev => prev.map(x => x.id === userId ? { ...x, register_classes: updated } : x))
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
   async function toggleMfaRequired(userId, current) {
     const updated = !current
     try {
@@ -475,6 +491,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th onClick={() => toggleSort('group')} style={{ cursor: 'pointer', userSelect: 'none' }}>Group{sortIcon('group')}</th>
               <th onClick={() => toggleSort('edit_students')} style={{ cursor: 'pointer', userSelect: 'none' }}>Edit Students{sortIcon('edit_students')}</th>
               <th onClick={() => toggleSort('register_manager')} style={{ cursor: 'pointer', userSelect: 'none' }}>Register Manager{sortIcon('register_manager')}</th>
+              <th title="Gatka/Kirtan Teacher Register - only ticked teachers are listed">Other Registers</th>
               <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
               <th onClick={() => toggleSort('last_seen')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Seen{sortIcon('last_seen')}</th>
               {!readOnly && <th>2FA</th>}
@@ -604,6 +621,27 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                     </span>
                   )}
                 </td>
+                <td>
+                  {isTeachingStaff(u) ? (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {EXTRA_REGISTERS.map(r => {
+                        const on = (u.register_classes || []).includes(r.key)
+                        const chip = { padding: '3px 9px', borderRadius: 20, fontSize: '.72rem', fontWeight: 700, fontFamily: 'inherit',
+                          border: 'none', whiteSpace: 'nowrap', background: on ? '#dcfce7' : '#f1f5f9', color: on ? '#15803d' : '#94a3b8' }
+                        return !readOnly ? (
+                          <button key={r.key} onClick={() => toggleRegisterClass(u.id, r.key)} style={{ ...chip, cursor: 'pointer' }}
+                            title={`${on ? 'Remove from' : 'Add to'} the ${r.label} Teacher Register`}>
+                            {on ? '✓ ' : ''}{r.label}
+                          </button>
+                        ) : on ? (
+                          <span key={r.key} style={chip}>✓ {r.label}</span>
+                        ) : null
+                      })}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '.75rem', color: '#cbd5e1' }}>—</span>
+                  )}
+                </td>
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
@@ -674,7 +712,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </tr>
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
-                  <td colSpan={11} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={12} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       Edit Details — {u.name}
                     </div>
@@ -709,7 +747,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={readOnly ? 8 : 11} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 9 : 12} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
