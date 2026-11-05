@@ -38,6 +38,7 @@ export default function AdminApplications({ readOnly }) {
   const [studentApps, setStudentApps] = useState([])
   const [teacherApps, setTeacherApps] = useState([])
   const [transfers, setTransfers]   = useState([])
+  const [removals, setRemovals]     = useState([])
   const [groups, setGroups]         = useState([])
   const [teacherMap, setTeacherMap] = useState({})
   const [userMap, setUserMap]       = useState({})
@@ -49,12 +50,14 @@ export default function AdminApplications({ readOnly }) {
 
   async function load() {
     try {
-      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: us }, { data: tg }, former] = await Promise.all([
+      const [{ data: sa }, { data: ta }, { data: gr }, { data: tr }, { data: rm }, { data: us }, { data: tg }, former] = await Promise.all([
         supabase.from('parent_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('teacher_applications').select('*').order('created_at', { ascending: false }),
         supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
         supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes)')
           .eq('request_type', 'transfer').order('created_at', { ascending: false }),
+        supabase.from('transfer_requests').select('*, students(date_of_birth, medical_notes, archived_at, archived_by_name)')
+          .eq('request_type', 'removal').order('created_at', { ascending: false }),
         supabase.from('users').select('id, name, role, extra_roles'),
         supabase.from('teacher_groups').select('teacher_id, group_id, role'),
         loadFormerStaff(),
@@ -70,6 +73,7 @@ export default function AdminApplications({ readOnly }) {
       setTeacherApps(pendingFirst(ta || []))
       setGroups((gr || []).map(g => ({ ...g, teacherName: teacherLabels[g.id] })))
       setTransfers(pendingFirst(tr || []))
+      setRemovals(pendingFirst(rm || []))
     } catch (err) {
       console.error('Applications load error:', err)
     } finally {
@@ -174,6 +178,48 @@ export default function AdminApplications({ readOnly }) {
     finally { setBusy(null) }
   }
 
+  // Removal requests come from the Remove button on the teacher's register
+  // (transfer_requests, request_type 'removal'). Approving archives the
+  // student with the reason and who asked, as the Students page used to.
+  async function approveRemoval(req) {
+    if (readOnly) return
+    if (!confirm(`Archive ${req.student_name}? They will be moved to the Archive with this reason.`)) return
+    setBusy(req.id)
+    try {
+      const now = new Date().toISOString()
+      const { error: e1 } = await supabase.from('students').update({
+        active: false,
+        archived_at: now,
+        archived_by_id: profile.id,
+        archived_by_name: profile.name,
+        deletion_reason: req.reason || null,
+        deletion_requested_by_name: userMap[req.requested_by] || null,
+      }).eq('id', req.student_id)
+      if (e1) throw e1
+      const { error: e2 } = await supabase.from('transfer_requests').update({
+        status: 'approved', reviewed_at: now, reviewed_by: profile.id,
+      }).eq('id', req.id)
+      if (e2) throw e2
+      logAction(profile, 'Approved student removal', req.student_name).catch(() => {})
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setBusy(null) }
+  }
+
+  async function rejectRemoval(req) {
+    if (readOnly) return
+    setBusy(req.id)
+    try {
+      const { error } = await supabase.from('transfer_requests').update({
+        status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id,
+      }).eq('id', req.id)
+      if (error) throw error
+      logAction(profile, 'Rejected student removal', req.student_name).catch(() => {})
+      load()
+    } catch (err) { alert('Error: ' + err.message) }
+    finally { setBusy(null) }
+  }
+
   async function clearApp(table, id) {
     if (!confirm('Permanently delete this application? This cannot be undone.')) return
     setBusy(id)
@@ -194,12 +240,13 @@ export default function AdminApplications({ readOnly }) {
       if (error) throw error
       const clearAction = table === 'parent_applications' ? 'Cleared student application'
         : table === 'teacher_applications' ? 'Cleared teacher application'
+        : removals.some(a => a.id === id) ? 'Cleared removal request'
         : 'Cleared transfer request'
       const clearDetail = table === 'parent_applications'
         ? [studentApps.find(a => a.id === id)].filter(Boolean).map(a => [a.first_name, a.last_name].filter(Boolean).join(' '))[0]
         : table === 'teacher_applications'
         ? teacherApps.find(a => a.id === id)?.full_name
-        : transfers.find(a => a.id === id)?.student_name
+        : [...transfers, ...removals].find(a => a.id === id)?.student_name
       logAction(profile, clearAction, clearDetail || null).catch(() => {})
       load()
     } catch (err) {
@@ -229,6 +276,7 @@ export default function AdminApplications({ readOnly }) {
     students:  studentApps.filter(a => a.status === 'pending').length,
     teachers:  teacherApps.filter(a => a.status === 'pending').length,
     transfers: transfers.filter(a => a.status === 'pending').length,
+    removals:  removals.filter(a => a.status === 'pending').length,
   }
 
   if (loading) return <div className="spinner" />
@@ -319,6 +367,9 @@ export default function AdminApplications({ readOnly }) {
         </button>
         <button className={`toggle-btn ${tab === 'transfers' ? 'active' : ''}`} onClick={() => setTab('transfers')}>
           Transfer Requests {pending.transfers > 0 && <span className="badge">{pending.transfers}</span>}
+        </button>
+        <button className={`toggle-btn ${tab === 'removals' ? 'active' : ''}`} onClick={() => setTab('removals')}>
+          Removal Requests {pending.removals > 0 && <span className="badge">{pending.removals}</span>}
         </button>
       </div>
 
@@ -470,6 +521,64 @@ export default function AdminApplications({ readOnly }) {
               )}
             </ApplicationCard>
           ))}
+        </>
+      )}
+
+      {tab === 'removals' && (
+        <>
+          {removals.length === 0 && <div className="empty-state"><div className="icon">🗂️</div>No removal requests</div>}
+          {removals.map(rm => {
+            // Older approvals didn't record the reviewer - the archive entry says who archived them
+            const decidedBy = userMap[rm.reviewed_by]
+              || (rm.status === 'approved' ? rm.students?.archived_by_name : null) || 'Unknown'
+            const decidedAt = rm.reviewed_at || (rm.status === 'approved' ? rm.students?.archived_at : null)
+            return (
+              <ApplicationCard key={rm.id} status={rm.status}>
+                <div className="app-header">
+                  <div>
+                    <div className="app-name">{rm.student_name}</div>
+                    <div className="app-meta">
+                      {calcAge(rm.students?.date_of_birth) !== null && <span>Age: {calcAge(rm.students?.date_of_birth)}y · </span>}
+                      From: {rm.from_group_name || '—'} · Requested: {fmtDate(rm.created_at)}
+                    </div>
+                    <div className="app-meta">
+                      Submitted by: {userMap[rm.requested_by] || 'Unknown'}
+                    </div>
+                  </div>
+                  <span className={`tag tag-${rm.status}`}>{rm.status}</span>
+                </div>
+                <div className="app-details">
+                  <Detail label="Reason for Removal" value={rm.reason || '—'} />
+                  {hasMedicalNotes(rm.students?.medical_notes) && (
+                    <Detail label="Medical Notes" value={rm.students.medical_notes} />
+                  )}
+                  {rm.status !== 'pending' && (
+                    <Detail label={rm.status === 'approved' ? 'Approved By' : 'Rejected By'}
+                      value={decidedAt ? `${decidedBy} · ${fmtDate(decidedAt)}` : decidedBy} />
+                  )}
+                </div>
+                {!readOnly && (
+                  <div>
+                    {rm.status === 'pending' && (
+                      <div className="app-actions">
+                        <button className="btn btn-danger btn-sm" disabled={busy === rm.id} onClick={() => approveRemoval(rm)}>
+                          {busy === rm.id ? '…' : 'Approve & Archive'}
+                        </button>
+                        <button className="btn btn-outline btn-sm" disabled={busy === rm.id} onClick={() => rejectRemoval(rm)}>Reject</button>
+                      </div>
+                    )}
+                    <div style={{ marginTop: rm.status === 'pending' ? 8 : 0 }}>
+                      <button className="btn btn-outline btn-sm" disabled={busy === rm.id}
+                        onClick={() => clearApp('transfer_requests', rm.id)}
+                        style={{ color: '#94a3b8', borderColor: '#cbd5e1' }}>
+                        {busy === rm.id ? '…' : 'Clear'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </ApplicationCard>
+            )
+          })}
         </>
       )}
       </div>
