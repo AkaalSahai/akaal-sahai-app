@@ -13,6 +13,7 @@ import TeacherStudents from '../teacher/TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import NotificationBell from '../../components/NotificationBell'
 import { canOpenTeacherRegister } from '../../lib/teacherRegisters'
+import { contentClass } from '../../lib/layout'
 import BroadcastBanner from '../../components/BroadcastBanner'
 
 export default function RegistrarLayout() {
@@ -50,7 +51,7 @@ export default function RegistrarLayout() {
       </div>
       {/* Registrars count as teachers, so they get announcements too */}
       <BroadcastBanner />
-      <div className="content">
+      <div className={contentClass(tab)}>
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
         {tab === 'applications' && <AdminApplications />}
         {tab === 'students'     && <AdminStudents />}

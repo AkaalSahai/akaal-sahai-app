@@ -138,7 +138,7 @@ export default function AdminRegisterStatus() {
           </div>
         )}
 
-        <div className="table-wrap">
+        <div className="table-wrap table-sticky sticky-first">
           <table>
             <thead>
               <tr>

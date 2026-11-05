@@ -20,6 +20,7 @@ import AdminLogins from './AdminLogins'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import NotificationBell from '../../components/NotificationBell'
+import { contentClass } from '../../lib/layout'
 import BroadcastBanner from '../../components/BroadcastBanner'
 
 export default function AdminLayout() {
@@ -86,7 +87,7 @@ export default function AdminLayout() {
         </div>
       </div>
       {isTeachingStaff && <BroadcastBanner />}
-      <div className="content">
+      <div className={contentClass(tab)}>
         {tab === 'dashboard'    && <AdminDashboard setTab={setTab} />}
         {tab === 'applications' && <AdminApplications readOnly={readOnly} />}
         {tab === 'students'     && <AdminStudents readOnly={readOnly} />}

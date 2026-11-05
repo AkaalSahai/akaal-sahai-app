@@ -208,7 +208,7 @@ export default function AdminTeacherRegister({ readOnly }) {
               : `No teachers ticked for ${reg.label}. An admin can tick them on the Users page.`}
           </div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap table-sticky">
             <table>
               <thead>
                 <tr>

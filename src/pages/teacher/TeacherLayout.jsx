@@ -12,6 +12,7 @@ import TeacherStudents from './TeacherStudents'
 import { useAuth } from '../../hooks/useAuth'
 import BroadcastBanner from '../../components/BroadcastBanner'
 import { canOpenTeacherRegister } from '../../lib/teacherRegisters'
+import { contentClass } from '../../lib/layout'
 import NotificationBell from '../../components/NotificationBell'
 
 export default function TeacherLayout() {
@@ -78,7 +79,7 @@ export default function TeacherLayout() {
         </div>
       </div>
       <BroadcastBanner />
-      <div className="content">
+      <div className={contentClass(tab)}>
         {tab === 'register'     && <TeacherRegister />}
         {tab === 'reports'      && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}

@@ -186,7 +186,7 @@ export default function AdminLogins() {
         {running.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: '.85rem' }}>Nobody has used the app in the last {RUNNING_MINUTES} minutes.</div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap table-sticky sticky-first">
             <table>
               <thead>
                 <tr><th>Person</th><th>Role</th><th>Device</th><th>IP address</th><th>Last active</th><th></th></tr>
@@ -242,7 +242,7 @@ export default function AdminLogins() {
           <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={load}>Refresh</button>
         </div>
 
-        <div className="table-wrap">
+        <div className="table-wrap table-sticky sticky-first">
           <table>
             <thead>
               <tr>

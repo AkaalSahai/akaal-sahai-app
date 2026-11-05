@@ -269,7 +269,7 @@ export default function TeacherAttendanceReport({ onPickDate, classType = 'punja
       ) : !data || data.classDays.length === 0 ? (
         <div style={{ color: 'var(--muted)', fontSize: '.85rem', padding: '8px 0' }}>No teacher attendance recorded in this period.</div>
       ) : view === 'summary' ? (
-        <div className="table-wrap">
+        <div className="table-wrap table-sticky sticky-first">
           <table>
             <thead>
               <tr>
@@ -351,11 +351,11 @@ export default function TeacherAttendanceReport({ onPickDate, classType = 'punja
               : <><span style={{ color: '#ea580c', fontWeight: 700 }}>A⚠ Not marked (counted absent)</span> · H Holiday · blank = before joining / after leaving.</>}
             {onPickDate && ' Click a date to open that day\'s register.'}
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap table-sticky">
             <table style={{ fontSize: '.76rem' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>Teacher</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'white', zIndex: 3 }}>Teacher</th>
                   {data.classDays.map(d => (
                     <th key={d} title={fmtDate(d)} onClick={() => onPickDate?.(d)}
                       style={{ textAlign: 'center', padding: '6px 4px', cursor: onPickDate ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>

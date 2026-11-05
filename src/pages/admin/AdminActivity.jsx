@@ -134,7 +134,7 @@ export default function AdminActivity() {
           <div style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8 }}>
             {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap table-sticky">
             <table>
               <thead>
                 <tr>
