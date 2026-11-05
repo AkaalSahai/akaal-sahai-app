@@ -458,7 +458,7 @@ export default function AdminArchive() {
               {search ? 'No results matching your search.' : 'No archived students.'}
             </div>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap table-sticky sticky-first">
               <table>
                 <thead>
                   <tr>
@@ -532,7 +532,7 @@ export default function AdminArchive() {
               {search ? 'No results matching your search.' : 'No archived teachers.'}
             </div>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap table-sticky sticky-first">
               <table>
                 <thead>
                   <tr>

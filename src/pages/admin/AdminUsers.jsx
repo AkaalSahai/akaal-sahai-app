@@ -40,6 +40,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   const [editEmail, setEditEmail] = useState({})
   const [roleDrafts, setRoleDrafts] = useState({})
   const [savedMsg, setSavedMsg]     = useState({})
+  const [roleOpen, setRoleOpen]     = useState({})   // role editor shown for these users
   const [editPanel, setEditPanel]   = useState({})  // userId → {name, email, phone}
   const [sortCol, setSortCol]       = useState(null)
   const [sortDir, setSortDir]       = useState('asc')
@@ -293,6 +294,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
       setRoleDrafts(prev => { const n = { ...prev }; delete n[userId]; return n })
       setSavedMsg(prev => ({ ...prev, [userId]: true }))
       setTimeout(() => setSavedMsg(prev => ({ ...prev, [userId]: false })), 2500)
+      setRoleOpen(prev => ({ ...prev, [userId]: false }))
     } catch (err) { alert('Error: ' + err.message) }
     finally { setBusy(null) }
   }
@@ -487,7 +489,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
         </div>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap table-sticky sticky-first">
         <table>
           <thead>
             <tr>
@@ -509,9 +511,21 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
             {sorted.map(u => (
               <Fragment key={u.id}>
               <tr>
-                <td style={{ fontWeight: 600 }}>{u.name}</td>
+                <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{u.name}</td>
                 <td>
-                  {!readOnly ? (
+                  {/* Role shown as labels; the editor opens on demand so rows stay short */}
+                  {!readOnly && !roleOpen[u.id] ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center' }}>
+                      <span className={`tag tag-${u.role}`}>{u.role}</span>
+                      {(u.extra_roles || []).map(r => <span key={r} className={`tag tag-${r}`}>{r}</span>)}
+                      <button onClick={() => setRoleOpen(o => ({ ...o, [u.id]: true }))} title="Change role"
+                        style={{ fontSize: '.7rem', padding: '1px 6px', borderRadius: 5, border: '1px solid var(--border)',
+                          background: 'white', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit' }}>✎</button>
+                      {savedMsg[u.id] && (
+                        <span style={{ fontSize: '.72rem', color: 'var(--success)', fontWeight: 700 }}>✓ Saved</span>
+                      )}
+                    </div>
+                  ) : !readOnly ? (
                     <div>
                       <select value={u.role} disabled={busy === u.id}
                         onChange={e => changeRole(u.id, e.target.value)}
@@ -546,6 +560,11 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                         {savedMsg[u.id] && (
                           <span style={{ fontSize: '.72rem', color: 'var(--success)', fontWeight: 700, marginLeft: 8 }}>✓ Saved</span>
                         )}
+                        {roleDrafts[u.id] === undefined && (
+                          <button onClick={() => setRoleOpen(o => ({ ...o, [u.id]: false }))}
+                            style={{ fontSize: '.72rem', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--border)',
+                              background: 'white', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit', marginLeft: 6 }}>Done</button>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -576,7 +595,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                     ? (u.groupNames || []).map((n, i) => (
                         <span key={i} style={{ display: 'inline-block', background: '#e0e7ff', color: '#3730a3',
                           borderRadius: 5, padding: '1px 7px', fontSize: '.75rem', fontWeight: 600,
-                          marginRight: 3, marginBottom: 2 }}>{n}</span>
+                          marginRight: 3, marginBottom: 2, whiteSpace: 'nowrap' }}>{n}</span>
                       ))
                     : <span style={{ color: 'var(--muted)' }}>—</span>
                   }
@@ -709,7 +728,8 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                 )}
                 {!readOnly && (
                   <td>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {/* Two short lines of buttons (not five) keeps rows compact */}
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', width: 310, whiteSpace: 'nowrap' }}>
                       <button className="btn btn-outline btn-xs"
                         style={{ borderColor: editPanel[u.id] ? 'var(--primary)' : undefined, color: editPanel[u.id] ? 'var(--primary)' : undefined }}
                         disabled={busy === u.id}
