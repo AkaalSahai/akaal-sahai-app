@@ -311,12 +311,16 @@ export default function ProjectorDashboard() {
             {noticeDates.length > 0 && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
                 <Heading>📅 {notices.headings.dates || DEFAULT_HEADINGS.dates}</Heading>
-                {noticeDates.map((d, i) => (
-                  <div key={i} style={card({ flex: 1, minHeight: 0, maxHeight: '13vh', display: 'flex', alignItems: 'center', gap: '1.6vw', padding: '0 2vw' })}>
-                    <span style={{ fontSize: vw(2), fontWeight: 800, color: YELLOW, whiteSpace: 'nowrap', minWidth: '19vw' }}>{fmtDateRange(d)}</span>
-                    <span style={{ flex: 1, fontSize: vw(2.3), fontWeight: 700, lineHeight: 1.15 }}>{d.title}</span>
-                  </div>
-                ))}
+                {/* Each date and event centred in its own yellow-bordered box */}
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.4vh' }}>
+                  {noticeDates.map((d, i) => (
+                    <div key={i} style={card({ border: `3px solid ${YELLOW}`, padding: noticeDates.length > 4 ? '0.8vh 2vw' : '1.4vh 2vw',
+                      textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4vh' })}>
+                      <div style={{ fontSize: vw(noticeDates.length > 4 ? 1.6 : 1.9), fontWeight: 800, color: YELLOW }}>{fmtDateRange(d)}</div>
+                      <div style={{ fontSize: vw(noticeDates.length > 4 ? 1.9 : 2.3), fontWeight: 700, lineHeight: 1.15 }}>{d.title}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {showThought && (
