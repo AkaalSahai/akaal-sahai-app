@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ProjectorSettings from '../../components/ProjectorSettings'
+import ProjectorImages from '../../components/ProjectorImages'
 
 const DEFAULTS = {
   class_schedule:    'Every Friday & Saturday, 6:15PM – 8:30PM',
@@ -324,6 +325,7 @@ export default function AdminSettings() {
       </div>
 
       <ProjectorSettings />
+      <ProjectorImages />
 
       <div className="card" style={{ marginTop: 20 }}>
         <div className="card-title">Log Out All Users</div>
