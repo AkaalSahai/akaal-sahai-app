@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, readNotices, upcomingDates, hasThought, fmtDateRange } from '../../lib/projectorNotices'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -16,9 +17,10 @@ function fmtTargetDate(dateStr) {
 
 const MEDALS = ['🥇', '🥈', '🥉']
 
-// Three scenes so a projector viewed from across a room only ever has to
-// read one focused thing at a time, instead of six cards competing at once.
-const SCENE_COUNT = 3
+// Scenes so a projector viewed from across a room only ever has to read one
+// focused thing at a time, instead of six cards competing at once. Scene 3
+// (Notices: upcoming dates + thought of the week) only shows when there's
+// something to say.
 const SCENE_MS = 14000
 
 // Kept faint in the corner so it doesn't distract on the projector, but
@@ -52,6 +54,7 @@ export default function ProjectorDashboard() {
   const [now, setNow] = useState(new Date())
   const [scene, setScene] = useState(0)
   const [seva, setSeva] = useState(null)
+  const [notices, setNotices] = useState(null)
 
   useEffect(() => {
     load()
@@ -60,16 +63,23 @@ export default function ProjectorDashboard() {
     return () => { clearInterval(poll); clearInterval(clock) }
   }, [])
 
+  const noticeDates = upcomingDates(notices?.dates).slice(0, 6)
+  const showThought = hasThought(notices?.thought)
+  const sceneCount = noticeDates.length || showThought ? 4 : 3
+
   useEffect(() => {
-    const rotate = setInterval(() => setScene(s => (s + 1) % SCENE_COUNT), SCENE_MS)
+    setScene(s => s % sceneCount)   // notices emptied while on that slide
+    const rotate = setInterval(() => setScene(s => (s + 1) % sceneCount), SCENE_MS)
     return () => clearInterval(rotate)
-  }, [])
+  }, [sceneCount])
 
   async function load() {
-    const [{ data: stats, error }, { data: sevaData, error: sevaError }] = await Promise.all([
+    const [{ data: stats, error }, { data: sevaData, error: sevaError }, { data: noticeRows }] = await Promise.all([
       supabase.rpc('get_projector_dashboard_stats'),
       supabase.rpc('get_projector_seva'),
+      supabase.from('site_settings').select('key, value').in('key', PROJECTOR_KEYS),
     ])
+    setNotices(readNotices(Object.fromEntries((noticeRows || []).map(r => [r.key, r.value]))))
     if (error) { setError(error.message); return }
     setError(null)
     setData(stats)
@@ -278,10 +288,43 @@ export default function ProjectorDashboard() {
             )}
           </div>
         ))}
+        {scene === 3 && (
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2.5vw' }}>
+            {noticeDates.length > 0 && (
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
+                <Heading>📅 {notices.headings.dates || DEFAULT_HEADINGS.dates}</Heading>
+                {noticeDates.map((d, i) => (
+                  <div key={i} style={card({ flex: 1, minHeight: 0, maxHeight: '13vh', display: 'flex', alignItems: 'center', gap: '1.6vw', padding: '0 2vw' })}>
+                    <span style={{ fontSize: vw(2), fontWeight: 800, color: YELLOW, whiteSpace: 'nowrap', minWidth: '19vw' }}>{fmtDateRange(d)}</span>
+                    <span style={{ flex: 1, fontSize: vw(2.3), fontWeight: 700, lineHeight: 1.15 }}>{d.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showThought && (
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
+                <Heading>📖 {notices.headings.thought || DEFAULT_HEADINGS.thought}</Heading>
+                <div style={card({ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+                  gap: '2.5vh', padding: '3vh 3vw', textAlign: 'center' })}>
+                  {notices.thought.gurmukhi && (
+                    <div style={{ fontSize: vw(noticeDates.length ? 3 : 3.8), fontWeight: 700, lineHeight: 1.45,
+                      fontFamily: "'Noto Sans Gurmukhi', 'Raavi', 'Gurmukhi MN', system-ui, sans-serif" }}>{notices.thought.gurmukhi}</div>
+                  )}
+                  {notices.thought.english && (
+                    <div style={{ fontSize: vw(noticeDates.length ? 2 : 2.4), color: YELLOW, fontWeight: 600, lineHeight: 1.35 }}>{notices.thought.english}</div>
+                  )}
+                  {notices.thought.source && (
+                    <div style={{ fontSize: vw(1.4), color: '#a5b4fc' }}>— {notices.thought.source}</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: 10, paddingTop: '1.2vh', flexShrink: 0 }}>
-        {Array.from({ length: SCENE_COUNT }).map((_, i) => (
+        {Array.from({ length: sceneCount }).map((_, i) => (
           <span key={i} style={{ width: 13, height: 13, borderRadius: '50%',
             background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
         ))}
