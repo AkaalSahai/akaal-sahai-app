@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, readNotices, upcomingDates, hasThought, fmtDateRange } from '../../lib/projectorNotices'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl } from '../../lib/projectorNotices'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -18,9 +18,10 @@ function fmtTargetDate(dateStr) {
 const MEDALS = ['🥇', '🥈', '🥉']
 
 // Scenes so a projector viewed from across a room only ever has to read one
-// focused thing at a time, instead of six cards competing at once. Scene 3
-// (Notices: upcoming dates + thought of the week) only shows when there's
-// something to say.
+// focused thing at a time, instead of six cards competing at once. After the
+// three fixed scenes come the optional ones: Notices (upcoming dates + thought
+// of the week) when there's something to say, then one scene per slide of
+// pictures (Settings -> Projector Pictures).
 const SCENE_MS = 14000
 // After someone taps a dot, stay on that slide a while before rotating on
 const PICKED_MS = 60000
@@ -68,10 +69,15 @@ export default function ProjectorDashboard() {
 
   const noticeDates = upcomingDates(notices?.dates).slice(0, 6)
   const showThought = hasThought(notices?.thought)
-  const sceneCount = noticeDates.length || showThought ? 4 : 3
+  const extraScenes = [
+    ...(noticeDates.length || showThought ? [{ type: 'notices' }] : []),
+    ...imageSlides(notices?.images, notices?.perSlide || 1).map(items => ({ type: 'images', items })),
+  ]
+  const sceneCount = 3 + extraScenes.length
+  const extra = scene >= 3 ? extraScenes[scene - 3] : null
 
   useEffect(() => {
-    if (scene >= sceneCount) { setScene(0); return }   // notices emptied while on that slide
+    if (scene >= sceneCount) { setScene(0); return }   // that slide was emptied while showing
     const next = setTimeout(() => { setPicked(0); setScene(s => (s + 1) % sceneCount) }, picked ? PICKED_MS : SCENE_MS)
     return () => clearTimeout(next)
   }, [scene, sceneCount, picked])
@@ -296,7 +302,7 @@ export default function ProjectorDashboard() {
             )}
           </div>
         ))}
-        {scene === 3 && (
+        {extra?.type === 'notices' && (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2.5vw' }}>
             {noticeDates.length > 0 && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
@@ -329,6 +335,30 @@ export default function ProjectorDashboard() {
             )}
           </div>
         )}
+        {extra?.type === 'images' && (() => {
+          const cols = gridColumns(extra.items.length)
+          const rows = Math.ceil(extra.items.length / cols)
+          const gap = '1.6vw'
+          return (
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+              alignContent: 'stretch', gap }}>
+              {extra.items.map(im => (
+                <div key={im.id} style={{ width: `calc((100% - ${cols - 1} * ${gap}) / ${cols})`,
+                  height: `calc((100% - ${rows - 1} * ${gap}) / ${rows})`,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1vh', minHeight: 0 }}>
+                  {/* Whole picture, as big as fits, caption right underneath */}
+                  <img src={imageUrl(im.path)} alt={im.caption || ''}
+                    style={{ maxWidth: '100%', maxHeight: im.caption ? 'calc(100% - 6vh)' : '100%', minHeight: 0, objectFit: 'contain',
+                      borderRadius: 16, border: `2px solid ${GOLD}`, display: 'block' }} />
+                  {im.caption && (
+                    <div style={{ fontSize: vw(cols === 1 ? 2.2 : cols === 2 ? 1.8 : 1.4), fontWeight: 700, textAlign: 'center',
+                      lineHeight: 1.2, flexShrink: 0 }}>{im.caption}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        })()}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: 10, paddingTop: '1.2vh', flexShrink: 0 }}>
