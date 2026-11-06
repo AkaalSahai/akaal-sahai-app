@@ -22,6 +22,8 @@ const MEDALS = ['🥇', '🥈', '🥉']
 // (Notices: upcoming dates + thought of the week) only shows when there's
 // something to say.
 const SCENE_MS = 14000
+// After someone taps a dot, stay on that slide a while before rotating on
+const PICKED_MS = 60000
 
 // Kept faint in the corner so it doesn't distract on the projector, but
 // always reachable - including on the loading and error screens.
@@ -53,6 +55,7 @@ export default function ProjectorDashboard() {
   const [error, setError] = useState(null)
   const [now, setNow] = useState(new Date())
   const [scene, setScene] = useState(0)
+  const [picked, setPicked] = useState(0)   // bumps on every dot tap, restarting the timer
   const [seva, setSeva] = useState(null)
   const [notices, setNotices] = useState(null)
 
@@ -68,10 +71,15 @@ export default function ProjectorDashboard() {
   const sceneCount = noticeDates.length || showThought ? 4 : 3
 
   useEffect(() => {
-    setScene(s => s % sceneCount)   // notices emptied while on that slide
-    const rotate = setInterval(() => setScene(s => (s + 1) % sceneCount), SCENE_MS)
-    return () => clearInterval(rotate)
-  }, [sceneCount])
+    if (scene >= sceneCount) { setScene(0); return }   // notices emptied while on that slide
+    const next = setTimeout(() => { setPicked(0); setScene(s => (s + 1) % sceneCount) }, picked ? PICKED_MS : SCENE_MS)
+    return () => clearTimeout(next)
+  }, [scene, sceneCount, picked])
+
+  function pickScene(i) {
+    setScene(i)
+    setPicked(p => p + 1)
+  }
 
   async function load() {
     const [{ data: stats, error }, { data: sevaData, error: sevaError }, { data: noticeRows }] = await Promise.all([
@@ -324,9 +332,13 @@ export default function ProjectorDashboard() {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: 10, paddingTop: '1.2vh', flexShrink: 0 }}>
+        {/* Tap a dot to jump to that slide (stays there for a minute) */}
         {Array.from({ length: sceneCount }).map((_, i) => (
-          <span key={i} style={{ width: 13, height: 13, borderRadius: '50%',
-            background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
+          <button key={i} onClick={() => pickScene(i)} aria-label={`Show slide ${i + 1}`}
+            style={{ padding: 6, margin: -6, border: 'none', background: 'none', cursor: 'pointer', lineHeight: 0 }}>
+            <span style={{ display: 'inline-block', width: 13, height: 13, borderRadius: '50%',
+              background: i === scene ? '#f0a500' : '#302d6e', transition: 'background .3s' }} />
+          </button>
         ))}
       </div>
     </div>
