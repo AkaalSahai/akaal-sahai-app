@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl } from '../../lib/projectorNotices'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl } from '../../lib/projectorNotices'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -18,13 +18,11 @@ function fmtTargetDate(dateStr) {
 const MEDALS = ['🥇', '🥈', '🥉']
 
 // Scenes so a projector viewed from across a room only ever has to read one
-// focused thing at a time, instead of six cards competing at once. After the
-// three fixed scenes come the optional ones: Notices (upcoming dates + thought
-// of the week) when there's something to say, then one scene per slide of
-// pictures (Settings -> Projector Pictures).
-const SCENE_MS = 14000
-// After someone taps a dot, stay on that slide a while before rotating on
-const PICKED_MS = 60000
+// focused thing at a time, instead of six cards competing at once: Registers
+// Pending, Seva, Top 5, then Notices (upcoming dates + thought of the week)
+// when there's something to say, then one scene per slide of pictures.
+// How long each stays up, whether it shows at all, and how long a tapped dot
+// holds are set in Settings -> Projector Screen (projector_timings).
 
 // Kept faint in the corner so it doesn't distract on the projector, but
 // always reachable - including on the loading and error screens.
@@ -69,18 +67,24 @@ export default function ProjectorDashboard() {
 
   const noticeDates = upcomingDates(notices?.dates).slice(0, 6)
   const showThought = hasThought(notices?.thought)
-  const extraScenes = [
+  const timings = notices?.timings || DEFAULT_TIMINGS
+  const allScenes = [
+    { type: 'pending' }, { type: 'seva' }, { type: 'top5' },
     ...(noticeDates.length || showThought ? [{ type: 'notices' }] : []),
     ...imageSlides(notices?.images, notices?.perSlide || 1).map(items => ({ type: 'images', items })),
   ]
-  const sceneCount = 3 + extraScenes.length
-  const extra = scene >= 3 ? extraScenes[scene - 3] : null
+  const shownScenes = allScenes.filter(s => timings[s.type].show)
+  // Every slide switched off - keep showing Registers Pending rather than nothing
+  const scenes = shownScenes.length ? shownScenes : allScenes.slice(0, 1)
+  const sceneCount = scenes.length
+  const current = scenes[scene] || scenes[0]
+  const sceneMs = (picked ? timings.holdSecs : timings[current.type].secs) * 1000
 
   useEffect(() => {
-    if (scene >= sceneCount) { setScene(0); return }   // that slide was emptied while showing
-    const next = setTimeout(() => { setPicked(0); setScene(s => (s + 1) % sceneCount) }, picked ? PICKED_MS : SCENE_MS)
+    if (scene >= sceneCount) { setScene(0); return }   // that slide was emptied or switched off while showing
+    const next = setTimeout(() => { setPicked(0); setScene(s => (s + 1) % sceneCount) }, sceneMs)
     return () => clearTimeout(next)
-  }, [scene, sceneCount, picked])
+  }, [scene, sceneCount, sceneMs, picked])   // picked: a repeat tap restarts the hold
 
   function pickScene(i) {
     setScene(i)
@@ -201,7 +205,7 @@ export default function ProjectorDashboard() {
       <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
         gap: '1.8vh', minHeight: 0, width: '100%' }}>
 
-        {scene === 0 && (!hasSession ? (
+        {current.type === 'pending' && (!hasSession ? (
           <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
         ) : (
           <>
@@ -235,7 +239,7 @@ export default function ProjectorDashboard() {
           </>
         ))}
 
-        {scene === 1 && (
+        {current.type === 'seva' && (
           !seva ? (
             <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>Seva timetable not available</div>
           ) : (
@@ -269,7 +273,7 @@ export default function ProjectorDashboard() {
           )
         )}
 
-        {scene === 2 && (!hasSession ? (
+        {current.type === 'top5' && (!hasSession ? (
           <div style={{ margin: 'auto', fontSize: vw(3), color: '#a5b4fc' }}>No Punjabi class sessions recorded yet</div>
         ) : (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2.5vw' }}>
@@ -302,7 +306,7 @@ export default function ProjectorDashboard() {
             )}
           </div>
         ))}
-        {extra?.type === 'notices' && (
+        {current.type === 'notices' && (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2.5vw' }}>
             {noticeDates.length > 0 && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
@@ -335,14 +339,14 @@ export default function ProjectorDashboard() {
             )}
           </div>
         )}
-        {extra?.type === 'images' && (() => {
-          const cols = gridColumns(extra.items.length)
-          const rows = Math.ceil(extra.items.length / cols)
+        {current.type === 'images' && (() => {
+          const cols = gridColumns(current.items.length)
+          const rows = Math.ceil(current.items.length / cols)
           const gap = '1.6vw'
           return (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
               alignContent: 'stretch', gap }}>
-              {extra.items.map(im => (
+              {current.items.map(im => (
                 <div key={im.id} style={{ width: `calc((100% - ${cols - 1} * ${gap}) / ${cols})`,
                   height: `calc((100% - ${rows - 1} * ${gap}) / ${rows})`,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1vh', minHeight: 0 }}>
