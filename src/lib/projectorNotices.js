@@ -10,9 +10,28 @@ import { supabase } from './supabase'
 //   projector_images  - [{ id, path, caption, from, until, active }] - files in
 //                       the projector-images storage bucket, in slide order
 //   projector_images_per_slide - '1' | '2' | '3' | '4' | '6'
+//   projector_timings - { [slide]: { secs, show }, holdSecs } (see SLIDE_TYPES)
 
 export const PROJECTOR_KEYS = ['projector_dates', 'projector_thought', 'projector_headings',
-  'projector_images', 'projector_images_per_slide']
+  'projector_images', 'projector_images_per_slide', 'projector_timings']
+
+// The projector's slide types, in rotation order. Admins set how long each
+// stays up and can switch any off (Settings -> Projector Screen).
+export const SLIDE_TYPES = [
+  { key: 'pending', label: '⚠ Registers Pending' },
+  { key: 'seva',    label: '🙏 Seva' },
+  { key: 'top5',    label: '🏆 Top 5 & Students Verified' },
+  { key: 'notices', label: '📅 Notices (dates & thought)' },
+  { key: 'images',  label: '🖼 Picture slides (each one)' },
+]
+export const MIN_SECS = 5, MAX_SECS = 120
+export const DEFAULT_TIMINGS = {
+  ...Object.fromEntries(SLIDE_TYPES.map(t => [t.key, { secs: 14, show: true }])),
+  holdSecs: 60,   // after someone taps a dot
+}
+
+const clampSecs = (n, d) => Number.isFinite(Number(n)) && Number(n) > 0
+  ? Math.min(MAX_SECS, Math.max(MIN_SECS, Math.round(Number(n)))) : d
 
 export const IMAGE_BUCKET = 'projector-images'
 export const PER_SLIDE_OPTIONS = [1, 2, 3, 4, 6]
@@ -35,7 +54,16 @@ export function readNotices(settings) {
     images: parse(settings.projector_images, []),
     perSlide: PER_SLIDE_OPTIONS.includes(Number(settings.projector_images_per_slide))
       ? Number(settings.projector_images_per_slide) : 1,
+    timings: readTimings(parse(settings.projector_timings, {})),
   }
+}
+
+function readTimings(t) {
+  const out = { holdSecs: clampSecs(t.holdSecs, DEFAULT_TIMINGS.holdSecs) }
+  SLIDE_TYPES.forEach(({ key }) => {
+    out[key] = { secs: clampSecs(t[key]?.secs, 14), show: t[key]?.show !== false }
+  })
+  return out
 }
 
 function todayISO(today = new Date()) {

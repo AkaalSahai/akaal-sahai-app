@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { logAction } from '../lib/audit'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, readNotices, upcomingDates } from '../lib/projectorNotices'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, SLIDE_TYPES, MIN_SECS, MAX_SECS, readNotices, upcomingDates } from '../lib/projectorNotices'
 
-// Settings -> Projector Screen: what the projector's Notices slide shows.
-// The slide is skipped while both are empty.
+// Settings -> Projector Screen: slide timings / which slides show, and what
+// the Notices slide says (skipped while dates and thought are both empty).
 export default function ProjectorSettings() {
   const { profile } = useAuth()
   const [dates, setDates]     = useState([])
   const [thought, setThought] = useState(null)
   const [headings, setHeadings] = useState({ dates: '', thought: '' })
+  const [timings, setTimings] = useState(DEFAULT_TIMINGS)
   const [busy, setBusy]       = useState(false)
   const [saved, setSaved]     = useState(false)
 
@@ -20,6 +21,7 @@ export default function ProjectorSettings() {
       setDates(n.dates)
       setThought(n.thought)
       setHeadings(n.headings)
+      setTimings(n.timings)
     })
   }, [])
 
@@ -35,18 +37,24 @@ export default function ProjectorSettings() {
       .sort((a, b) => a.date.localeCompare(b.date))
     const t = { gurmukhi: thought.gurmukhi.trim(), english: thought.english.trim(), source: thought.source.trim() }
     const h = { dates: headings.dates.trim(), thought: headings.thought.trim() }
+    const secs = (v, d) => Math.min(MAX_SECS, Math.max(MIN_SECS, Math.round(Number(v)) || d))
+    const tm = { holdSecs: secs(timings.holdSecs, DEFAULT_TIMINGS.holdSecs) }
+    SLIDE_TYPES.forEach(({ key }) => { tm[key] = { secs: secs(timings[key].secs, 14), show: timings[key].show } })
     setBusy(true)
     const { error } = await supabase.from('site_settings').upsert([
       { key: 'projector_dates', value: JSON.stringify(clean) },
       { key: 'projector_thought', value: JSON.stringify(t) },
       { key: 'projector_headings', value: JSON.stringify(h) },
+      { key: 'projector_timings', value: JSON.stringify(tm) },
     ])
     setBusy(false)
     if (error) { alert('Save failed: ' + error.message); return }
-    logAction(profile, 'Updated projector notices', `${clean.length} date${clean.length === 1 ? '' : 's'}; thought ${t.gurmukhi || t.english ? 'set' : 'empty'}`).catch(() => {})
+    const hidden = SLIDE_TYPES.filter(({ key }) => !tm[key].show).map(({ key }) => key)
+    logAction(profile, 'Updated projector screen', `${clean.length} date${clean.length === 1 ? '' : 's'}; thought ${t.gurmukhi || t.english ? 'set' : 'empty'}; hidden slides: ${hidden.join(', ') || 'none'}`).catch(() => {})
     setDates(clean)
     setThought(t)
     setHeadings(h)
+    setTimings(tm)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
@@ -58,8 +66,47 @@ export default function ProjectorSettings() {
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--primary)' }}>Projector Screen</div>
         <div style={{ fontSize: '.78rem', color: 'var(--muted)', marginTop: 2 }}>
-          The Notices slide. Everyone in the hall sees it - parents, children and visitors - so keep it general.
+          Slide timings and the Notices slide. Everyone in the hall sees the projector - parents, children and visitors - so keep it general.
         </div>
+      </div>
+
+      <div className="section-label">Slide Timings</div>
+      <table style={{ width: '100%', fontSize: '.85rem', marginBottom: 6, borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ fontSize: '.7rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            <th style={{ textAlign: 'left', padding: '4px 0', fontWeight: 700 }}>Slide</th>
+            <th style={{ textAlign: 'center', padding: 4, fontWeight: 700 }}>Show</th>
+            <th style={{ textAlign: 'right', padding: '4px 0', fontWeight: 700 }}>Seconds</th>
+          </tr>
+        </thead>
+        <tbody>
+          {SLIDE_TYPES.map(({ key, label }) => (
+            <tr key={key} style={{ borderTop: '1px solid var(--border)', opacity: timings[key].show ? 1 : .55 }}>
+              <td style={{ padding: '6px 0' }}>{label}</td>
+              <td style={{ textAlign: 'center' }}>
+                <input type="checkbox" checked={timings[key].show} style={{ width: 'auto', margin: 0, cursor: 'pointer' }}
+                  onChange={e => { setTimings(t => ({ ...t, [key]: { ...t[key], show: e.target.checked } })); changed() }} />
+              </td>
+              <td style={{ textAlign: 'right' }}>
+                <input type="number" min={MIN_SECS} max={MAX_SECS} value={timings[key].secs} disabled={!timings[key].show}
+                  onChange={e => { setTimings(t => ({ ...t, [key]: { ...t[key], secs: e.target.value } })); changed() }}
+                  style={{ width: 80, padding: '4px 8px', textAlign: 'right' }} />
+              </td>
+            </tr>
+          ))}
+          <tr style={{ borderTop: '1px solid var(--border)' }}>
+            <td style={{ padding: '6px 0' }} colSpan={2}>After tapping a dot, stay for</td>
+            <td style={{ textAlign: 'right' }}>
+              <input type="number" min={MIN_SECS} max={MAX_SECS} value={timings.holdSecs}
+                onChange={e => { setTimings(t => ({ ...t, holdSecs: e.target.value })); changed() }}
+                style={{ width: 80, padding: '4px 8px', textAlign: 'right' }} />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div style={{ ...small, marginBottom: 16 }}>
+        {MIN_SECS}–{MAX_SECS} seconds. Notices and picture slides only appear when they have something to show.
+        If every slide is switched off, Registers Pending still shows.
       </div>
 
       <div className="section-label">Upcoming Dates</div>
