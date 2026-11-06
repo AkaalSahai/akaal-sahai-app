@@ -4,6 +4,7 @@ import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import ProjectorSettings from '../../components/ProjectorSettings'
 
 const DEFAULTS = {
   class_schedule:    'Every Friday & Saturday, 6:15PM – 8:30PM',
@@ -321,6 +322,8 @@ export default function AdminSettings() {
           )}
         </div>
       </div>
+
+      <ProjectorSettings />
 
       <div className="card" style={{ marginTop: 20 }}>
         <div className="card-title">Log Out All Users</div>
