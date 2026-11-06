@@ -311,8 +311,8 @@ export default function ProjectorDashboard() {
             {noticeDates.length > 0 && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
                 <Heading>📅 {notices.headings.dates || DEFAULT_HEADINGS.dates}</Heading>
-                {/* Each date and event centred in its own yellow-bordered box */}
-                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.4vh' }}>
+                {/* Each date and event centred in its own yellow-bordered box, listed just under the heading */}
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: '1.4vh', marginTop: '1.6vh' }}>
                   {noticeDates.map((d, i) => (
                     <div key={i} style={card({ border: `3px solid ${YELLOW}`, padding: noticeDates.length > 4 ? '0.8vh 2vw' : '1.4vh 2vw',
                       textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4vh' })}>
