@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { logAction } from '../lib/audit'
-import { IMAGE_BUCKET, PER_SLIDE_OPTIONS, readNotices, imageSlides, imageUrl, textPosition, isSoloPicture,
+import { IMAGE_BUCKET, PER_SLIDE_OPTIONS, readNotices, imageSlides, imageUrl, textPosition, isSoloPicture, showingImages,
   PICTURE_TEXT_POSITIONS, PICTURE_TEXT_SIZES, PICTURE_TEXT_WIDTHS, EMPTY_SIDE } from '../lib/projectorNotices'
 import ProjectorPictureSlide from './ProjectorPictureSlide'
 
@@ -143,8 +143,15 @@ export default function ProjectorImages() {
     setImages(list => { const l = [...list]; [l[i], l[i + d]] = [l[i + d], l[i]]; return l })
     setSaved(false)
   }
-  const slideCount = imageSlides(images, perSlide).length
-  const showing = imageSlides(images, perSlide).flat().length
+  const slides = imageSlides(images, perSlide)
+  const slideCount = slides.length
+  const showing = slides.flat().length
+  // Which picture slide each picture lands on today, so the list can be headed
+  // "Picture slide 1", "Picture slide 2"... exactly as the projector shows them
+  const slideOf = new Map()
+  slides.forEach((sl, i) => sl.forEach(im => slideOf.set(im.id, i)))
+  const showingIds = new Set(showingImages(images).map(im => im.id))
+  let lastSlide = -1
   const small = { fontSize: '.73rem', color: 'var(--muted)' }
 
   return (
@@ -180,9 +187,26 @@ export default function ProjectorImages() {
       </div>
 
       {images.length === 0 && <div style={{ ...small, marginBottom: 12 }}>No pictures yet.</div>}
-      {images.map((im, i) => (
-        <div key={im.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 0',
-          borderTop: '1px solid var(--border)', opacity: im.active === false ? .55 : 1 }}>
+      {images.map((im, i) => {
+        const n = slideOf.get(im.id)
+        const heading = n !== undefined && n !== lastSlide
+        if (heading) lastSlide = n
+        const count = n !== undefined ? slides[n].length : 0
+        const notShowing = !showingIds.has(im.id)
+        return (
+        <div key={im.id}>
+        {heading && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 2px', fontSize: '.78rem',
+            fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            Picture slide {n + 1}
+            <span style={{ fontWeight: 600, textTransform: 'none', letterSpacing: 0, color: 'var(--muted)' }}>
+              {count === 1 ? (isSoloPicture(slides[n][0]) ? '· on its own (text beside it or full screen)' : '· 1 picture')
+                : `· ${count} pictures together`}
+            </span>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 0',
+          borderTop: '1px solid var(--border)', opacity: notShowing ? .55 : 1 }}>
           <img src={imageUrl(im.path)} alt="" style={{ width: 96, height: 64, objectFit: 'contain', borderRadius: 6,
             background: '#14123f', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -194,7 +218,9 @@ export default function ProjectorImages() {
               <button type="button" className="btn btn-outline btn-xs" onClick={() => setOpen(o => ({ ...o, [im.id]: !o[im.id] }))}>
                 {open[im.id] ? 'Hide text & layout ▴' : 'Text & layout ▾'}
               </button>
-              {isSoloPicture(im) && <span style={small}>Shown on its own slide{im.fullScreen ? ', full screen' : ''}</span>}
+              {notShowing
+                ? <span style={{ ...small, fontWeight: 700, color: '#b45309' }}>Not showing today{im.active === false ? ' (Show is off)' : ' (outside its dates)'}</span>
+                : isSoloPicture(im) && <span style={small}>Shown on its own slide{im.fullScreen ? ', full screen' : ''}</span>}
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: '.78rem', color: 'var(--muted)' }}>
               From <input type="date" value={im.from} onChange={e => change(im.id, 'from', e.target.value)}
@@ -216,10 +242,12 @@ export default function ProjectorImages() {
               style={{ color: 'var(--danger)' }}>✕</button>
           </div>
         </div>
-      ))}
+        </div>
+      ) })}
 
       <div style={{ ...small, margin: '6px 0 12px' }}>
-        Dates are optional - leave blank to show every day. A picture with text beside it, or set to Full screen, always
+        Pictures are grouped onto slides in list order - the headings show which pictures share a slide today; use ↑ ↓ to
+        change which go together. Dates are optional - leave blank to show every day. A picture with text beside it, or set to Full screen, always
         gets a slide to itself. Uploads and deletes save straight away; press Save for text, layout, dates, order and
         pictures per slide.
       </div>
