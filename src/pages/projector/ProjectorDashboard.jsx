@@ -49,7 +49,29 @@ function LogoutButton() {
 const LOGOUT_CSS = `
   .proj-logout { opacity: .35; transition: opacity .2s; }
   .proj-logout:hover, .proj-logout:focus-visible { opacity: 1; }
+  .proj-controls > * { transition: opacity .4s; }
+  .proj-controls.proj-asleep > * { opacity: 0 !important; pointer-events: none !important; }
 `
+
+// The corner buttons (Log out, Videos) and the mouse pointer only show while
+// the mouse is moving on the laptop, then fade after a few seconds - the hall
+// sees just the slides (07-11-2026)
+const CONTROLS_HIDE_MS = 3000
+function useControlsAwake() {
+  const [awake, setAwake] = useState(false)
+  useEffect(() => {
+    let t
+    const wake = () => {
+      setAwake(true)
+      clearTimeout(t)
+      t = setTimeout(() => setAwake(false), CONTROLS_HIDE_MS)
+    }
+    const events = ['mousemove', 'pointerdown', 'keydown', 'touchstart']
+    events.forEach(e => window.addEventListener(e, wake, { passive: true }))
+    return () => { clearTimeout(t); events.forEach(e => window.removeEventListener(e, wake)) }
+  }, [])
+  return awake
+}
 
 export default function ProjectorDashboard() {
   const [data, setData] = useState(null)
@@ -61,6 +83,7 @@ export default function ProjectorDashboard() {
   const [notices, setNotices] = useState(null)
   const [round, setRound] = useState(0)     // bumps on every move on, so a lone slide (e.g. one video) replays
   const projectorVideos = useProjectorVideos()
+  const controlsAwake = useControlsAwake()
 
   // Load every picture ahead (and again when the list changes) and keep it in
   // memory, so a picture slide never waits on the hall wifi. Supabase sends the
@@ -211,15 +234,17 @@ export default function ProjectorDashboard() {
   )
 
   return (
-    <div style={page}>
+    <div style={{ ...page, cursor: controlsAwake ? 'auto' : 'none' }}>
       <style>{`
         @keyframes projFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         .proj-scene { animation: projFade .6s ease; }
         @media (prefers-reduced-motion: reduce) { .proj-scene { animation: none !important; } }
         ${LOGOUT_CSS}
       `}</style>
-      <LogoutButton />
-      <VideoButton v={projectorVideos} />
+      <div className={`proj-controls${controlsAwake ? '' : ' proj-asleep'}`}>
+        <LogoutButton />
+        <VideoButton v={projectorVideos} />
+      </div>
 
       {/* Header - both logos on every slide, except a picture set to Full screen */}
       {!fullScreen && <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '2.5vh' }}>
