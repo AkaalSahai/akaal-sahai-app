@@ -7,8 +7,11 @@ import { supabase } from './supabase'
 //   projector_dates   - [{ date: 'YYYY-MM-DD', end: 'YYYY-MM-DD' | '', title }]
 //   projector_thought - { gurmukhi, english, source }
 //   projector_headings - { dates, thought } - blank means the default
-//   projector_images  - [{ id, path, caption, from, until, active }] - files in
-//                       the projector-images storage bucket, in slide order
+//   projector_images  - [{ id, path, caption, from, until, active, textPos,
+//                       left: { heading, body }, right: { heading, body },
+//                       textSize, textWidth, fullScreen }] - files in the
+//                       projector-images storage bucket, in slide order
+//                       (text/layout options added 07-11-2026, see PICTURE_*)
 //   projector_images_per_slide - '1' | '2' | '3' | '4' | '6'
 //   projector_timings - { [slide]: { secs, show }, holdSecs } (see SLIDE_TYPES)
 
@@ -77,11 +80,61 @@ export function showingImages(images, today = new Date()) {
     && (!im.from || im.from <= t) && (!im.until || im.until >= t))
 }
 
-// Pictures grouped into slides, perSlide at a time, in order
+// Text and layout choices for each picture (agreed 07-11-2026)
+export const PICTURE_TEXT_POSITIONS = [
+  { key: 'none',  label: 'No text' },
+  { key: 'below', label: 'Caption below' },
+  { key: 'left',  label: 'Text on left' },
+  { key: 'right', label: 'Text on right' },
+  { key: 'both',  label: 'Text on both sides' },
+]
+export const PICTURE_TEXT_SIZES = [
+  { key: 'auto',   label: 'Auto (biggest that fits)' },
+  { key: 'small',  label: 'Small' },
+  { key: 'medium', label: 'Medium' },
+  { key: 'large',  label: 'Large' },
+]
+export const PICTURE_TEXT_WIDTHS = [
+  { key: 'auto',   label: 'Auto (all space the picture leaves)' },
+  { key: 'narrow', label: 'Narrow' },
+  { key: 'medium', label: 'Medium' },
+  { key: 'wide',   label: 'Wide' },
+]
+export const EMPTY_SIDE = { heading: '', body: '' }
+
+// Pictures saved before 07-11-2026 have no textPos - a caption meant "below"
+export const textPosition = im =>
+  PICTURE_TEXT_POSITIONS.some(p => p.key === im.textPos) ? im.textPos : (im.caption?.trim() ? 'below' : 'none')
+
+const hasSide = s => !!(s?.heading?.trim() || s?.body?.trim())
+
+// Which sides actually have something to show
+export function shownSides(im) {
+  const pos = textPosition(im)
+  return {
+    left:  (pos === 'left'  || pos === 'both') && hasSide(im.left),
+    right: (pos === 'right' || pos === 'both') && hasSide(im.right),
+  }
+}
+
+// Side text or full screen needs the whole slide, so that picture goes alone
+export function isSoloPicture(im) {
+  const s = shownSides(im)
+  return !!im.fullScreen || s.left || s.right
+}
+
+// Pictures grouped into slides, perSlide at a time, in order; a solo picture
+// (side text or full screen) always gets a slide to itself
 export function imageSlides(images, perSlide) {
-  const shown = showingImages(images)
   const slides = []
-  for (let i = 0; i < shown.length; i += perSlide) slides.push(shown.slice(i, i + perSlide))
+  let group = []
+  const flush = () => { if (group.length) slides.push(group); group = [] }
+  for (const im of showingImages(images)) {
+    if (isSoloPicture(im)) { flush(); slides.push([im]); continue }
+    group.push(im)
+    if (group.length >= perSlide) flush()
+  }
+  flush()
   return slides
 }
 

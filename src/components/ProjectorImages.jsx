@@ -2,13 +2,37 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { logAction } from '../lib/audit'
-import { IMAGE_BUCKET, PER_SLIDE_OPTIONS, readNotices, imageSlides, imageUrl } from '../lib/projectorNotices'
+import { IMAGE_BUCKET, PER_SLIDE_OPTIONS, readNotices, imageSlides, imageUrl, textPosition, isSoloPicture,
+  PICTURE_TEXT_POSITIONS, PICTURE_TEXT_SIZES, PICTURE_TEXT_WIDTHS, EMPTY_SIDE } from '../lib/projectorNotices'
+import ProjectorPictureSlide from './ProjectorPictureSlide'
 
 // Settings -> Projector Pictures (agreed 06-11-2026): pictures shown on the
 // projector, so many to a slide, laid out automatically. Files go in the
 // projector-images bucket (admin-only upload); the list lives in site_settings.
 
 const MAX_W = 1920, MAX_H = 1080
+
+const trimSide = side => side ? { heading: (side.heading || '').trim(), body: (side.body || '').trim() } : side
+
+// A 16:9 copy of the projector: logo bar (unless Full screen), the slide, and
+// the slide dots - same proportions, so what you see here is what shows
+function SlidePreview({ im }) {
+  return (
+    <div style={{ width: '100%', maxWidth: 560, aspectRatio: '16 / 9', background: '#14123f', borderRadius: 8,
+      padding: '1.1% 2.5%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {!im.fullScreen && (
+        <div style={{ height: '22.5%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          paddingBottom: '2.5%', boxSizing: 'border-box' }}>
+          <div style={{ width: '18%', height: '80%', background: '#302d6e', borderRadius: 4 }} />
+          <div style={{ fontSize: '.62rem', color: '#a5b4fc', fontWeight: 700 }}>Logos, date and time</div>
+          <div style={{ width: '25%', height: '70%', background: '#302d6e', borderRadius: 4 }} />
+        </div>
+      )}
+      <div style={{ flex: 1, minHeight: 0 }}><ProjectorPictureSlide im={im} /></div>
+      <div style={{ height: '4%', flexShrink: 0 }} />
+    </div>
+  )
+}
 
 // Shrink to projector size before upload so the screen loads quickly
 async function shrink(file) {
@@ -30,6 +54,7 @@ export default function ProjectorImages() {
   const [perSlide, setPerSlide] = useState(1)
   const [busy, setBusy]         = useState(false)
   const [saved, setSaved]       = useState(false)
+  const [open, setOpen]         = useState({})   // which pictures have Text & layout open
 
   useEffect(() => {
     supabase.from('site_settings').select('key, value')
@@ -94,7 +119,8 @@ export default function ProjectorImages() {
   async function save() {
     setBusy(true)
     try {
-      const list = images.map(im => ({ ...im, caption: im.caption.trim(), until: im.until && im.from && im.until < im.from ? im.from : im.until }))
+      const list = images.map(im => ({ ...im, caption: (im.caption || '').trim(),
+        ...(im.left ? { left: trimSide(im.left) } : {}), ...(im.right ? { right: trimSide(im.right) } : {}), until: im.until && im.from && im.until < im.from ? im.from : im.until }))
       await persist(list)
       setImages(list)
       logAction(profile, 'Updated projector pictures', `${list.length} pictures, ${perSlide} per slide`).catch(() => {})
@@ -105,6 +131,14 @@ export default function ProjectorImages() {
   }
 
   const change = (id, k, v) => { setImages(list => list.map(im => im.id === id ? { ...im, [k]: v } : im)); setSaved(false) }
+  const changeSide = (id, side, k, v) => {
+    setImages(list => list.map(im => im.id === id ? { ...im, [side]: { ...EMPTY_SIDE, ...im[side], [k]: v } } : im))
+    setSaved(false)
+  }
+  const pickPosition = (id, pos) => {
+    change(id, 'textPos', pos)
+    if (pos !== 'none') setOpen(o => ({ ...o, [id]: true }))
+  }
   const move = (i, d) => {
     setImages(list => { const l = [...list]; [l[i], l[i + d]] = [l[i + d], l[i]]; return l })
     setSaved(false)
@@ -152,8 +186,16 @@ export default function ProjectorImages() {
           <img src={imageUrl(im.path)} alt="" style={{ width: 96, height: 64, objectFit: 'contain', borderRadius: 6,
             background: '#14123f', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <input type="text" value={im.caption} placeholder="Caption (optional)" maxLength={80}
-              onChange={e => change(im.id, 'caption', e.target.value)} style={{ padding: '5px 9px', fontSize: '.85rem' }} />
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <select value={textPosition(im)} onChange={e => pickPosition(im.id, e.target.value)}
+                style={{ width: 'auto', padding: '5px 9px', fontSize: '.85rem' }}>
+                {PICTURE_TEXT_POSITIONS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+              <button type="button" className="btn btn-outline btn-xs" onClick={() => setOpen(o => ({ ...o, [im.id]: !o[im.id] }))}>
+                {open[im.id] ? 'Hide text & layout ▴' : 'Text & layout ▾'}
+              </button>
+              {isSoloPicture(im) && <span style={small}>Shown on its own slide{im.fullScreen ? ', full screen' : ''}</span>}
+            </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: '.78rem', color: 'var(--muted)' }}>
               From <input type="date" value={im.from} onChange={e => change(im.id, 'from', e.target.value)}
                 style={{ width: 'auto', padding: '3px 6px', fontSize: '.78rem' }} />
@@ -165,6 +207,7 @@ export default function ProjectorImages() {
                 Show
               </label>
             </div>
+            {open[im.id] && <LayoutEditor im={im} change={change} changeSide={changeSide} small={small} />}
           </div>
           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
             <button className="btn btn-outline btn-xs" disabled={i === 0} onClick={() => move(i, -1)} title="Move earlier">↑</button>
@@ -176,12 +219,73 @@ export default function ProjectorImages() {
       ))}
 
       <div style={{ ...small, margin: '6px 0 12px' }}>
-        Dates are optional - leave blank to show every day. Uploads and deletes save straight away; press Save for
-        captions, dates, order and pictures per slide.
+        Dates are optional - leave blank to show every day. A picture with text beside it, or set to Full screen, always
+        gets a slide to itself. Uploads and deletes save straight away; press Save for text, layout, dates, order and
+        pictures per slide.
       </div>
       <button className="btn btn-primary" onClick={save} disabled={busy}>
         {busy ? 'Saving…' : saved ? '✓ Saved' : 'Save Pictures'}
       </button>
+    </div>
+  )
+}
+
+const field = { padding: '5px 9px', fontSize: '.85rem' }
+const gurmukhiField = { ...field, fontFamily: "'Noto Sans Gurmukhi', 'Raavi', 'Gurmukhi MN', system-ui, sans-serif" }
+
+function SideFields({ im, side, label, changeSide }) {
+  const v = { ...EMPTY_SIDE, ...im[side] }
+  return (
+    <div style={{ flex: '1 1 220px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ fontSize: '.78rem', fontWeight: 700 }}>{label}</div>
+      <input type="text" value={v.heading} placeholder="Heading (optional)" maxLength={120} style={gurmukhiField}
+        onChange={e => changeSide(im.id, side, 'heading', e.target.value)} />
+      <textarea value={v.body} placeholder="What this picture shows - Gurmukhi or English" maxLength={1500} rows={5}
+        style={{ ...gurmukhiField, resize: 'vertical' }} onChange={e => changeSide(im.id, side, 'body', e.target.value)} />
+    </div>
+  )
+}
+
+// Text & layout for one picture, with a live preview of its slide
+function LayoutEditor({ im, change, changeSide, small }) {
+  const pos = textPosition(im)
+  const sideText = pos === 'left' || pos === 'right' || pos === 'both'
+  const select = (label, k, options) => (
+    <label style={{ fontSize: '.78rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+      {label}
+      <select value={im[k] || 'auto'} onChange={e => change(im.id, k, e.target.value)} style={{ ...field, width: 'auto' }}>
+        {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+    </label>
+  )
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {pos === 'below' && (
+        <input type="text" value={im.caption || ''} placeholder="Caption under the picture" maxLength={80} style={gurmukhiField}
+          onChange={e => change(im.id, 'caption', e.target.value)} />
+      )}
+      {sideText && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {(pos === 'left' || pos === 'both') && <SideFields im={im} side="left" label="Left side text" changeSide={changeSide} />}
+          {(pos === 'right' || pos === 'both') && <SideFields im={im} side="right" label="Right side text" changeSide={changeSide} />}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        {sideText && select('Text size', 'textSize', PICTURE_TEXT_SIZES)}
+        {sideText && select('Text width', 'textWidth', PICTURE_TEXT_WIDTHS)}
+        <label style={{ fontSize: '.78rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!im.fullScreen} style={{ width: 'auto', margin: 0 }}
+            onChange={e => change(im.id, 'fullScreen', e.target.checked)} />
+          Full screen (hide the logo bar on this slide)
+        </label>
+      </div>
+      {pos === 'none' && !im.fullScreen && (
+        <div style={small}>No text - this picture is grouped with others by "Pictures per slide".</div>
+      )}
+      <div>
+        <div style={{ ...small, marginBottom: 4 }}>Preview{pos === 'below' && !im.fullScreen ? ' (when on a slide by itself)' : ''}</div>
+        <SlidePreview im={im} />
+      </div>
     </div>
   )
 }

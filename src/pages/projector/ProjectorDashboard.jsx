@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl } from '../../lib/projectorNotices'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition } from '../../lib/projectorNotices'
+import ProjectorPictureSlide from '../../components/ProjectorPictureSlide'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -78,6 +79,7 @@ export default function ProjectorDashboard() {
   const scenes = shownScenes.length ? shownScenes : allScenes.slice(0, 1)
   const sceneCount = scenes.length
   const current = scenes[scene] || scenes[0]
+  const fullScreen = current.type === 'images' && current.items.length === 1 && !!current.items[0].fullScreen
   const sceneMs = (picked ? timings.holdSecs : timings[current.type].secs) * 1000
 
   useEffect(() => {
@@ -181,8 +183,8 @@ export default function ProjectorDashboard() {
       `}</style>
       <LogoutButton />
 
-      {/* Header - both logos on every slide */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '2.5vh' }}>
+      {/* Header - both logos on every slide, except a picture set to Full screen */}
+      {!fullScreen && <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '2.5vh' }}>
         <div style={{ justifySelf: 'start' }}>
           <img src="/logo-akaal-sahai-light.png" alt="Akaal Sahai Southall" style={{ height: '20vh', display: 'block' }} />
         </div>
@@ -200,7 +202,7 @@ export default function ProjectorDashboard() {
         <div style={{ justifySelf: 'end' }}>
           <img src="/logo-karam-ishersar-white.png" alt="Karam Ishersar" style={{ height: '17vh', display: 'block' }} />
         </div>
-      </div>
+      </div>}
 
       <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
         gap: '1.8vh', minHeight: 0, width: '100%' }}>
@@ -343,27 +345,31 @@ export default function ProjectorDashboard() {
             )}
           </div>
         )}
-        {current.type === 'images' && (() => {
+        {/* One picture: as big as possible, with any text beside or below it */}
+        {current.type === 'images' && current.items.length === 1 && (
+          <div style={{ flex: 1, minHeight: 0 }}><ProjectorPictureSlide im={current.items[0]} /></div>
+        )}
+        {current.type === 'images' && current.items.length > 1 && (() => {
           const cols = gridColumns(current.items.length)
           const rows = Math.ceil(current.items.length / cols)
           const gap = '1.6vw'
           return (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
               alignContent: 'stretch', gap }}>
-              {current.items.map(im => (
+              {current.items.map(im => { const caption = textPosition(im) === 'below' ? im.caption?.trim() : ''; return (
                 <div key={im.id} style={{ width: `calc((100% - ${cols - 1} * ${gap}) / ${cols})`,
                   height: `calc((100% - ${rows - 1} * ${gap}) / ${rows})`,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1vh', minHeight: 0 }}>
                   {/* Whole picture, as big as fits, caption right underneath */}
-                  <img src={imageUrl(im.path)} alt={im.caption || ''}
-                    style={{ maxWidth: '100%', maxHeight: im.caption ? 'calc(100% - 6vh)' : '100%', minHeight: 0, objectFit: 'contain',
+                  <img src={imageUrl(im.path)} alt={caption || ''}
+                    style={{ maxWidth: '100%', maxHeight: caption ? 'calc(100% - 6vh)' : '100%', minHeight: 0, objectFit: 'contain',
                       borderRadius: 16, border: `2px solid ${GOLD}`, display: 'block' }} />
-                  {im.caption && (
+                  {caption && (
                     <div style={{ fontSize: vw(cols === 1 ? 2.2 : cols === 2 ? 1.8 : 1.4), fontWeight: 700, textAlign: 'center',
-                      lineHeight: 1.2, flexShrink: 0 }}>{im.caption}</div>
+                      lineHeight: 1.2, flexShrink: 0 }}>{caption}</div>
                   )}
                 </div>
-              ))}
+              ) })}
             </div>
           )
         })()}
