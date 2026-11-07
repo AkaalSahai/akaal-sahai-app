@@ -13,7 +13,8 @@ import { supabase } from './supabase'
 //                       projector-images storage bucket, in slide order
 //                       (text/layout options added 07-11-2026, see PICTURE_*)
 //   projector_images_per_slide - '1' | '2' | '3' | '4' | '6'
-//   projector_timings - { [slide]: { secs, show }, holdSecs } (see SLIDE_TYPES)
+//   projector_timings - { [slide]: { secs, show }, holdSecs } (see SLIDE_TYPES);
+//                       video also has maxMins (0 = play each video to the end)
 
 export const PROJECTOR_KEYS = ['projector_dates', 'projector_thought', 'projector_headings',
   'projector_images', 'projector_images_per_slide', 'projector_timings']
@@ -26,7 +27,10 @@ export const SLIDE_TYPES = [
   { key: 'top5',    label: '🏆 Top 5 & Students Verified' },
   { key: 'notices', label: '📅 Notices (dates & thought)' },
   { key: 'images',  label: '🖼 Picture slides (each one)' },
+  { key: 'video',   label: '🎬 Video slides (laptop folder)' },
 ]
+// Videos play to the end unless a longest play time is set (minutes, 0 = none)
+export const MAX_VIDEO_MINS = 180
 export const MIN_SECS = 5, MAX_SECS = 120
 export const DEFAULT_TIMINGS = {
   ...Object.fromEntries(SLIDE_TYPES.map(t => [t.key, { secs: 14, show: true }])),
@@ -66,6 +70,8 @@ function readTimings(t) {
   SLIDE_TYPES.forEach(({ key }) => {
     out[key] = { secs: clampSecs(t[key]?.secs, 14), show: t[key]?.show !== false }
   })
+  const mins = Math.round(Number(t.video?.maxMins))
+  out.video.maxMins = Number.isFinite(mins) && mins > 0 ? Math.min(MAX_VIDEO_MINS, mins) : 0
   return out
 }
 

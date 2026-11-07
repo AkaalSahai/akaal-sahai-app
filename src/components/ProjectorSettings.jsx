@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { logAction } from '../lib/audit'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, SLIDE_TYPES, MIN_SECS, MAX_SECS, readNotices, upcomingDates } from '../lib/projectorNotices'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, SLIDE_TYPES, MIN_SECS, MAX_SECS, MAX_VIDEO_MINS, readNotices, upcomingDates } from '../lib/projectorNotices'
 
 // Settings -> Projector Screen: slide timings / which slides show, and what
 // the Notices slide says (skipped while dates and thought are both empty).
@@ -40,6 +40,8 @@ export default function ProjectorSettings() {
     const secs = (v, d) => Math.min(MAX_SECS, Math.max(MIN_SECS, Math.round(Number(v)) || d))
     const tm = { holdSecs: secs(timings.holdSecs, DEFAULT_TIMINGS.holdSecs) }
     SLIDE_TYPES.forEach(({ key }) => { tm[key] = { secs: secs(timings[key].secs, 14), show: timings[key].show } })
+    const mins = Math.round(Number(timings.video.maxMins))
+    tm.video.maxMins = mins > 0 ? Math.min(MAX_VIDEO_MINS, mins) : 0
     setBusy(true)
     const { error } = await supabase.from('site_settings').upsert([
       { key: 'projector_dates', value: JSON.stringify(clean) },
@@ -88,9 +90,20 @@ export default function ProjectorSettings() {
                   onChange={e => { setTimings(t => ({ ...t, [key]: { ...t[key], show: e.target.checked } })); changed() }} />
               </td>
               <td style={{ textAlign: 'right' }}>
-                <input type="number" min={MIN_SECS} max={MAX_SECS} value={timings[key].secs} disabled={!timings[key].show}
-                  onChange={e => { setTimings(t => ({ ...t, [key]: { ...t[key], secs: e.target.value } })); changed() }}
-                  style={{ width: 80, padding: '4px 8px', textAlign: 'right' }} />
+                {key === 'video' ? (
+                  // Videos play to the end; optionally cut off after this many minutes
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '.75rem', color: 'var(--muted)' }}>
+                    Longest play (minutes)
+                    <input type="number" min={0} max={MAX_VIDEO_MINS} value={timings.video.maxMins || ''} placeholder="Whole video"
+                      disabled={!timings.video.show}
+                      onChange={e => { setTimings(t => ({ ...t, video: { ...t.video, maxMins: e.target.value } })); changed() }}
+                      style={{ width: 110, padding: '4px 8px', textAlign: 'right' }} />
+                  </label>
+                ) : (
+                  <input type="number" min={MIN_SECS} max={MAX_SECS} value={timings[key].secs} disabled={!timings[key].show}
+                    onChange={e => { setTimings(t => ({ ...t, [key]: { ...t[key], secs: e.target.value } })); changed() }}
+                    style={{ width: 80, padding: '4px 8px', textAlign: 'right' }} />
+                )}
               </td>
             </tr>
           ))}
@@ -106,6 +119,8 @@ export default function ProjectorSettings() {
       </table>
       <div style={{ ...small, marginBottom: 16 }}>
         {MIN_SECS}–{MAX_SECS} seconds. Notices and picture slides only appear when they have something to show.
+        Videos come from a folder on the projector laptop - click 🎬 Videos in the bottom-left corner of the projector
+        screen to choose it. Each video plays to the end unless a longest play time is set.
         If every slide is switched off, Registers Pending still shows.
       </div>
 

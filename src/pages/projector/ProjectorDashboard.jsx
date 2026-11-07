@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition } from '../../lib/projectorNotices'
 import ProjectorPictureSlide, { ProjectorImg } from '../../components/ProjectorPictureSlide'
+import { useProjectorVideos, VideoButton, VideoSlide } from '../../components/ProjectorVideos'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -58,6 +59,8 @@ export default function ProjectorDashboard() {
   const [picked, setPicked] = useState(0)   // bumps on every dot tap, restarting the timer
   const [seva, setSeva] = useState(null)
   const [notices, setNotices] = useState(null)
+  const [round, setRound] = useState(0)     // bumps on every move on, so a lone slide (e.g. one video) replays
+  const projectorVideos = useProjectorVideos()
 
   // Load every picture ahead (and again when the list changes) and keep it in
   // memory, so a picture slide never waits on the hall wifi. Supabase sends the
@@ -93,20 +96,34 @@ export default function ProjectorDashboard() {
     { type: 'pending' }, { type: 'seva' }, { type: 'top5' },
     ...(noticeDates.length || showThought ? [{ type: 'notices' }] : []),
     ...imageSlides(notices?.images, notices?.perSlide || 1).map(items => ({ type: 'images', items })),
+    ...projectorVideos.videos.map(video => ({ type: 'video', video })),
   ]
   const shownScenes = allScenes.filter(s => timings[s.type].show)
   // Every slide switched off - keep showing Registers Pending rather than nothing
   const scenes = shownScenes.length ? shownScenes : allScenes.slice(0, 1)
   const sceneCount = scenes.length
   const current = scenes[scene] || scenes[0]
-  const fullScreen = current.type === 'images' && current.items.length === 1 && !!current.items[0].fullScreen
-  const sceneMs = (picked ? timings.holdSecs : timings[current.type].secs) * 1000
+  const fullScreen = current.type === 'video'
+    || (current.type === 'images' && current.items.length === 1 && !!current.items[0].fullScreen)
+  // A video moves on when it ends (or after its longest play time, if set)
+  const sceneMs = current.type === 'video'
+    ? (timings.video.maxMins ? timings.video.maxMins * 60000 : null)
+    : (picked ? timings.holdSecs : timings[current.type].secs) * 1000
+
+  const sceneCountRef = useRef(sceneCount)
+  sceneCountRef.current = sceneCount
+  function nextScene() {
+    setPicked(0)
+    setScene(s => (s + 1) % Math.max(1, sceneCountRef.current))
+    setRound(r => r + 1)
+  }
 
   useEffect(() => {
     if (scene >= sceneCount) { setScene(0); return }   // that slide was emptied or switched off while showing
-    const next = setTimeout(() => { setPicked(0); setScene(s => (s + 1) % sceneCount) }, sceneMs)
+    if (sceneMs == null) return
+    const next = setTimeout(nextScene, sceneMs)
     return () => clearTimeout(next)
-  }, [scene, sceneCount, sceneMs, picked])   // picked: a repeat tap restarts the hold
+  }, [scene, sceneCount, sceneMs, picked, round])   // picked: a repeat tap restarts the hold
 
   function pickScene(i) {
     setScene(i)
@@ -202,6 +219,7 @@ export default function ProjectorDashboard() {
         ${LOGOUT_CSS}
       `}</style>
       <LogoutButton />
+      <VideoButton v={projectorVideos} />
 
       {/* Header - both logos on every slide, except a picture set to Full screen */}
       {!fullScreen && <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: '2vw', flexShrink: 0, marginBottom: '2.5vh' }}>
@@ -224,7 +242,7 @@ export default function ProjectorDashboard() {
         </div>
       </div>}
 
-      <div key={scene} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
+      <div key={`${scene}-${round}`} className="proj-scene" style={{ flex: 1, display: 'flex', flexDirection: 'column',
         gap: '1.8vh', minHeight: 0, width: '100%' }}>
 
         {current.type === 'pending' && (!hasSession ? (
@@ -363,6 +381,14 @@ export default function ProjectorDashboard() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+        {current.type === 'video' && (
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <VideoSlide video={current.video} onDone={failed => {
+              if (failed) projectorVideos.markBad(current.video.name)   // can't play it - skip from now on
+              nextScene()
+            }} />
           </div>
         )}
         {/* One picture: as big as possible, with any text beside or below it */}
