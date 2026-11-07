@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { imageUrl, textPosition, shownSides } from '../lib/projectorNotices'
+import { imageUrl, textPosition, shownSides, slideBottomText } from '../lib/projectorNotices'
 
 // One picture on a projector slide, with optional text beside or below it
 // (agreed 07-11-2026). Used by the projector and by the preview in
@@ -63,7 +63,7 @@ function useFitText(boxRef, contentRef, maxFrac, text) {
   }, [boxRef, contentRef, maxFrac, text])
 }
 
-function TextPanel({ side, size, style }) {
+function TextPanel({ side, size, style, center }) {
   const boxRef = useRef(null), contentRef = useRef(null)
   const heading = side.heading?.trim(), body = side.body?.trim()
   useFitText(boxRef, contentRef, MAX_TEXT[size] || MAX_TEXT.auto, `${heading}\n${body}`)
@@ -80,7 +80,7 @@ function TextPanel({ side, size, style }) {
           )}
           {body && (
             <div style={{ fontWeight: 600, lineHeight: 1.4, whiteSpace: 'pre-wrap', color: 'white',
-              textAlign: longBody ? 'left' : 'center' }}>{body}</div>
+              textAlign: longBody && !center ? 'left' : 'center' }}>{body}</div>
           )}
         </div>
       </div>
@@ -88,7 +88,32 @@ function TextPanel({ side, size, style }) {
   )
 }
 
+// Height of the bottom text band, % of the slide height
+const BAND_HEIGHT = { auto: 24, narrow: 16, medium: 24, wide: 34 }
+
+// Pictures (children) with "Text across the bottom" centred in a band under
+// them all. Used for one picture here and for 2-6 pictures on the projector.
+export function SlideWithBottomText({ text, children }) {
+  if (!text) return children
+  return (
+    <div data-picture-slide style={{ width: '100%', height: '100%', containerType: 'size', display: 'flex',
+      flexDirection: 'column', gap: '2cqh' }}>
+      <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+      <TextPanel side={text} size={text.size} center
+        style={{ flex: `0 0 ${BAND_HEIGHT[text.area] || BAND_HEIGHT.auto}cqh` }} />
+    </div>
+  )
+}
+
 export default function ProjectorPictureSlide({ im }) {
+  return (
+    <SlideWithBottomText text={slideBottomText([im])}>
+      <PictureOnly im={im} />
+    </SlideWithBottomText>
+  )
+}
+
+function PictureOnly({ im }) {
   const [aspect, setAspect] = useState(null)   // width / height, known once loaded
   const pos = textPosition(im)
   const sides = shownSides(im)

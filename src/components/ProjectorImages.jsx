@@ -120,7 +120,8 @@ export default function ProjectorImages() {
     setBusy(true)
     try {
       const list = images.map(im => ({ ...im, caption: (im.caption || '').trim(),
-        ...(im.left ? { left: trimSide(im.left) } : {}), ...(im.right ? { right: trimSide(im.right) } : {}), until: im.until && im.from && im.until < im.from ? im.from : im.until }))
+        ...(im.left ? { left: trimSide(im.left) } : {}), ...(im.right ? { right: trimSide(im.right) } : {}),
+        ...(im.bottom ? { bottom: trimSide(im.bottom) } : {}), until: im.until && im.from && im.until < im.from ? im.from : im.until }))
       await persist(list)
       setImages(list)
       logAction(profile, 'Updated projector pictures', `${list.length} pictures, ${perSlide} per slide`).catch(() => {})
@@ -200,8 +201,9 @@ export default function ProjectorImages() {
             fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
             Picture slide {n + 1}
             <span style={{ fontWeight: 600, textTransform: 'none', letterSpacing: 0, color: 'var(--muted)' }}>
-              {count === 1 ? (isSoloPicture(slides[n][0]) ? '· on its own (text beside it or full screen)' : '· 1 picture')
+              {count === 1 ? (isSoloPicture(slides[n][0]) ? '· on its own (text beside it)' : '· 1 picture')
                 : `· ${count} pictures together`}
+              {slides[n].every(x => x.fullScreen) && ', full screen'}
             </span>
           </div>
         )}
@@ -220,7 +222,9 @@ export default function ProjectorImages() {
               </button>
               {notShowing
                 ? <span style={{ ...small, fontWeight: 700, color: '#b45309' }}>Not showing today{im.active === false ? ' (Show is off)' : ' (outside its dates)'}</span>
-                : isSoloPicture(im) && <span style={small}>Shown on its own slide{im.fullScreen ? ', full screen' : ''}</span>}
+                : (isSoloPicture(im) || im.fullScreen) && (
+                  <span style={small}>{[isSoloPicture(im) && 'On its own slide', im.fullScreen && 'Full screen'].filter(Boolean).join(', ')}</span>
+                )}
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: '.78rem', color: 'var(--muted)' }}>
               From <input type="date" value={im.from} onChange={e => change(im.id, 'from', e.target.value)}
@@ -247,8 +251,8 @@ export default function ProjectorImages() {
 
       <div style={{ ...small, margin: '6px 0 12px' }}>
         Pictures are grouped onto slides in list order - the headings show which pictures share a slide today; use ↑ ↓ to
-        change which go together. Dates are optional - leave blank to show every day. A picture with text beside it, or set to Full screen, always
-        gets a slide to itself. Uploads and deletes save straight away; press Save for text, layout, dates, order and
+        change which go together. Dates are optional - leave blank to show every day. A picture with text beside it always gets a slide to itself;
+        Full screen pictures share slides only with other Full screen pictures next to them. Uploads and deletes save straight away; press Save for text, layout, dates, order and
         pictures per slide.
       </div>
       <button className="btn btn-primary" onClick={save} disabled={busy}>
@@ -259,6 +263,13 @@ export default function ProjectorImages() {
 }
 
 const field = { padding: '5px 9px', fontSize: '.85rem' }
+// Bottom text band height - stored in textWidth, same keys
+const PICTURE_TEXT_HEIGHTS = [
+  { key: 'auto',   label: 'Auto' },
+  { key: 'narrow', label: 'Short' },
+  { key: 'medium', label: 'Medium' },
+  { key: 'wide',   label: 'Tall' },
+]
 const gurmukhiField = { ...field, fontFamily: "'Noto Sans Gurmukhi', 'Raavi', 'Gurmukhi MN', system-ui, sans-serif" }
 
 function SideFields({ im, side, label, changeSide }) {
@@ -278,6 +289,7 @@ function SideFields({ im, side, label, changeSide }) {
 function LayoutEditor({ im, change, changeSide, small }) {
   const pos = textPosition(im)
   const sideText = pos === 'left' || pos === 'right' || pos === 'both'
+  const bottom = pos === 'bottom'
   const select = (label, k, options) => (
     <label style={{ fontSize: '.78rem', display: 'flex', alignItems: 'center', gap: 6 }}>
       {label}
@@ -298,20 +310,29 @@ function LayoutEditor({ im, change, changeSide, small }) {
           {(pos === 'right' || pos === 'both') && <SideFields im={im} side="right" label="Right side text" changeSide={changeSide} />}
         </div>
       )}
+      {bottom && (
+        <div style={{ display: 'flex', gap: 10 }}>
+          <SideFields im={im} side="bottom" changeSide={changeSide}
+            label="Text across the bottom - centred under all the pictures on this slide" />
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        {sideText && select('Text size', 'textSize', PICTURE_TEXT_SIZES)}
+        {(sideText || bottom) && select('Text size', 'textSize', PICTURE_TEXT_SIZES)}
         {sideText && select('Text width', 'textWidth', PICTURE_TEXT_WIDTHS)}
+        {bottom && select('Text height', 'textWidth', PICTURE_TEXT_HEIGHTS)}
         <label style={{ fontSize: '.78rem', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
           <input type="checkbox" checked={!!im.fullScreen} style={{ width: 'auto', margin: 0 }}
             onChange={e => change(im.id, 'fullScreen', e.target.checked)} />
-          Full screen (hide the logo bar on this slide)
+          Full screen (hide the logo bar on its slide)
         </label>
       </div>
-      {pos === 'none' && !im.fullScreen && (
-        <div style={small}>No text - this picture is grouped with others by "Pictures per slide".</div>
+      {(pos === 'none' || pos === 'below' || bottom) && (
+        <div style={small}>
+          Grouped with other pictures by "Pictures per slide"{im.fullScreen ? ' - with other Full screen pictures next to it in the list' : ''}.
+        </div>
       )}
       <div>
-        <div style={{ ...small, marginBottom: 4 }}>Preview{pos === 'below' && !im.fullScreen ? ' (when on a slide by itself)' : ''}</div>
+        <div style={{ ...small, marginBottom: 4 }}>Preview{pos === 'below' || bottom ? ' (if this picture were on a slide by itself)' : ''}</div>
         <SlidePreview im={im} />
       </div>
     </div>

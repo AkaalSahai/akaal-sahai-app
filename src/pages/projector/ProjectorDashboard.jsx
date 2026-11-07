@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition } from '../../lib/projectorNotices'
-import ProjectorPictureSlide, { ProjectorImg } from '../../components/ProjectorPictureSlide'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition, slideBottomText } from '../../lib/projectorNotices'
+import ProjectorPictureSlide, { ProjectorImg, SlideWithBottomText } from '../../components/ProjectorPictureSlide'
 import { useProjectorVideos, VideoButton, VideoSlide } from '../../components/ProjectorVideos'
 
 function timeAgo(ts) {
@@ -104,7 +104,7 @@ export default function ProjectorDashboard() {
   const sceneCount = scenes.length
   const current = scenes[scene] || scenes[0]
   const fullScreen = current.type === 'video'
-    || (current.type === 'images' && current.items.length === 1 && !!current.items[0].fullScreen)
+    || (current.type === 'images' && current.items.every(im => im.fullScreen))
   // A video moves on when it ends (or after its longest play time, if set)
   const sceneMs = current.type === 'video'
     ? (timings.video.maxMins ? timings.video.maxMins * 60000 : null)
@@ -400,7 +400,10 @@ export default function ProjectorDashboard() {
           const rows = Math.ceil(current.items.length / cols)
           const gap = '1.6vw'
           return (
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
+            <div style={{ flex: 1, minHeight: 0 }}>
+            {/* "Text across the bottom" goes centred under all the pictures */}
+            <SlideWithBottomText text={slideBottomText(current.items)}>
+            <div style={{ height: '100%', display: 'flex', flexWrap: 'wrap', justifyContent: 'center',
               alignContent: 'stretch', gap }}>
               {current.items.map(im => { const caption = textPosition(im) === 'below' ? im.caption?.trim() : ''; return (
                 <div key={im.id} style={{ width: `calc((100% - ${cols - 1} * ${gap}) / ${cols})`,
@@ -416,6 +419,8 @@ export default function ProjectorDashboard() {
                   )}
                 </div>
               ) })}
+            </div>
+            </SlideWithBottomText>
             </div>
           )
         })()}

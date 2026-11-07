@@ -93,6 +93,7 @@ export const PICTURE_TEXT_POSITIONS = [
   { key: 'left',  label: 'Text on left' },
   { key: 'right', label: 'Text on right' },
   { key: 'both',  label: 'Text on both sides' },
+  { key: 'bottom', label: 'Text across the bottom of the slide' },
 ]
 export const PICTURE_TEXT_SIZES = [
   { key: 'auto',   label: 'Auto (biggest that fits)' },
@@ -123,20 +124,42 @@ export function shownSides(im) {
   }
 }
 
-// Side text or full screen needs the whole slide, so that picture goes alone
-export function isSoloPicture(im) {
-  const s = shownSides(im)
-  return !!im.fullScreen || s.left || s.right
+// "Text across the bottom": shown centred in a band under every picture on
+// its slide, so two pictures can share one explanation (07-11-2026)
+export function bottomText(im) {
+  return textPosition(im) === 'bottom' && hasSide(im.bottom) ? im.bottom : null
 }
 
-// Pictures grouped into slides, perSlide at a time, in order; a solo picture
-// (side text or full screen) always gets a slide to itself
+// The bottom text for a whole slide - usually one picture has it; if several
+// do, their headings and texts are joined
+export function slideBottomText(items) {
+  const parts = (items || []).map(bottomText).filter(Boolean)
+  if (!parts.length) return null
+  return {
+    heading: parts.map(p => p.heading?.trim()).filter(Boolean).join('  ·  '),
+    body: parts.map(p => p.body?.trim()).filter(Boolean).join('\n\n'),
+    size: items.find(bottomText)?.textSize || 'auto',
+    area: items.find(bottomText)?.textWidth || 'auto',
+  }
+}
+
+// Side text needs the whole slide, so that picture goes alone
+export function isSoloPicture(im) {
+  const s = shownSides(im)
+  return s.left || s.right
+}
+
+// Pictures grouped into slides, perSlide at a time, in order. A picture with
+// side text always gets a slide to itself. Full screen pictures share slides
+// only with other full screen pictures next to them (07-11-2026), so a slide
+// is either all full screen (no logo bar) or not.
 export function imageSlides(images, perSlide) {
   const slides = []
   let group = []
   const flush = () => { if (group.length) slides.push(group); group = [] }
   for (const im of showingImages(images)) {
     if (isSoloPicture(im)) { flush(); slides.push([im]); continue }
+    if (group.length && !!group[0].fullScreen !== !!im.fullScreen) flush()
     group.push(im)
     if (group.length >= perSlide) flush()
   }
