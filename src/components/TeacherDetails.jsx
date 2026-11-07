@@ -50,6 +50,7 @@ export default function TeacherDetails({ user, nameOf }) {
   const permissions = [
     user.can_edit_students && 'Edit Students',
     user.can_manage_teacher_register && 'Register Manager',
+    user.can_manage_projector && 'Projector Manager',
     ...(user.register_manager_classes || []).map(k => `Marks ${registerByKey(k).label} register`),
   ].filter(Boolean)
   const appPhone = app?.phone && app.phone !== user.phone ? app.phone : null

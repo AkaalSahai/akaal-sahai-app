@@ -15,6 +15,7 @@ import NotificationBell from '../../components/NotificationBell'
 import { canOpenTeacherRegister } from '../../lib/teacherRegisters'
 import { contentClass } from '../../lib/layout'
 import BroadcastBanner from '../../components/BroadcastBanner'
+import ProjectorManage from '../ProjectorManage'
 
 export default function RegistrarLayout() {
   const [tab, setTab] = useState('dashboard')
@@ -34,6 +35,7 @@ export default function RegistrarLayout() {
     ...(isTeacher ? [{ id: 'reports',     label: 'My Reports'   }] : []),
     ...(isTeacher ? [{ id: 'mystudents',  label: 'My Students'  }] : []),
     ...(canManageTeacherRegister ? [{ id: 'teacherregister', label: 'Teacher Register' }] : []),
+    ...(profile?.can_manage_projector ? [{ id: 'projector', label: 'Projector' }] : []),
   ]
 
   return (
@@ -62,6 +64,7 @@ export default function RegistrarLayout() {
         {tab === 'reports'      && <TeacherReports />}
         {tab === 'mystudents'   && <TeacherStudents />}
         {tab === 'teacherregister' && <AdminTeacherRegister />}
+        {tab === 'projector'    && profile?.can_manage_projector && <ProjectorManage />}
       </div>
     </div>
   )
