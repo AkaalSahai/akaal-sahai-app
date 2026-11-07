@@ -17,6 +17,23 @@ const PANEL_WIDTH = { narrow: [26, 20], medium: [34, 25], wide: [42, 30] }
 const AUTO_MIN_PANEL = 18   // auto width: each panel gets at least this much
 const GAP = 2
 
+// A projector picture that stays hidden until it has fully downloaded, then
+// fades in - so a slow connection never shows half a picture (07-11-2026)
+export function ProjectorImg({ src, alt, style, onLoad }) {
+  const ref = useRef(null)
+  const [loaded, setLoaded] = useState(false)
+  const done = el => { setLoaded(true); onLoad?.(el) }
+  useLayoutEffect(() => {
+    // Already in memory (loaded ahead) - the load event may have fired before React saw it
+    const el = ref.current
+    if (el?.complete && el.naturalWidth) done(el)
+  }, [src])   // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <img ref={ref} src={src} alt={alt} decoding="async" onLoad={e => done(e.currentTarget)}
+      style={{ ...style, opacity: loaded ? 1 : 0, transition: 'opacity .4s ease' }} />
+  )
+}
+
 // Shrinks the text until it fits its panel (binary search on font size);
 // re-runs when the panel changes size, e.g. once the picture has loaded
 function useFitText(boxRef, contentRef, maxFrac, text) {
@@ -81,8 +98,8 @@ export default function ProjectorPictureSlide({ im }) {
   const width = PANEL_WIDTH[im.textWidth] ? im.textWidth : 'auto'
 
   const img = (
-    <img src={imageUrl(im.path)} alt={caption || im.left?.heading || im.right?.heading || ''}
-      onLoad={e => setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight || null)}
+    <ProjectorImg src={imageUrl(im.path)} alt={caption || im.left?.heading || im.right?.heading || ''}
+      onLoad={el => setAspect(el.naturalWidth / el.naturalHeight || null)}
       style={{ maxWidth: '100%', maxHeight: caption ? 'calc(100% - 9cqh)' : '100%', minHeight: 0, objectFit: 'contain',
         borderRadius: '1.2cqw', border: `2px solid ${GOLD}`, display: 'block', boxSizing: 'border-box' }} />
   )
