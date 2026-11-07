@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition } from '../../lib/projectorNotices'
-import ProjectorPictureSlide from '../../components/ProjectorPictureSlide'
+import ProjectorPictureSlide, { ProjectorImg } from '../../components/ProjectorPictureSlide'
 
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - new Date(ts)) / 60000)
@@ -58,6 +58,26 @@ export default function ProjectorDashboard() {
   const [picked, setPicked] = useState(0)   // bumps on every dot tap, restarting the timer
   const [seva, setSeva] = useState(null)
   const [notices, setNotices] = useState(null)
+
+  // Load every picture ahead (and again when the list changes) and keep it in
+  // memory, so a picture slide never waits on the hall wifi. Supabase sends the
+  // files as no-cache, so without this each slide downloaded its picture again.
+  const preloaded = useRef(new Map())
+  const picturePaths = imageSlides(notices?.images, 1).flat().map(im => im.path).join('|')
+  useEffect(() => {
+    const keep = new Map()
+    for (const path of picturePaths ? picturePaths.split('|') : []) {
+      let img = preloaded.current.get(path)
+      if (!img) {
+        img = new Image()
+        img.decoding = 'async'
+        img.src = imageUrl(path)
+        img.decode?.().catch(() => {})
+      }
+      keep.set(path, img)
+    }
+    preloaded.current = keep
+  }, [picturePaths])
 
   useEffect(() => {
     load()
@@ -361,7 +381,7 @@ export default function ProjectorDashboard() {
                   height: `calc((100% - ${rows - 1} * ${gap}) / ${rows})`,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1vh', minHeight: 0 }}>
                   {/* Whole picture, as big as fits, caption right underneath */}
-                  <img src={imageUrl(im.path)} alt={caption || ''}
+                  <ProjectorImg src={imageUrl(im.path)} alt={caption || ''}
                     style={{ maxWidth: '100%', maxHeight: caption ? 'calc(100% - 6vh)' : '100%', minHeight: 0, objectFit: 'contain',
                       borderRadius: 16, border: `2px solid ${GOLD}`, display: 'block' }} />
                   {caption && (
