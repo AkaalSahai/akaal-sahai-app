@@ -27,7 +27,7 @@ function matchesRole(profile, role) {
   return allowed.some(r => profile.role === r || (profile.extra_roles || []).includes(r))
 }
 
-function RequireAuth({ role, children }) {
+function RequireAuth({ role, allowProjectorManager, children }) {
   const { user, profile, loading, mfaChallengePending, mfaEnrollmentRequired } = useAuth()
   if (loading) return <div className="spinner" style={{ marginTop: 100 }} />
   if (!user || !profile) return <Navigate to="/login" replace />
@@ -38,7 +38,9 @@ function RequireAuth({ role, children }) {
   // Admin has switched on requiring 2FA and this account hasn't enrolled a
   // factor at all yet - distinct from the challenge case above.
   if (mfaEnrollmentRequired) return <MfaRequiredSetup />
-  if (role && !matchesRole(profile, role)) return <Navigate to="/login" replace />
+  // Projector Managers may open the projector screen to check their changes
+  if (role && !matchesRole(profile, role) && !(allowProjectorManager && profile.can_manage_projector))
+    return <Navigate to="/login" replace />
   return children
 }
 
@@ -72,7 +74,7 @@ function AppRoutes() {
         <RequireAuth role="teacher"><TeacherLayout /></RequireAuth>
       } />
       <Route path="/projector" element={
-        <RequireAuth role={['dashboard','admin']}><ProjectorDashboard /></RequireAuth>
+        <RequireAuth role={['dashboard','admin']} allowProjectorManager><ProjectorDashboard /></RequireAuth>
       } />
 
       <Route path="/" element={<RootRedirect />} />

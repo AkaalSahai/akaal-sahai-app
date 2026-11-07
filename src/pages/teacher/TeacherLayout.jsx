@@ -14,6 +14,7 @@ import BroadcastBanner from '../../components/BroadcastBanner'
 import { canOpenTeacherRegister } from '../../lib/teacherRegisters'
 import { contentClass } from '../../lib/layout'
 import NotificationBell from '../../components/NotificationBell'
+import ProjectorManage from '../ProjectorManage'
 
 export default function TeacherLayout() {
   const [tab, setTab] = useState('register')
@@ -41,6 +42,7 @@ export default function TeacherLayout() {
     ...(showAdminTabs ? [{ id: 'groups',       label: 'Groups'       }] : []),
     ...(showUserTab   ? [{ id: 'users',        label: 'Teachers'     }] : []),
     ...(canManageTeacherRegister ? [{ id: 'teacherregister', label: 'Teacher Register' }] : []),
+    ...(myProfile?.can_manage_projector ? [{ id: 'projector', label: 'Projector' }] : []),
     { id: 'message', label: 'Message Admin' },
   ]
 
@@ -88,6 +90,7 @@ export default function TeacherLayout() {
         {tab === 'groups'       && <AdminGroups readOnly={adminReadOnly} />}
         {tab === 'users'        && <AdminUsers readOnly={usersReadOnly} />}
         {tab === 'teacherregister' && <AdminTeacherRegister />}
+        {tab === 'projector'    && myProfile?.can_manage_projector && <ProjectorManage />}
         {tab === 'message'      && <TeacherMessage />}
       </div>
     </div>

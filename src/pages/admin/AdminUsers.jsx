@@ -88,7 +88,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
   async function load() {
     setLoadError(null)
     const [{ data: userData, error: userErr }, { data: groupData }, { data: tgData }] = await Promise.all([
-      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, register_classes, register_manager_classes, last_login, last_seen, group_id').order('role').order('name'),
+      supabase.from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, can_manage_projector, mfa_required, register_classes, register_manager_classes, last_login, last_seen, group_id').order('role').order('name'),
       supabase.from('groups').select('id, name, teacher_id'),
       supabase.from('teacher_groups').select('teacher_id, groups(id, name)'),
     ])
@@ -114,7 +114,12 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
       return [...names]
     }
     if (userErr) {
-      if (userErr.message?.includes('mfa_required')) {
+      if (userErr.message?.includes('can_manage_projector')) {
+        const { data: fallback } = await supabase
+          .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, mfa_required, register_classes, register_manager_classes, last_login, last_seen, group_id').order('role').order('name')
+        setUsers((fallback || []).map(u => ({ ...u, can_manage_projector: false, groupNames: namesForTeacher(u) })))
+        setLoadError('⚠ Run the projector-manager.sql migration to enable the Projector Manager toggle.')
+      } else if (userErr.message?.includes('mfa_required')) {
         const { data: fallback } = await supabase
           .from('users').select('id, name, email, phone, role, extra_roles, can_edit_students, can_manage_teacher_register, last_login, last_seen, group_id').order('role').order('name')
         setUsers((fallback || []).map(u => ({ ...u, mfa_required: false, groupNames: namesForTeacher(u) })))
@@ -327,6 +332,18 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
     } catch (err) { alert('Error: ' + err.message) }
   }
 
+  // Projector Manager: can change the projector screen and pictures only
+  async function toggleProjectorManager(userId, current) {
+    const updated = !current
+    try {
+      const { error } = await supabase.from('users').update({ can_manage_projector: updated }).eq('id', userId)
+      if (error) throw error
+      const u = users.find(x => x.id === userId)
+      logAction(myProfile, 'Toggled Projector Manager permission', `${u?.name}: ${updated ? 'enabled' : 'disabled'}`).catch(() => {})
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, can_manage_projector: updated } : u))
+    } catch (err) { alert('Error: ' + err.message) }
+  }
+
   // Gatka/Kirtan Teacher Register. register_classes: who is listed on it;
   // register_manager_classes: who may mark it without being a full Register Manager.
   async function toggleRegisterClass(userId, key, column = 'register_classes') {
@@ -506,6 +523,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               <th onClick={() => toggleSort('edit_students')} style={{ cursor: 'pointer', userSelect: 'none' }}>Edit Students{sortIcon('edit_students')}</th>
               <th onClick={() => toggleSort('register_manager')} style={{ cursor: 'pointer', userSelect: 'none' }}>Register Manager{sortIcon('register_manager')}</th>
               <th title="Gatka/Kirtan Teacher Register - only ticked teachers are listed">Other Registers</th>
+              <th title="Can change the projector screen and pictures - nothing else in Settings">Projector Manager</th>
               <th onClick={() => toggleSort('last_login')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Login{sortIcon('last_login')}</th>
               <th onClick={() => toggleSort('last_seen')} style={{ cursor: 'pointer', userSelect: 'none' }}>Last Seen{sortIcon('last_seen')}</th>
               {!readOnly && <th>2FA</th>}
@@ -705,6 +723,29 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
                     <span style={{ fontSize: '.75rem', color: '#cbd5e1' }}>—</span>
                   )}
                 </td>
+                <td>
+                  {u.role === 'admin' || u.role === 'dashboard' ? (
+                    <span style={{ fontSize: '.75rem', color: '#cbd5e1' }} title={u.role === 'admin' ? 'Admins can already change the projector' : ''}>—</span>
+                  ) : !readOnly ? (
+                    <button onClick={() => toggleProjectorManager(u.id, u.can_manage_projector)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '4px 10px', borderRadius: 20, fontSize: '.75rem', fontWeight: 700,
+                        border: 'none', cursor: 'pointer', transition: 'all .15s',
+                        background: u.can_manage_projector ? '#dcfce7' : '#f1f5f9',
+                        color: u.can_manage_projector ? '#15803d' : '#94a3b8' }}>
+                      <span style={{ width: 28, height: 16, borderRadius: 8, position: 'relative', display: 'inline-block',
+                        background: u.can_manage_projector ? '#22c55e' : '#cbd5e1', transition: 'background .15s', flexShrink: 0 }}>
+                        <span style={{ position: 'absolute', top: 2, left: u.can_manage_projector ? 14 : 2,
+                          width: 12, height: 12, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+                      </span>
+                      {u.can_manage_projector ? 'Enabled' : 'Disabled'}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: '.75rem', color: u.can_manage_projector ? '#15803d' : '#94a3b8', fontWeight: 600 }}>
+                      {u.can_manage_projector ? 'Enabled' : 'Disabled'}
+                    </span>
+                  )}
+                </td>
                 <td style={{ fontSize: '.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {u.last_login ? fmtDate(u.last_login) : 'Never'}
                 </td>
@@ -776,7 +817,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </tr>
               {detailsOpen[u.id] && canSeeDetails && (
                 <tr>
-                  <td colSpan={readOnly ? 9 : 12} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={readOnly ? 10 : 13} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       {u.name}
                     </div>
@@ -786,7 +827,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               )}
               {editPanel[u.id] && !readOnly && (
                 <tr key={u.id + '-edit'}>
-                  <td colSpan={12} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
+                  <td colSpan={13} style={{ background: '#f8fafc', padding: '14px 18px', borderTop: '2px solid var(--primary)' }}>
                     <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--primary)', marginBottom: 12 }}>
                       Edit Details — {u.name}
                     </div>
@@ -821,7 +862,7 @@ export default function AdminUsers({ readOnly, canToggleEditStudents }) {
               </Fragment>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={readOnly ? 9 : 12} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
+              <tr><td colSpan={readOnly ? 10 : 13} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24 }}>No users found</td></tr>
             )}
           </tbody>
         </table>
