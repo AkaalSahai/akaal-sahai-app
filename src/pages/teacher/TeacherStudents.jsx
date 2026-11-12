@@ -398,6 +398,11 @@ export default function TeacherStudents() {
             {editing === 'new' ? 'Add New Student' : 'Edit Student'}
           </div>
 
+          {/* Admin/registrar's note on this student (students.check_note) */}
+          {editing !== 'new' && students.find(x => x.id === editing)?.check_note?.trim() && (
+            <FormWarnings warnings={['Note from the office: ' + students.find(x => x.id === editing).check_note.trim()]} />
+          )}
+
           {editing === 'new' && punjabiGroups.length > 1 && (
             <div className="form-group" style={{ marginBottom: 16, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 14px' }}>
               <label style={{ fontWeight: 700, color: 'var(--primary)' }}>Add to Group *</label>

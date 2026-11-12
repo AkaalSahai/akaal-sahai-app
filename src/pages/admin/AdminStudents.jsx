@@ -149,6 +149,7 @@ export default function AdminStudents({ readOnly }) {
       has_medical_condition: medicalAnswerFor(s),
       medical_notes: hasMedicalNotes(s.medical_notes) ? s.medical_notes : '',
       photo_consent: s.photo_consent || false,
+      check_note: s.check_note || '',
     })
     setEditTried(false)
     setEditingStudentId(s.id)
@@ -189,6 +190,7 @@ export default function AdminStudents({ readOnly }) {
         postcode: editForm.postcode.trim() || null,
         ...medicalPayload(editForm),
         photo_consent: editForm.photo_consent,
+        check_note: editForm.check_note.trim() || null,
       }
       const { error } = await supabase.from('students').update(payload).eq('id', studentId)
       if (error) throw error
@@ -948,6 +950,15 @@ export default function AdminStudents({ readOnly }) {
                               <input type="checkbox" checked={editForm.photo_consent} onChange={setEditCheck('photo_consent')} style={{ width: 'auto' }} />
                               Photo consent given
                             </label>
+
+                            <div style={{ fontWeight: 600, fontSize: '.78rem', color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>Note to check</div>
+                            <div className="form-group" style={{ marginBottom: 16 }}>
+                              <textarea rows={2} maxLength={500} value={editForm.check_note} onChange={setEdit('check_note')}
+                                placeholder="e.g. Postcode looks mistyped - please confirm with the family" />
+                              <div style={{ fontSize: '.74rem', color: 'var(--muted)', marginTop: 3 }}>
+                                Shown as an amber flag to this student's teachers, admins and registrars. Only admins and registrars can change it - clear it once it's sorted.
+                              </div>
+                            </div>
 
                             <FormWarnings warnings={[...(editCheck?.warnings || []),
                               ...(editForm.has_medical_condition == null ? ['Medical question not answered yet - please ask the parent'] : [])]} />
