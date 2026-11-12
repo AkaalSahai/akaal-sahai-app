@@ -58,6 +58,11 @@ export function ageOn(dob, on = new Date()) {
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
+// "n/a", "none", "-" and the like typed into a box mean nobody had the
+// detail, so they count as missing (agreed 12-11-2026).
+const PLACEHOLDER = /^(n\/?a|n\.a\.?|none|nil|unknown|-+|\.+)$/i
+export const isBlankDetail = v => !v || !String(v).trim() || PLACEHOLDER.test(String(v).trim())
+
 // Issue catalogue - key -> { level, label }. 'error' = must be fixed,
 // 'warning' = please check / complete.
 export const ISSUE_TYPES = {
@@ -76,6 +81,9 @@ export const ISSUE_TYPES = {
   postcode_invalid:  { level: 'warning', label: 'Postcode format looks wrong' },
   address_missing:   { level: 'warning', label: 'Address missing' },
   duplicate:         { level: 'warning', label: 'Possible duplicate' },
+  // Written by an admin/registrar on the student (students.check_note) -
+  // the row shows the note itself; this label is for the filter/summary
+  check_note:        { level: 'warning', label: 'Note to check' },
 }
 
 // Same first name, last name and date of birth -> map of studentId -> the
@@ -100,16 +108,17 @@ export function studentIssues(s, duplicates = {}) {
   if (!s.date_of_birth) add('dob_missing')
   else if (s.date_of_birth > todayISO()) add('dob_future')
   else if (ageOn(s.date_of_birth) < MIN_AGE) add('age_under_min')
-  if (!s.phone?.trim()) add('phone_missing')
+  if (s.check_note?.trim()) out.push({ key: 'check_note', level: 'warning', label: '📝 ' + s.check_note.trim() })
+  if (isBlankDetail(s.phone)) add('phone_missing')
   else if (/[a-z]{2,}/i.test(s.phone)) add('fields_mixed')   // a word where the number should be - usually shifted columns from an import
   else if (!isPhoneWellFormatted(s.phone)) add(normalizeUkPhone(s.phone) ? 'phone_fixable' : 'phone_invalid')
-  if (s.secondary_phone?.trim() && !isPhoneWellFormatted(s.secondary_phone) && !normalizeUkPhone(s.secondary_phone)) add('phone2_invalid')
-  if (!s.parent_name?.trim()) add('parent_missing')
-  if (!s.email?.trim()) add('email_missing')
+  if (!isBlankDetail(s.secondary_phone) && !isPhoneWellFormatted(s.secondary_phone) && !normalizeUkPhone(s.secondary_phone)) add('phone2_invalid')
+  if (isBlankDetail(s.parent_name)) add('parent_missing')
+  if (isBlankDetail(s.email)) add('email_missing')
   else if (!isValidEmail(s.email)) add('email_invalid')
-  if (!s.postcode?.trim()) add('postcode_missing')
+  if (isBlankDetail(s.postcode)) add('postcode_missing')
   else if (!isValidPostcode(s.postcode)) add('postcode_invalid')
-  if (!s.house_no?.trim() && !s.street_name?.trim()) add('address_missing')
+  if (isBlankDetail(s.house_no) && isBlankDetail(s.street_name)) add('address_missing')
   if (duplicates[s.id]) add('duplicate', ` of ${duplicates[s.id].join(', ')}`)
   return out
 }
