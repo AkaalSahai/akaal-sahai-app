@@ -74,6 +74,7 @@ export const ISSUE_TYPES = {
   phone_invalid:     { level: 'error',   label: 'Phone number is wrong - please confirm with parents' },
   phone_fixable:     { level: 'warning', label: 'Phone number format can be fixed automatically' },
   parent_missing:    { level: 'error',   label: 'Parent/guardian name missing' },
+  relationship_missing: { level: 'warning', label: 'Relationship to the student missing (Mother, Father…) - please ask the family' },
   email_invalid:     { level: 'error',   label: 'Email address is not valid' },
   email_missing:     { level: 'warning', label: 'Email missing' },
   phone2_invalid:    { level: 'warning', label: 'Second phone number is wrong - please confirm with parents' },
@@ -114,6 +115,7 @@ export function studentIssues(s, duplicates = {}) {
   else if (!isPhoneWellFormatted(s.phone)) add(normalizeUkPhone(s.phone) ? 'phone_fixable' : 'phone_invalid')
   if (!isBlankDetail(s.secondary_phone) && !isPhoneWellFormatted(s.secondary_phone) && !normalizeUkPhone(s.secondary_phone)) add('phone2_invalid')
   if (isBlankDetail(s.parent_name)) add('parent_missing')
+  else if (isBlankDetail(s.relationship)) add('relationship_missing')   // agreed 12-11-2026
   if (isBlankDetail(s.email)) add('email_missing')
   else if (!isValidEmail(s.email)) add('email_invalid')
   if (isBlankDetail(s.postcode)) add('postcode_missing')
