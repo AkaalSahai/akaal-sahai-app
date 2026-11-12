@@ -12,6 +12,9 @@ const GURMUKHI_FONT = "'Noto Sans Gurmukhi', 'Raavi', 'Gurmukhi MN', system-ui, 
 // Biggest text size for each choice, as % of the slide width. Text is only
 // ever made smaller than this when it wouldn't otherwise fit its panel.
 const MAX_TEXT = { auto: 4.2, small: 1.6, medium: 2.2, large: 3 }
+// Text across the bottom has the whole slide width, so it can be bigger
+// (12-11-2026: medium bottom text looked small on the projector)
+const MAX_BOTTOM_TEXT = { auto: 3.4, small: 2.2, medium: 3, large: 4 }
 // Width of each text panel for the fixed choices: [one side, both sides]
 const PANEL_WIDTH = { narrow: [26, 20], medium: [34, 25], wide: [42, 30] }
 const AUTO_MIN_PANEL = 18   // auto width: each panel gets at least this much
@@ -63,13 +66,14 @@ function useFitText(boxRef, contentRef, maxFrac, text) {
   }, [boxRef, contentRef, maxFrac, text])
 }
 
-function TextPanel({ side, size, style, center }) {
+function TextPanel({ side, size, style, center, sizes = MAX_TEXT, tight }) {
   const boxRef = useRef(null), contentRef = useRef(null)
   const heading = side.heading?.trim(), body = side.body?.trim()
-  useFitText(boxRef, contentRef, MAX_TEXT[size] || MAX_TEXT.auto, `${heading}\n${body}`)
+  useFitText(boxRef, contentRef, sizes[size] || sizes.auto, `${heading}\n${body}`)
   const longBody = (body || '').length > 140
   return (
-    <div style={{ background: CARD_BG, border: `2px solid ${GOLD}`, borderRadius: '1.4cqw', padding: '2cqh 1.6cqw',
+    <div style={{ background: CARD_BG, border: `2px solid ${GOLD}`, borderRadius: '1.4cqw',
+      padding: tight ? '1.2cqh 2.4cqw' : '2cqh 1.6cqw',
       boxSizing: 'border-box', minWidth: 0, minHeight: 0, display: 'flex', ...style }}>
       <div ref={boxRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', display: 'flex',
         flexDirection: 'column', justifyContent: 'center', fontFamily: GURMUKHI_FONT }}>
@@ -88,8 +92,11 @@ function TextPanel({ side, size, style, center }) {
   )
 }
 
-// Height of the bottom text band, % of the slide height
-const BAND_HEIGHT = { auto: 24, narrow: 16, medium: 24, wide: 34 }
+// Height of the bottom text band, % of the slide height. Auto (12-11-2026):
+// the band hugs the text - only as tall and wide as the text needs, never
+// more than BAND_MAX - so the pictures get all the rest of the screen.
+const BAND_HEIGHT = { narrow: 16, medium: 24, wide: 34 }
+const BAND_MAX = 40
 
 // Pictures (children) with "Text across the bottom" centred in a band under
 // them all. Used for one picture here and for 2-6 pictures on the projector.
@@ -99,8 +106,13 @@ export function SlideWithBottomText({ text, children }) {
     <div data-picture-slide style={{ width: '100%', height: '100%', containerType: 'size', display: 'flex',
       flexDirection: 'column', gap: '2cqh' }}>
       <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
-      <TextPanel side={text} size={text.size} center
-        style={{ flex: `0 0 ${BAND_HEIGHT[text.area] || BAND_HEIGHT.auto}cqh` }} />
+      {BAND_HEIGHT[text.area] ? (
+        <TextPanel side={text} size={text.size} center sizes={MAX_BOTTOM_TEXT}
+          style={{ flex: `0 0 ${BAND_HEIGHT[text.area]}cqh` }} />
+      ) : (
+        <TextPanel side={text} size={text.size} center tight sizes={MAX_BOTTOM_TEXT}
+          style={{ flex: '0 0 auto', alignSelf: 'center', maxWidth: '100%', maxHeight: `${BAND_MAX}cqh` }} />
+      )}
     </div>
   )
 }
