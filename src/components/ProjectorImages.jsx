@@ -265,7 +265,7 @@ export default function ProjectorImages() {
 const field = { padding: '5px 9px', fontSize: '.85rem' }
 // Bottom text band height - stored in textWidth, same keys
 const PICTURE_TEXT_HEIGHTS = [
-  { key: 'auto',   label: 'Auto' },
+  { key: 'auto',   label: 'Auto (fits the text)' },
   { key: 'narrow', label: 'Short' },
   { key: 'medium', label: 'Medium' },
   { key: 'wide',   label: 'Tall' },
