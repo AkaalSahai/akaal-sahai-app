@@ -46,6 +46,16 @@ export function phoneFormatFix(raw) {
 }
 
 export const isValidEmail = v => !!v && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v).trim())
+// Letter O typed where a zero belongs, e.g. "TW5 OVN" or "UB4 OPF" (the
+// last 3 characters of a UK postcode never contain O) - agreed 12-11-2026
+export function postcodeHasLetterO(v) {
+  const pc = String(v || '').toUpperCase().replace(/\s/g, '')
+  if (pc.length < 5 || !pc.includes('O')) return false
+  const inward = pc.slice(-3), outward = pc.slice(0, -3)
+  // Start part: O instead of its number ("SLO") or as a last digit ("UB1O") -
+  // area letters like SO, PO, OX are real
+  return inward.includes('O') || (!/\d/.test(outward) && outward.includes('O')) || /\dO$/.test(outward)
+}
 export const isValidPostcode = v => !!v && /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(String(v).trim())
 
 export function ageOn(dob, on = new Date()) {
@@ -80,6 +90,7 @@ export const ISSUE_TYPES = {
   phone2_invalid:    { level: 'warning', label: 'Second phone number is wrong - please confirm with parents' },
   postcode_missing:  { level: 'warning', label: 'Postcode missing' },
   postcode_invalid:  { level: 'warning', label: 'Postcode format looks wrong' },
+  postcode_letter_o: { level: 'warning', label: 'Postcode has the letter O where a zero should be - please check and fix' },
   address_missing:   { level: 'warning', label: 'Address missing' },
   duplicate:         { level: 'warning', label: 'Possible duplicate' },
   // Written by an admin/registrar on the student (students.check_note) -
@@ -119,6 +130,7 @@ export function studentIssues(s, duplicates = {}) {
   if (isBlankDetail(s.email)) add('email_missing')
   else if (!isValidEmail(s.email)) add('email_invalid')
   if (isBlankDetail(s.postcode)) add('postcode_missing')
+  else if (postcodeHasLetterO(s.postcode)) add('postcode_letter_o')
   else if (!isValidPostcode(s.postcode)) add('postcode_invalid')
   if (isBlankDetail(s.house_no) && isBlankDetail(s.street_name)) add('address_missing')
   if (duplicates[s.id]) add('duplicate', ` of ${duplicates[s.id].join(', ')}`)
