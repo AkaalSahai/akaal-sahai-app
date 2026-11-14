@@ -12,6 +12,13 @@ const color = (i) => AVATARS[i % AVATARS.length]
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
 
+// e.g. "13-11" - when a transfer/removal request was sent
+function fmtShortDate(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 function calcAge(dob) {
   if (!dob) return null
   const d = new Date(dob), now = new Date()
@@ -44,6 +51,12 @@ export default function TeacherRegister() {
   const [transferBusy, setTransferBusy] = useState(null)
   const [removeOpen, setRemoveOpen]     = useState({})
   const [removeBusy, setRemoveBusy]     = useState(null)
+  // Transfer/removal requests waiting for an admin, for students in this
+  // group: studentId -> { request_type, to_group_name, requested_by, requested_at }.
+  // Shown as a label and hides the Transfer/Remove buttons so nobody sends a
+  // repeat (14-11-2026; the database also allows only one waiting request).
+  const [pendingReqs, setPendingReqs]   = useState({})
+  const latestPendingReq = useRef(null)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [resolvePunjabiTeacher, setResolvePunjabiTeacher] = useState(() => () => null)
   const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
@@ -66,6 +79,7 @@ export default function TeacherRegister() {
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
   useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
   useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
+  useEffect(() => { if (selectedGroupId) loadPendingRequests() }, [selectedGroupId])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
   // Re-evaluates the 9:30pm cutoff live, without needing a page refresh right
   // at the boundary - a 30s tick is frequent enough for this, no need for
@@ -170,6 +184,7 @@ export default function TeacherRegister() {
     setSubmittedAt(null)
     setTransferOpen({})
     setRemoveOpen({})
+    setPendingReqs({})
     setSaveState('idle')
     setHistory(false)
     setHistoryData([])
@@ -197,6 +212,24 @@ export default function TeacherRegister() {
     } finally {
       if (latestStudentsReq.current === req) setLoading(false)
     }
+  }
+
+  async function loadPendingRequests() {
+    const req = selectedGroupId
+    latestPendingReq.current = req
+    const { data, error } = await supabase.rpc('pending_student_requests', { p_group_id: selectedGroupId })
+    if (latestPendingReq.current !== req) return  // group changed while loading
+    if (error) { console.error('loadPendingRequests error:', error); return }
+    setPendingReqs(Object.fromEntries((data || []).map(r => [r.student_id, r])))
+  }
+
+  // A second request for a student who already has one waiting is refused by
+  // the database (unique index) - explain that instead of a raw error
+  function alreadyWaiting(err, fullName) {
+    if (err?.code !== '23505') return false
+    alert(`A transfer or removal request for ${fullName} is already waiting for an admin to review.`)
+    loadPendingRequests()
+    return true
   }
 
   async function loadSession() {
@@ -369,9 +402,11 @@ export default function TeacherRegister() {
       logAction(profile, 'Submitted transfer request', `${fullName} → ${toGroupName || 'unknown group'}`).catch(() => {})
       alert(`Transfer request submitted for ${fullName}.`)
       setTransferOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
+      loadPendingRequests()
     } catch (err) {
       logAction(profile, 'Submitted transfer request', `${fullName}: ${err.message}`, false).catch(() => {})
-      alert('Error: ' + err.message)
+      if (alreadyWaiting(err, fullName)) setTransferOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
+      else alert('Error: ' + err.message)
     }
     finally { setTransferBusy(null) }
   }
@@ -400,9 +435,11 @@ export default function TeacherRegister() {
       logAction(profile, 'Submitted removal request', fullName).catch(() => {})
       alert(`Removal request submitted for ${fullName}. Admin will review and approve.`)
       setRemoveOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
+      loadPendingRequests()
     } catch (err) {
       logAction(profile, 'Submitted removal request', `${fullName}: ${err.message}`, false).catch(() => {})
-      alert('Error: ' + err.message)
+      if (alreadyWaiting(err, fullName)) setRemoveOpen(prev => { const n = { ...prev }; delete n[student.id]; return n })
+      else alert('Error: ' + err.message)
     }
     finally { setRemoveBusy(null) }
   }
@@ -555,6 +592,7 @@ export default function TeacherRegister() {
               const locked = isLockedFromExtraClass(s.id)
               const mainMark = !isPunjabiGroup ? mainMarks[s.id] : null
               const attendedMain = mainMark && ['present', 'late'].includes(mainMark.status)
+              const pending = pendingReqs[s.id]
               return (
                 <li key={s.id} className="student-row">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 0', flexWrap: 'wrap' }}>
@@ -610,6 +648,18 @@ export default function TeacherRegister() {
                           ✓ {mainMark.status === 'late' ? 'Late' : 'Present'} in {mainMark.group} today
                         </div>
                       )}
+                      {pending && (
+                        <div style={{ fontSize: '.7rem', marginTop: 3, fontWeight: 700, display: 'inline-block',
+                          color: pending.request_type === 'removal' ? '#991b1b' : '#3730a3',
+                          background: pending.request_type === 'removal' ? '#fee2e2' : '#e0e7ff',
+                          borderRadius: 6, padding: '2px 7px' }}
+                          title="Waiting for an admin to approve or reject. Keep marking this student as normal until then.">
+                          ⏳ {pending.request_type === 'removal'
+                            ? 'Removal requested'
+                            : `Transfer to ${pending.to_group_name || 'another group'} requested`}
+                          {' · '}{fmtShortDate(pending.requested_at)} by {pending.requested_by}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
@@ -636,7 +686,7 @@ export default function TeacherRegister() {
                       onBlur={e => saveNote(s.id, e.target.value)}
                     />
 
-                    {!isReadOnly && isPunjabiGroup && (
+                    {!isReadOnly && isPunjabiGroup && !pending && (
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                         <button onClick={() => toggleTransfer(s.id)}
                           style={{ padding: '4px 10px', fontSize: '.76rem', borderRadius: 8,
@@ -656,7 +706,7 @@ export default function TeacherRegister() {
                     )}
                   </div>
 
-                  {transferOpen[s.id] !== undefined && isPunjabiGroup && (
+                  {transferOpen[s.id] !== undefined && isPunjabiGroup && !pending && (
                     <div style={{ marginBottom: 10, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
                         Transfer request — {[s.first_name, s.last_name].join(' ')}
@@ -682,7 +732,7 @@ export default function TeacherRegister() {
                     </div>
                   )}
 
-                  {removeOpen[s.id] !== undefined && isPunjabiGroup && (
+                  {removeOpen[s.id] !== undefined && isPunjabiGroup && !pending && (
                     <div style={{ marginBottom: 10, padding: '12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
                       <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#991b1b', marginBottom: 6 }}>
                         Removal request — {[s.first_name, s.last_name].join(' ')}
