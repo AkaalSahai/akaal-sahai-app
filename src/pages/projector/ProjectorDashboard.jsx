@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, hasThought, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition, slideBottomText } from '../../lib/projectorNotices'
+import { PROJECTOR_KEYS, DEFAULT_HEADINGS, DEFAULT_TIMINGS, readNotices, upcomingDates, showingNotices, loadNoticeFonts, fmtDateRange, imageSlides, gridColumns, imageUrl, textPosition, slideBottomText } from '../../lib/projectorNotices'
+import ProjectorNoticeSlide from '../../components/ProjectorNoticeSlide'
 import ProjectorPictureSlide, { ProjectorImg, SlideWithBottomText } from '../../components/ProjectorPictureSlide'
 import { useProjectorVideos, VideoButton, VideoSlide } from '../../components/ProjectorVideos'
 
@@ -106,6 +107,7 @@ export default function ProjectorDashboard() {
   }, [picturePaths])
 
   useEffect(() => {
+    loadNoticeFonts()
     load()
     const poll = setInterval(load, 30000)
     const clock = setInterval(() => setNow(new Date()), 1000)
@@ -113,11 +115,15 @@ export default function ProjectorDashboard() {
   }, [])
 
   const noticeDates = upcomingDates(notices?.dates).slice(0, 6)
-  const showThought = hasThought(notices?.thought)
   const timings = notices?.timings || DEFAULT_TIMINGS
+  // Each notice is its own slide (14-11-2026). Upcoming dates go beside any
+  // notice set to show them, otherwise on a slide of their own.
+  const shownNotices = showingNotices(notices?.notices)
+  const datesBeside = noticeDates.length > 0 && shownNotices.some(n => n.withDates && !n.fullScreen)
   const allScenes = [
     { type: 'pending' }, { type: 'seva' }, { type: 'top5' },
-    ...(noticeDates.length || showThought ? [{ type: 'notices' }] : []),
+    ...(noticeDates.length && !datesBeside ? [{ type: 'notices', notice: null }] : []),
+    ...shownNotices.map(notice => ({ type: 'notices', notice })),
     ...imageSlides(notices?.images, notices?.perSlide || 1).map(items => ({ type: 'images', items })),
     ...projectorVideos.videos.map(video => ({ type: 'video', video })),
   ]
@@ -128,6 +134,9 @@ export default function ProjectorDashboard() {
   const current = scenes[scene] || scenes[0]
   const fullScreen = current.type === 'video'
     || (current.type === 'images' && current.items.every(im => im.fullScreen))
+    || (current.type === 'notices' && !!current.notice?.fullScreen)
+  const datesWithNotice = current.type === 'notices' && noticeDates.length > 0
+    && (!current.notice || (current.notice.withDates && !current.notice.fullScreen))
   // A video moves on when it ends (or after its longest play time, if set)
   const sceneMs = current.type === 'video'
     ? (timings.video.maxMins ? timings.video.maxMins * 60000 : null)
@@ -373,7 +382,7 @@ export default function ProjectorDashboard() {
         ))}
         {current.type === 'notices' && (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '2.5vw' }}>
-            {noticeDates.length > 0 && (
+            {datesWithNotice && (
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
                 <Heading>📅 {notices.headings.dates || DEFAULT_HEADINGS.dates}</Heading>
                 {/* Each date and event centred in its own yellow-bordered box, listed just under the heading */}
@@ -388,22 +397,9 @@ export default function ProjectorDashboard() {
                 </div>
               </div>
             )}
-            {showThought && (
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.4vh' }}>
-                <Heading>📖 {notices.headings.thought || DEFAULT_HEADINGS.thought}</Heading>
-                <div style={card({ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-                  gap: '2.5vh', padding: '3vh 3vw', textAlign: 'center' })}>
-                  {notices.thought.gurmukhi && (
-                    <div style={{ fontSize: vw(noticeDates.length ? 3 : 3.8), fontWeight: 700, lineHeight: 1.45,
-                      fontFamily: "'Noto Sans Gurmukhi', 'Raavi', 'Gurmukhi MN', system-ui, sans-serif" }}>{notices.thought.gurmukhi}</div>
-                  )}
-                  {notices.thought.english && (
-                    <div style={{ fontSize: vw(noticeDates.length ? 2 : 2.4), color: YELLOW, fontWeight: 600, lineHeight: 1.35 }}>{notices.thought.english}</div>
-                  )}
-                  {notices.thought.source && (
-                    <div style={{ fontSize: vw(1.4), color: '#a5b4fc' }}>— {notices.thought.source}</div>
-                  )}
-                </div>
+            {current.notice && (
+              <div style={{ flex: datesWithNotice ? 1.4 : 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
+                <ProjectorNoticeSlide notice={current.notice} />
               </div>
             )}
           </div>
