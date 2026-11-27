@@ -77,6 +77,7 @@ function useControlsAwake() {
 export default function ProjectorDashboard() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const loadedOnceRef = useRef(false)
   const [now, setNow] = useState(new Date())
   const [scene, setScene] = useState(0)
   const [picked, setPicked] = useState(0)   // bumps on every dot tap, restarting the timer
@@ -163,17 +164,23 @@ export default function ProjectorDashboard() {
   }
 
   async function load() {
-    const [{ data: stats, error }, { data: sevaData, error: sevaError }, { data: noticeRows }] = await Promise.all([
+    const [{ data: stats, error }, { data: sevaData, error: sevaError }, { data: noticeRows, error: noticeError }] = await Promise.all([
       supabase.rpc('get_projector_dashboard_stats'),
       supabase.rpc('get_projector_seva'),
       supabase.from('site_settings').select('key, value').in('key', PROJECTOR_KEYS),
     ])
-    setNotices(readNotices(Object.fromEntries((noticeRows || []).map(r => [r.key, r.value]))))
-    if (error) { setError(error.message); return }
+    // The projector runs all day on hall wifi. If one 30-second refresh
+    // fails, keep showing what we last loaded; only show the error screen if
+    // nothing has loaded at all yet (health check 27-11-2026).
+    if (!noticeError) setNotices(readNotices(Object.fromEntries((noticeRows || []).map(r => [r.key, r.value]))))
+    if (!sevaError) setSeva(sevaData)
+    if (error) {
+      if (!loadedOnceRef.current) setError(error.message)
+      return
+    }
+    loadedOnceRef.current = true
     setError(null)
     setData(stats)
-    // Seva is a separate slide - a problem loading it mustn't blank the rest
-    setSeva(sevaError ? null : sevaData)
   }
 
   const page = {

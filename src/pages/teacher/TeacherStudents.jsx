@@ -14,6 +14,7 @@ import PhoneInput from '../../components/PhoneInput'
 import MedicalQuestion from '../../components/MedicalQuestion'
 import { medicalStatus, MEDICAL_STATUS_LABEL, medicalAnswerFor, medicalPayload, medicalError, hasMedicalNotes } from '../../lib/medical'
 import { IssueBadge, IssueList, FieldError, FormWarnings } from '../../components/StudentIssues'
+import { todayISO } from '../../lib/teacherAttendanceReport'
 
 const EMPTY_FORM = {
   first_name: '', middle_name: '', last_name: '', date_of_birth: '',
@@ -49,7 +50,7 @@ export default function TeacherStudents() {
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
   const [extraClasses, setExtraClasses] = useState({})  // studentId -> [{ class_type, groupName }]
 
-  useEffect(() => { load() }, [user])
+  useEffect(() => { load() }, [user?.id])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
   useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
@@ -192,7 +193,7 @@ export default function TeacherStudents() {
   }
 
   function startNew() {
-    setForm({ ...EMPTY_FORM, date_joined: new Date().toISOString().split('T')[0] })
+    setForm({ ...EMPTY_FORM, date_joined: todayISO() })
     setNewStudentGroupId(groupId)
     setSaveTried(false)
     setEditing('new')

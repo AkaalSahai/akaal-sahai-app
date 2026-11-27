@@ -6,8 +6,8 @@ import { logAction } from '../../lib/audit'
 import { TEACHING_STAFF_FILTER } from '../../lib/staff'
 import TeacherAttendanceReport from './TeacherAttendanceReport'
 import { registerByKey, onRegister, latestClassDay, registersCanMark } from '../../lib/teacherRegisters'
+import { todayISO } from '../../lib/teacherAttendanceReport'
 
-function todayISO() { return new Date().toISOString().split('T')[0] }
 
 const STATUS_LABEL = { present: 'Present', absent: 'Absent', late: 'Late', holiday: 'Holiday' }
 const STATUS_COLOR  = { present: '#16a34a', absent: '#dc2626', late: '#d97706', holiday: '#0284c7' }
@@ -89,11 +89,13 @@ export default function AdminTeacherRegister({ readOnly }) {
       if (existing?.id) {
         if (existing.status === status) {
           // Tap same status → clear
-          await supabase.from('teacher_attendance').delete().eq('id', existing.id)
+          const { error } = await supabase.from('teacher_attendance').delete().eq('id', existing.id)
+          if (error) throw error
           setAttendance(prev => { const n = { ...prev }; delete n[teacher.id]; return n })
           logAction(profile, 'Marked teacher attendance', `${teacher.name}: cleared (${logDate})`).catch(() => {})
         } else {
-          await supabase.from('teacher_attendance').update({ status, marked_by: profile.id }).eq('id', existing.id)
+          const { error } = await supabase.from('teacher_attendance').update({ status, marked_by: profile.id }).eq('id', existing.id)
+          if (error) throw error
           setAttendance(prev => ({ ...prev, [teacher.id]: { ...prev[teacher.id], status } }))
           logAction(profile, 'Marked teacher attendance', `${teacher.name}: ${status} (${logDate})`).catch(() => {})
         }
@@ -119,7 +121,8 @@ export default function AdminTeacherRegister({ readOnly }) {
     if (!existing?.id) { alert('Mark attendance first, then add a note.'); return }
     setBusy(b => ({ ...b, [teacher.id]: true }))
     try {
-      await supabase.from('teacher_attendance').update({ notes }).eq('id', existing.id)
+      const { error } = await supabase.from('teacher_attendance').update({ notes }).eq('id', existing.id)
+      if (error) throw error
       setAttendance(prev => ({ ...prev, [teacher.id]: { ...prev[teacher.id], notes } }))
       setNoteOpen(prev => { const n = { ...prev }; delete n[teacher.id]; return n })
       logAction(profile, 'Added teacher attendance note', `${teacher.name}: ${notes || '(cleared)'}`).catch(() => {})

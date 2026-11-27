@@ -28,9 +28,11 @@ function matchesRole(profile, role) {
 }
 
 function RequireAuth({ role, allowProjectorManager, children }) {
-  const { user, profile, loading, mfaChallengePending, mfaEnrollmentRequired } = useAuth()
+  const { user, profile, loading, mfaKnown, mfaChallengePending, mfaEnrollmentRequired } = useAuth()
   if (loading) return <div className="spinner" style={{ marginTop: 100 }} />
   if (!user || !profile) return <Navigate to="/login" replace />
+  // Don't show any page until we know whether the 2-step code is still needed
+  if (!mfaKnown) return <div className="spinner" style={{ marginTop: 100 }} />
   // A verified authenticator is enrolled but hasn't been cleared this
   // session yet - password sign-in alone only gets someone to aal1, and
   // nothing past this point should render until that's resolved.

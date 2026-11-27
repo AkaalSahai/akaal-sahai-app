@@ -14,7 +14,7 @@ export default function NotificationBell({ userId }) {
     load()
     const interval = setInterval(load, 60000)
     return () => clearInterval(interval)
-  }, [userId])
+  }, [userId])   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     const { data, error } = await supabase

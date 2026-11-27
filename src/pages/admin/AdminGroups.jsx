@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { addTeacher as assignTeacher, removeTeacher as unassignTeacher, makePrimary, makeCovering } from '../../lib/primaryTeachers'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
+import { isTeachingStaff } from '../../lib/staff'
 
 export default function AdminGroups({ readOnly }) {
   const { profile, hasRole } = useAuth()
@@ -65,7 +66,7 @@ export default function AdminGroups({ readOnly }) {
       const students = isPunjabi ? (grp.students || []) : (scMap[grp.id] || [])
       return { ...grp, teacherIds, teacherRoles, students }
     }))
-    setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
+    setTeachers((t || []).filter(isTeachingStaff))
     setLoading(false)
   }
 

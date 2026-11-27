@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { logAction } from '../../lib/audit'
 import { validateStudentForm, normalizeUkPhone } from '../../lib/studentChecks'
 import { hasMedicalNotes, isNothingAnswer } from '../../lib/medical'
+import { todayISO } from '../../lib/teacherAttendanceReport'
 
 const TEMPLATE_HEADERS = 'group_name,first_name,middle_name,last_name,date_of_birth,date_joined,medical_notes,house_no,street_name,town,postcode,parent_name,relationship,phone,secondary_phone,email,photo_consent'
 const TEMPLATE_EXAMPLE = 'Sikhi Group,Amrit,Kaur,Singh,12/04/2015,01/09/2020,,12,High Street,Southall,UB1 1AA,Gurpreet Singh,Father,+447700000000,,amrit@example.com,yes'
@@ -156,7 +157,7 @@ export default function AdminImport({ readOnly }) {
         // Real historical join date if the CSV provides one (e.g. migrating
         // existing students), otherwise today — don't silently backdate
         // everyone to the import date.
-        date_joined: parseDateToISO(r.date_joined) || new Date().toISOString().split('T')[0],
+        date_joined: parseDateToISO(r.date_joined) || todayISO(),
         active: true,
       }))
 

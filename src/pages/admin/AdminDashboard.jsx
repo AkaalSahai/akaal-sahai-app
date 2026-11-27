@@ -8,16 +8,17 @@ import { getVerificationStatus } from '../../lib/verification'
 import AdminRegisterStatus from './AdminRegisterStatus'
 import AdminVerificationStatus from './AdminVerificationStatus'
 import html2canvas from 'html2canvas'
+import { todayISO, localISO } from '../../lib/teacherAttendanceReport'
+import { fetchAll } from '../../lib/fetchAll'
 
-function todayISO() { return new Date().toISOString().split('T')[0] }
 
 function getLastWeekend() {
   const d = new Date()
   while (d.getDay() !== 6) d.setDate(d.getDate() - 1)
-  const saturday = d.toISOString().split('T')[0]
+  const saturday = localISO(d)
   const fri = new Date(d)
   fri.setDate(fri.getDate() - 1)
-  const friday = fri.toISOString().split('T')[0]
+  const friday = localISO(fri)
   return { friday, saturday }
 }
 
@@ -71,8 +72,8 @@ function LiveAttendanceWidget({ classTypesMeta }) {
     try {
       const [{ data: grpRows }, { data: stuRows }, { data: recRows }, { data: scRows }] = await Promise.all([
         supabase.from('groups').select('id, name').eq('active', true).order('name'),
-        supabase.from('students').select('id, group_id').eq('active', true),
-        supabase.from('attendance_records').select('student_id, group_id, status').eq('session_date', targetDate),
+        fetchAll(() => supabase.from('students').select('id, group_id').eq('active', true).order('id')),
+        fetchAll(() => supabase.from('attendance_records').select('student_id, group_id, status').eq('session_date', targetDate).order('id')),
         supabase.from('student_classes').select('student_id, group_id'),
       ])
 
@@ -287,7 +288,7 @@ export default function AdminDashboard({ setTab }) {
     const today = todayISO()
     const cutoff = new Date()
     cutoff.setDate(cutoff.getDate() - 90)
-    const fromDate = cutoff.toISOString().split('T')[0]
+    const fromDate = localISO(cutoff)
 
     const [
       { count: totalStudents },
@@ -315,8 +316,9 @@ export default function AdminDashboard({ setTab }) {
       // different Punjabi groups each submitted their own register is one
       // class day, not 28 "sessions". Table is small enough (hundreds of
       // rows) to just fetch the dates and count distinct values client-side
-      // rather than needing a dedicated count-distinct RPC.
-      supabase.from('attendance_sessions').select('session_date, group_id'),
+      // rather than needing a dedicated count-distinct RPC. Already 1,300+
+      // rows (27-11-2026), so fetchAll pages past the 1,000-row limit.
+      fetchAll(() => supabase.from('attendance_sessions').select('session_date, group_id').order('id')),
       supabase.from('parent_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('teacher_applications').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
       supabase.from('transfer_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending').eq('request_type', 'transfer'),
@@ -326,9 +328,9 @@ export default function AdminDashboard({ setTab }) {
       supabase.from('users').select('id, name, last_login, last_seen').or(TEACHING_STAFF_FILTER).order('name'),
       supabase.from('attendance_sessions').select('id, group_id, submitted_at').eq('session_date', today),
       supabase.rpc('get_dashboard_attendance_stats', { from_date: fromDate }),
-      supabase.from('students').select('*').eq('active', true),
+      fetchAll(() => supabase.from('students').select('*').eq('active', true).order('id')),
       supabase.from('teacher_groups').select('teacher_id, group_id'),
-      supabase.from('student_verifications').select('*').order('verified_at', { ascending: false }),
+      fetchAll(() => supabase.from('student_verifications').select('*').order('verified_at', { ascending: false }).order('id')),
       supabase.from('site_settings').select('key, value').eq('key', 'verification_required_since'),
     ])
 
@@ -478,7 +480,8 @@ export default function AdminDashboard({ setTab }) {
         supabase.from('users').select('id, name'),
         supabase.from('teacher_groups').select('teacher_id, group_id'),
         supabase.from('attendance_sessions').select('id, group_id, session_date').in('session_date', [friday, saturday]),
-        supabase.from('attendance_records').select('session_id, group_id, status, session_date').in('session_date', [friday, saturday]),
+        // ~1,700 rows for a normal weekend - more than one request returns
+        fetchAll(() => supabase.from('attendance_records').select('session_id, group_id, status, session_date').in('session_date', [friday, saturday]).order('id')),
       ])
 
       const teacherMap = Object.fromEntries((teacherRows || []).map(t => [t.id, t.name]))

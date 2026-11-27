@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { CLASS_META, isAnyClassDay, loadClassTypes } from '../../lib/classTypes'
+import { todayISO } from '../../lib/teacherAttendanceReport'
 
-function todayISO() { return new Date().toISOString().split('T')[0] }
 
 export default function AdminRegisterStatus() {
   const [data, setData]         = useState(null)
