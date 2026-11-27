@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { CLASS_META, isAnyClassDay, loadClassTypes } from '../../lib/classTypes'
 import { todayISO } from '../../lib/teacherAttendanceReport'
+import { notifyTeachersOfGroup } from '../../lib/notifications'
+import { logAction } from '../../lib/audit'
+import { useAuth } from '../../hooks/useAuth'
 
 
 export default function AdminRegisterStatus() {
@@ -10,6 +13,11 @@ export default function AdminRegisterStatus() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [filterMissing, setFilterMissing] = useState(false)
   const [classTypesMeta, setClassTypesMeta] = useState(CLASS_META)
+  const [remindBusy, setRemindBusy] = useState(false)
+  const { profile, hasRole } = useAuth()
+  // Reminders write notifications - admins and registrars only (this page
+  // is also opened from the dashboard by read-only adminView users)
+  const canRemind = hasRole('admin') || hasRole('registrar')
 
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
 
@@ -22,7 +30,7 @@ export default function AdminRegisterStatus() {
       { data: teachers },
       { data: tgRows },
     ] = await Promise.all([
-      supabase.from('groups').select('id, name, teacher_id').eq('active', true).order('name'),
+      supabase.from('groups').select('id, name, teacher_id, class_type').eq('active', true).order('name'),
       supabase.from('attendance_sessions').select('id, group_id, created_at, submitted_at').eq('session_date', today),
       supabase.from('attendance_records').select('session_id, status').eq('session_date', today),
       // Names for whoever is linked to a group, whatever their role
@@ -78,6 +86,31 @@ export default function AdminRegisterStatus() {
   const submitted = (data || []).filter(g => g.submitted)
   const missing   = (data || []).filter(g => !g.submitted)
   const displayed = filterMissing ? missing : (data || [])
+  // Groups whose class runs today and whose register hasn't been started -
+  // a Gatka group isn't "missing" on a Friday
+  const todayDay  = new Date().getDay()
+  const notStarted = (data || []).filter(g =>
+    !g.started && (classTypesMeta[g.class_type || 'punjabi']?.days || []).includes(todayDay))
+
+  // One tap sends every teacher of those groups a notification (the bell in
+  // their app). Batch C, 27-11-2026 - fewer 21:30 auto-absents.
+  async function remindTeachers() {
+    if (!canRemind || remindBusy || !notStarted.length) return
+    if (!confirm(`Send a reminder to the teachers of ${notStarted.length} ${notStarted.length === 1 ? 'group' : 'groups'} that haven't started today's register?`)) return
+    setRemindBusy(true)
+    try {
+      const results = await Promise.all(notStarted.map(g =>
+        notifyTeachersOfGroup(g.id, `Reminder: today's register for ${g.name} hasn't been started yet. Please mark it before 9:30pm, when unmarked students are marked absent.`)))
+      const sent = results.filter(Boolean).length
+      const failed = notStarted.filter((_, i) => !results[i]).map(g => g.name)
+      logAction(profile, 'Sent register reminders', `${sent} of ${notStarted.length} groups`, failed.length === 0).catch(() => {})
+      alert(failed.length
+        ? `Reminders sent for ${sent} ${sent === 1 ? 'group' : 'groups'}.\n\nNot sent (no teacher assigned, or it failed): ${failed.join(', ')}`
+        : `✓ Reminders sent for ${sent} ${sent === 1 ? 'group' : 'groups'}.`)
+    } finally {
+      setRemindBusy(false)
+    }
+  }
 
   function fmtTime(ts) {
     if (!ts) return '—'
@@ -109,7 +142,7 @@ export default function AdminRegisterStatus() {
       <div className="card">
         <div className="card-title">
           Register Status — Today
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             {lastUpdated && (
               <span style={{ fontSize: '.72rem', color: 'var(--muted)', fontWeight: 400 }}>
                 Updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
@@ -122,6 +155,14 @@ export default function AdminRegisterStatus() {
                 color: filterMissing ? '#dc2626' : 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
               {filterMissing ? 'Show all' : 'Missing only'}
             </button>
+            {canRemind && notStarted.length > 0 && (
+              <button onClick={remindTeachers} disabled={remindBusy}
+                style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 10px', borderRadius: 6,
+                  border: '1px solid #fcd34d', background: '#fffbeb', color: '#92400e',
+                  cursor: 'pointer', fontFamily: 'inherit' }}>
+                {remindBusy ? 'Sending…' : `🔔 Remind teachers (${notStarted.length})`}
+              </button>
+            )}
             <button onClick={load}
               style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 10px', borderRadius: 6,
                 border: '1px solid var(--border)', background: 'white', color: 'var(--muted)',

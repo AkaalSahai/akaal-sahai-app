@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { AuthProvider } from './components/AuthProvider'
@@ -6,17 +7,21 @@ import InstallPrompt from './components/InstallPrompt'
 import MfaChallenge from './components/MfaChallenge'
 import MfaRequiredSetup from './components/MfaRequiredSetup'
 
+// Each page is loaded only when it's opened, so the parent sign-up form and
+// the projector no longer download the whole admin app first (it was one
+// 1.1 MB file - Batch C, 27-11-2026). The app's offline cache still keeps
+// every piece once it's installed.
 // Public pages
-import LoginPage from './pages/LoginPage'
-import StudentRegistration from './pages/public/StudentRegistration'
-import TeacherRegistration from './pages/public/TeacherRegistration'
-import ResetPassword from './pages/ResetPassword'
+const LoginPage           = lazy(() => import('./pages/LoginPage'))
+const StudentRegistration = lazy(() => import('./pages/public/StudentRegistration'))
+const TeacherRegistration = lazy(() => import('./pages/public/TeacherRegistration'))
+const ResetPassword       = lazy(() => import('./pages/ResetPassword'))
 
 // Layouts
-import AdminLayout from './pages/admin/AdminLayout'
-import RegistrarLayout from './pages/registrar/RegistrarLayout'
-import TeacherLayout from './pages/teacher/TeacherLayout'
-import ProjectorDashboard from './pages/projector/ProjectorDashboard'
+const AdminLayout        = lazy(() => import('./pages/admin/AdminLayout'))
+const RegistrarLayout    = lazy(() => import('./pages/registrar/RegistrarLayout'))
+const TeacherLayout      = lazy(() => import('./pages/teacher/TeacherLayout'))
+const ProjectorDashboard = lazy(() => import('./pages/projector/ProjectorDashboard'))
 
 // A profile matches an allowed role if it's their primary role OR one of
 // their extra_roles — same rule as hasRole() elsewhere in the app, so e.g.
@@ -60,6 +65,7 @@ function RootRedirect() {
 
 function AppRoutes() {
   return (
+    <Suspense fallback={<div className="spinner" style={{ marginTop: 100 }} />}>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register/student" element={<StudentRegistration />} />
@@ -82,6 +88,7 @@ function AppRoutes() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   )
 }
 
