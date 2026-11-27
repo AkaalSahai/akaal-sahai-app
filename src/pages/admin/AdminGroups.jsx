@@ -207,7 +207,17 @@ export default function AdminGroups({ readOnly }) {
     const count = (g?.students || []).length
     if (count > 0) { alert('Cannot delete a group that has students. Move or remove students first.'); return }
     if (!confirm('Delete group "' + g?.name + '"?')) return
-    await supabase.from('groups').delete().eq('id', groupId)
+    const { error } = await supabase.from('groups').delete().eq('id', groupId)
+    if (error) {
+      // The database refuses to delete a group that has registers, so its
+      // attendance history can never be lost (keep-attendance-when-deleting.sql)
+      if (error.code === '23503') {
+        alert(`"${g?.name}" has attendance history, so it can't be deleted.\n\nSwitch it to inactive instead - its history stays in reports. (To combine it with another group, use Merge.)`)
+      } else {
+        alert('Could not delete group: ' + error.message)
+      }
+      return
+    }
     logAction(profile, 'Deleted group', g?.name).catch(() => {})
     load()
   }
