@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { groupTeacherLabels } from './primaryTeachers'
+import { isTeachingStaff } from './staff'
 
 // Fetches the student roster for ANY group - a student's primary Punjabi
 // group (matched via students.group_id) or an admin-managed extra class
@@ -86,7 +87,7 @@ export async function loadPunjabiTeacherResolver() {
       supabase.from('users').select('id, name, role, extra_roles'),
       supabase.from('teacher_groups').select('group_id, teacher_id, role'),
     ])
-    const teachers = (users || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
+    const teachers = (users || []).filter(isTeachingStaff)
     const nameById = new Map(teachers.map(t => [t.id, t.name]))
     // Several primary teachers come out as "Harpreet S. & Jaspreet K."
     return function resolvePunjabiTeacher(grp) {

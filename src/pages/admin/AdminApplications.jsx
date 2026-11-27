@@ -7,6 +7,8 @@ import { fmtDate } from '../../lib/dates'
 import { notifyTeachersOfGroup } from '../../lib/notifications'
 import { loadFormerStaff, formerStaffNameMap } from '../../lib/formerStaff'
 import { medicalStatus, MEDICAL_STATUS_LABEL, hasMedicalNotes } from '../../lib/medical'
+import { todayISO } from '../../lib/teacherAttendanceReport'
+import { isTeachingStaff } from '../../lib/staff'
 
 function pendingFirst(list) {
   return [...list].sort((a, b) => {
@@ -66,7 +68,7 @@ export default function AdminApplications({ readOnly }) {
         supabase.from('teacher_groups').select('teacher_id, group_id, role'),
         loadFormerStaff(),
       ])
-      const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
+      const teacherUsers = (us || []).filter(isTeachingStaff)
       const tMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
       setTeacherMap(tMap)
       // Former staff first so a current account always wins
@@ -89,6 +91,21 @@ export default function AdminApplications({ readOnly }) {
     if (readOnly) return
     setBusy(app.id)
     try {
+      // Claim the application FIRST (only if it's still pending). If it was
+      // already approved - a double click, or a retry after an error - stop
+      // here, so the same child can never be added twice (health check
+      // 27-11-2026: approving used to add the student first, and a failure
+      // marking the application left it pending for a second approve).
+      const { data: claimed, error: claimErr } = await supabase.from('parent_applications')
+        .update({ status: 'approved', reviewed_at: new Date().toISOString(), assigned_group_id: groupId || null, reviewed_by: profile.id })
+        .eq('id', app.id).eq('status', 'pending')
+        .select('id')
+      if (claimErr) throw claimErr
+      if (!claimed?.length) {
+        alert('This application has already been dealt with - it may have been approved a moment ago. The list will now refresh.')
+        load()
+        return
+      }
       const { error } = await supabase.from('students').insert({
         first_name: app.first_name, middle_name: app.middle_name, last_name: app.last_name,
         date_of_birth: app.date_of_birth, medical_notes: app.medical_notes,
@@ -96,21 +113,16 @@ export default function AdminApplications({ readOnly }) {
         house_no: app.house_no, street_name: app.street_name, town: app.town, postcode: app.postcode,
         parent_name: app.parent_name, relationship: app.relationship,
         phone: app.phone, secondary_phone: app.secondary_phone, email: app.email,
-        photo_consent: app.photo_consent, date_joined: new Date().toISOString().split('T')[0],
+        photo_consent: app.photo_consent, date_joined: todayISO(),
         active: true, group_id: groupId || null,
       })
-      if (error) throw error
-      const { error: appErr } = await supabase.from('parent_applications')
-        .update({ status: 'approved', reviewed_at: new Date().toISOString(), assigned_group_id: groupId || null, reviewed_by: profile.id })
-        .eq('id', app.id)
-      if (appErr) {
-        if (appErr.message?.includes('assigned_group_id')) {
-          // Migration not run yet — still mark the application approved, just
-          // without recording which group so it can show on the card later.
-          await supabase.from('parent_applications')
-            .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: profile.id })
-            .eq('id', app.id)
-        } else throw appErr
+      if (error) {
+        // Adding the student failed - put the application back to pending so
+        // it can simply be approved again
+        await supabase.from('parent_applications')
+          .update({ status: 'pending', reviewed_at: null, assigned_group_id: null, reviewed_by: null })
+          .eq('id', app.id)
+        throw error
       }
       const studentName = [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')
       const grp = groups.find(g => g.id === groupId)
@@ -128,9 +140,11 @@ export default function AdminApplications({ readOnly }) {
   async function rejectStudent(app) {
     if (readOnly) return
     setBusy(app.id)
-    await supabase.from('parent_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', app.id)
+    const { error } = await supabase.from('parent_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', app.id)
+    setBusy(null)
+    if (error) { alert('Could not reject: ' + error.message); return }
     logAction(profile, 'Rejected student application', [app.first_name, app.middle_name, app.last_name].filter(Boolean).join(' ')).catch(() => {})
-    setBusy(null); load()
+    load()
   }
 
   async function approveTeacher(app, groupId) {
@@ -159,9 +173,11 @@ export default function AdminApplications({ readOnly }) {
   async function rejectTeacher(app) {
     if (readOnly) return
     setBusy(app.id)
-    await supabase.from('teacher_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', app.id)
+    const { error } = await supabase.from('teacher_applications').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', app.id)
+    setBusy(null)
+    if (error) { alert('Could not reject: ' + error.message); return }
     logAction(profile, 'Rejected teacher application', app.full_name).catch(() => {})
-    setBusy(null); load()
+    load()
   }
 
   async function approveTransfer(tr, toGroupId) {
@@ -169,11 +185,16 @@ export default function AdminApplications({ readOnly }) {
     if (!toGroupId) { alert('Please select a destination group'); return }
     setBusy(tr.id)
     try {
-      await supabase.from('students').update({ group_id: toGroupId }).eq('id', tr.student_id)
+      // Check each step really worked before saying the child was moved
+      const { data: moved, error: moveErr } = await supabase.from('students')
+        .update({ group_id: toGroupId }).eq('id', tr.student_id).select('id')
+      if (moveErr) throw moveErr
+      if (!moved?.length) throw new Error(`${tr.student_name} could not be moved (student not found, or no permission).`)
       const grp = groups.find(g => g.id === toGroupId)
-      await supabase.from('transfer_requests').update({
+      const { error: trErr } = await supabase.from('transfer_requests').update({
         status: 'approved', to_group_id: toGroupId, reviewed_at: new Date().toISOString(), reviewed_by: profile.id,
       }).eq('id', tr.id)
+      if (trErr) throw new Error(`${tr.student_name} was moved, but the request could not be marked approved: ${trErr.message}`)
       alert(`${tr.student_name} has been moved to ${grp?.name || 'the selected group'}.`)
       logAction(profile, 'Approved transfer request', `${tr.student_name} → ${grp?.name || 'new group'}`).catch(() => {})
       notifyTeachersOfGroup(toGroupId, `New student transferred to your group: ${tr.student_name}`).catch(() => {})
@@ -263,9 +284,11 @@ export default function AdminApplications({ readOnly }) {
   async function rejectTransfer(tr) {
     if (readOnly) return
     setBusy(tr.id)
-    await supabase.from('transfer_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', tr.id)
+    const { error } = await supabase.from('transfer_requests').update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: profile.id }).eq('id', tr.id)
+    setBusy(null)
+    if (error) { alert('Could not reject: ' + error.message); return }
     logAction(profile, 'Rejected transfer request', tr.student_name).catch(() => {})
-    setBusy(null); load()
+    load()
   }
 
   function calcAge(dob) {

@@ -9,6 +9,7 @@ const sameNames = (a, b) => a.length === b.length && a.every((v, i) => v.name ==
 
 // status: 'off' (unsupported) | 'none' (no folder) | 'allow' (needs a click
 // after a restart) | 'missing' (folder moved/deleted) | 'ok'
+// eslint-disable-next-line react/only-export-components -- the hook lives beside the component it feeds
 export function useProjectorVideos() {
   const [status, setStatus] = useState(videosSupported() ? 'none' : 'off')
   const [folder, setFolder] = useState(null)

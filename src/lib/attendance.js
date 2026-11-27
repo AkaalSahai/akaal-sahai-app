@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { fetchAll } from './fetchAll'
 
 // studentId -> { pct, sessions }. Pass studentIds to scope to a specific
 // roster; omit to compute across every group a student has ever been in
@@ -19,10 +20,12 @@ import { supabase } from './supabase'
 // own RLS: exactly the same rows they could already see via a direct
 // select, just aggregated server-side.
 export async function loadAttendanceStats(studentIds = null, groupId = null) {
-  const { data, error } = await supabase.rpc('get_attendance_stats', {
+  // One row per student - with every student ever (incl. archived) that's
+  // over 1,000, so page through rather than lose some at random
+  const { data, error } = await fetchAll(() => supabase.rpc('get_attendance_stats', {
     p_student_ids: studentIds,
     p_group_id: groupId,
-  })
+  }).order('student_id'))
   if (error) { console.error('Attendance stats load error:', error.message); return {} }
   const statsMap = Object.fromEntries((data || []).map(r => [r.student_id, r]))
   const ids = studentIds || Object.keys(statsMap)

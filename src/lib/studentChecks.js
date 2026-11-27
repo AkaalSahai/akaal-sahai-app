@@ -1,3 +1,4 @@
+import { todayISO } from './teacherAttendanceReport'
 // Single source of truth for "are this student's details complete and
 // plausible" - used by the admin/registrar Students page (badges, filter,
 // summary), teachers' My Students, the edit forms and the import.
@@ -66,7 +67,6 @@ export function ageOn(dob, on = new Date()) {
   return a
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
 
 // "n/a", "none", "-" and the like typed into a box mean nobody had the
 // detail, so they count as missing (agreed 12-11-2026).

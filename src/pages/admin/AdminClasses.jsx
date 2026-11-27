@@ -6,6 +6,7 @@ import { logAction } from '../../lib/audit'
 import { addTeacher as assignTeacher, removeTeacher as unassignTeacher, makePrimary, makeCovering, groupTeacherLabels } from '../../lib/primaryTeachers'
 import { loadClassTypes, formatDayNames } from '../../lib/classTypes'
 import { fmtDate } from '../../lib/dates'
+import { isTeachingStaff } from '../../lib/staff'
 
 const COLOR_PRESETS = ['#15803d', '#7c3aed', '#0284c7', '#ea580c', '#dc2626', '#0d9488', '#db2777', '#4f46e5']
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -40,6 +41,7 @@ export default function AdminClasses({ readOnly }) {
   const [manageOpen, setManageOpen] = useState(false)
   const [classTypeForm, setClassTypeForm] = useState(null)  // null = closed; {key, label, days, color} - key is null when adding new
   const searchTimers            = useRef({})
+  const searchReq               = useRef({})   // groupId -> latest search number
 
   useEffect(() => { load() }, [])
 
@@ -81,7 +83,7 @@ export default function AdminClasses({ readOnly }) {
         if (grp.teacher_id && !teacherRoles[grp.teacher_id]) teacherRoles[grp.teacher_id] = 'primary'
         return { ...grp, teacherIds: [...ids], teacherRoles, studentCount: countMap[grp.id] || 0 }
       }))
-      setTeachers((t || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher')))
+      setTeachers((t || []).filter(isTeachingStaff))
     } catch (err) {
       console.error('AdminClasses load error:', err)
     } finally {
@@ -184,7 +186,13 @@ export default function AdminClasses({ readOnly }) {
   }
 
   async function doSearch(groupId, query) {
-    const { data } = await supabase
+    // Commas, brackets and dots have special meaning inside .or() and broke
+    // the search ("Kaur, Simran" found nothing) - search on the words only.
+    const words = query.replace(/[^\p{L}\p{N}\s'-]/gu, ' ').trim().split(/\s+/).filter(Boolean)
+    if (!words.length) { setResults(prev => ({ ...prev, [groupId]: [] })); return }
+    const reqId = (searchReq.current[groupId] || 0) + 1
+    searchReq.current[groupId] = reqId
+    let q = supabase
       .from('students')
       .select('id, first_name, last_name, date_of_birth, groups(id, name, teacher_id)')
       .eq('active', true)
@@ -193,8 +201,12 @@ export default function AdminClasses({ readOnly }) {
       // excluding students without one keeps this search to eligible
       // students only.
       .not('group_id', 'is', null)
-      .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
       .limit(12)
+    // Every word must match the first or last name ("simran kaur" works)
+    words.forEach(w => { q = q.or(`first_name.ilike.%${w}%,last_name.ilike.%${w}%`) })
+    const { data, error } = await q
+    if (searchReq.current[groupId] !== reqId) return   // a newer search has started - ignore this older answer
+    if (error) console.error('Student search error:', error.message)
     const enrolledIds = new Set((enrolled[groupId] || []).map(s => s.id))
     setResults(prev => ({
       ...prev,

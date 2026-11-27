@@ -17,6 +17,9 @@ import PhoneInput from '../../components/PhoneInput'
 import MedicalQuestion from '../../components/MedicalQuestion'
 import { medicalStatus, MEDICAL_STATUS_LABEL, medicalAnswerFor, medicalPayload, medicalError, hasMedicalNotes } from '../../lib/medical'
 import { IssueBadge, IssueList, IssuePill, FieldError, FormWarnings } from '../../components/StudentIssues'
+import { todayISO, localISO } from '../../lib/teacherAttendanceReport'
+import { isTeachingStaff } from '../../lib/staff'
+import { fetchAll } from '../../lib/fetchAll'
 
 // Admin/registrar filter panel - every field starts "off"
 const EMPTY_FILTERS = {
@@ -34,7 +37,7 @@ function classDatesBetween(startStr, endStr, daysOfWeek) {
   const d = new Date(startStr + 'T12:00:00')
   const end = new Date(endStr + 'T12:00:00')
   while (d <= end) {
-    if (daysOfWeek.includes(d.getDay())) dates.push(d.toISOString().split('T')[0])
+    if (daysOfWeek.includes(d.getDay())) dates.push(localISO(d))
     d.setDate(d.getDate() + 1)
   }
   return dates
@@ -106,7 +109,7 @@ export default function AdminStudents({ readOnly }) {
 
   async function loadVerifications() {
     const [{ data: v }, { data: st }] = await Promise.all([
-      supabase.from('student_verifications').select('student_id, verified_at, verified_by_name, snapshot').order('verified_at', { ascending: false }),
+      fetchAll(() => supabase.from('student_verifications').select('student_id, verified_at, verified_by_name, snapshot').order('verified_at', { ascending: false }).order('id')),
       supabase.from('site_settings').select('value').eq('key', 'verification_required_since').maybeSingle(),
     ])
     const latest = {}
@@ -117,7 +120,7 @@ export default function AdminStudents({ readOnly }) {
 
   async function load() {
     const [{ data: s }, { data: g }, { data: n }, { data: us }, { data: tg }, attMap] = await Promise.all([
-      supabase.from('students').select('*, groups(id, name, class_type)').eq('active', true).order('first_name').order('last_name'),
+      fetchAll(() => supabase.from('students').select('*, groups(id, name, class_type)').eq('active', true).order('first_name').order('last_name').order('id')),
       supabase.from('groups').select('id, name, teacher_id, students(date_of_birth)').eq('active', true).order('name'),
       supabase.from('student_notes').select('student_id, progress_level, comments, updated_at'),
       supabase.from('users').select('id, name, role, extra_roles'),
@@ -125,7 +128,7 @@ export default function AdminStudents({ readOnly }) {
       loadAttendanceStats(),
     ])
     setAttendance(attMap)
-    const teacherUsers = (us || []).filter(u => u.role === 'teacher' || (u.extra_roles || []).includes('teacher'))
+    const teacherUsers = (us || []).filter(isTeachingStaff)
     const teacherMap = Object.fromEntries(teacherUsers.map(u => [u.id, u.name]))
     // Primary teacher(s) per group - several come out as "Harpreet S. & Jaspreet K."
     const teacherLabels = groupTeacherLabels(g, tg, id => teacherMap[id])
@@ -239,7 +242,7 @@ export default function AdminStudents({ readOnly }) {
         const sessionIdByDate = new Map(groupSessions.map(x => [x.session_date, x.id]))
         const earliestSessionDate = groupSessions[0].session_date
         const startStr = (s.date_joined && s.date_joined > earliestSessionDate) ? s.date_joined : earliestSessionDate
-        const todayStr = new Date().toISOString().split('T')[0]
+        const todayStr = todayISO()
         const classType = s.groups?.class_type || 'punjabi'
         const days = classTypesMeta[classType]?.days || CLASS_META.punjabi.days
         classDatesBetween(startStr, todayStr, days).forEach(dateStr => {
@@ -328,7 +331,12 @@ export default function AdminStudents({ readOnly }) {
 
   async function moveGroup(studentId, newGroupId) {
     if (readOnly) return
-    await supabase.from('students').update({ group_id: newGroupId }).eq('id', studentId)
+    const { data: moved, error } = await supabase.from('students')
+      .update({ group_id: newGroupId }).eq('id', studentId).select('id')
+    if (error || !moved?.length) {
+      alert('Could not move this student: ' + (error?.message || 'not found, or no permission'))
+      return
+    }
     const s = students.find(x => x.id === studentId)
     const g = groups.find(x => x.id === newGroupId)
     const name = s ? [s.first_name, s.last_name].filter(Boolean).join(' ') : studentId
@@ -547,7 +555,7 @@ export default function AdminStudents({ readOnly }) {
       { label: 'Verification',    get: s => v(s).verified ? 'Verified' : VERIFICATION_REASON_LABEL[v(s).reason] },
       { label: 'Progress',        get: s => PROGRESS[s.note?.progress_level]?.label || '' },
     ]
-    exportCSV(sorted, cols, `students-${new Date().toISOString().slice(0, 10)}.csv`)
+    exportCSV(sorted, cols, `students-${todayISO()}.csv`)
     // Personal data leaving the app - record who and how many
     logAction(profile, 'Downloaded students CSV', `${sorted.length} students${activeChips.length ? ' · ' + activeChips.map(c => c[1]).join('; ') : ''}`).catch(() => {})
   }

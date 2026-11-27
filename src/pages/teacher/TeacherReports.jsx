@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
 import { loadGroupStudents, loadPunjabiTeacherResolver } from '../../lib/classRoster'
 import { hasMedicalNotes } from '../../lib/medical'
+import { fetchAll } from '../../lib/fetchAll'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
@@ -49,9 +50,9 @@ export default function TeacherReports() {
   const notesRef                 = useRef({})
 
   useEffect(() => { notesRef.current = notes }, [notes])
-  useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
+  useEffect(() => { if (profile?.id) loadMyGroups() }, [profile?.id])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
-  useEffect(() => { if (selectedGroupId) load() }, [selectedGroupId])
+  useEffect(() => { if (selectedGroupId) load() }, [selectedGroupId])   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadMyGroups() {
     // Query both assignment methods and merge, matching TeacherStudents.jsx /
@@ -75,8 +76,9 @@ export default function TeacherReports() {
 
     if (grps.length > 0) {
       setMyGroups(grps)
-      const def = grps.find(g => g.id === profile.group_id) || grps[0]
-      setSelectedGroupId(def.id)
+      // Keep the group already open if they still teach it; otherwise start
+      // on the first one, the same as the Register (one predictable default)
+      setSelectedGroupId(prev => grps.some(g => g.id === prev) ? prev : grps[0].id)
     } else {
       setMyGroups([])
       setGroupsLoading(false)
@@ -93,9 +95,11 @@ export default function TeacherReports() {
         selectedGroupId, grp?.class_type,
         'id, first_name, middle_name, last_name, date_of_birth, medical_notes, groups(id, name, teacher_id)'
       ).catch(err => { console.error('loadGroupStudents error:', err); return [] }),
-      supabase.from('attendance_records')
+      // A long-running group already has 2,000+ records - page past 1,000
+      fetchAll(() => supabase.from('attendance_records')
         .select('student_id, status, session_date')
-        .eq('group_id', selectedGroupId),
+        .eq('group_id', selectedGroupId)
+        .order('id')),
       supabase.from('student_notes')
         .select('student_id, progress_level, comments'),
     ])
@@ -145,7 +149,9 @@ export default function TeacherReports() {
   async function saveNote(studentId, field, value) {
     setSaving(s => ({ ...s, [studentId]: true }))
     try {
-      await supabase.from('student_notes').upsert({
+      // Supabase reports failures in { error } rather than throwing, so check
+      // it - otherwise a failed save just vanished without a word
+      const { error } = await supabase.from('student_notes').upsert({
         student_id: studentId,
         teacher_id: profile.id,
         group_id: selectedGroupId,
@@ -153,8 +159,10 @@ export default function TeacherReports() {
         [field]: value,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'student_id' })
+      if (error) throw error
     } catch (err) {
       console.error(err)
+      alert('Not saved: ' + err.message + '\n\nPlease try again.')
     } finally {
       setSaving(s => ({ ...s, [studentId]: false }))
     }

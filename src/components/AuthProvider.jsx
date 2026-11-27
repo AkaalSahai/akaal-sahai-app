@@ -13,25 +13,44 @@ export function AuthProvider({ children }) {
   // all) - comparing the two is how we know whether someone who HAS 2FA
   // enrolled still needs to complete that challenge before proceeding.
   const [mfaLevel, setMfaLevel] = useState(null)
+  // false until we've asked the server whether this login still needs its
+  // 2-step code - pages wait for it so nothing flashes up first
+  const [mfaKnown, setMfaKnown] = useState(false)
   // site_settings.mfa_required_since - empty/missing means 2FA stays
   // opt-in; a timestamp means admin has switched on requiring it for
   // admin/registrar accounts. Public data (same table broadcast messages
   // live in), so this is safe to fetch before anyone's even logged in.
   const [mfaRequiredSince, setMfaRequiredSince] = useState(null)
 
+  // Supabase re-announces "signed in" every time the app comes back into
+  // view. Keep the SAME profile object when nothing changed, otherwise every
+  // page that reloads on [profile] starts again - teachers were being thrown
+  // back to their first group mid-register (health check 27-11-2026).
+  // A failed refetch (wifi blip) keeps the profile we already have.
   async function fetchProfile(userId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .select('*')
       .eq('id', userId)
       .single()
-    setProfile(data)
+    if (error && !data) return null
+    setProfile(prev => (prev && JSON.stringify(prev) === JSON.stringify(data)) ? prev : data)
     return data
   }
 
+  // Same idea for the login itself: only swap it when it's a different one
+  function applySessionUser(sessionUser) {
+    setUser(prev => (prev && sessionUser && prev.id === sessionUser.id &&
+      JSON.stringify(prev) === JSON.stringify(sessionUser)) ? prev : (sessionUser ?? null))
+  }
+
   async function refreshMfaLevel() {
-    const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (!error) setMfaLevel(data)
+    try {
+      const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      if (!error) setMfaLevel(data)
+    } finally {
+      setMfaKnown(true)
+    }
   }
 
   async function refreshMfaRequiredSetting() {
@@ -43,10 +62,10 @@ export function AuthProvider({ children }) {
     refreshMfaRequiredSetting()
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
-        setUser(session?.user ?? null)
+        applySessionUser(session?.user)
         if (session?.user) {
-          fetchProfile(session.user.id).finally(() => setLoading(false))
-          refreshMfaLevel()
+          // Wait for BOTH the profile and the 2-step check before showing pages
+          Promise.allSettled([fetchProfile(session.user.id), refreshMfaLevel()]).finally(() => setLoading(false))
           supabase.from('users').update({ last_seen: new Date().toISOString() }).eq('id', session.user.id)
             .then(({ error }) => { if (error) console.error('last_seen update failed:', error.message) })
         } else setLoading(false)
@@ -54,9 +73,9 @@ export function AuthProvider({ children }) {
       .catch(() => setLoading(false))
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+      applySessionUser(session?.user)
       if (session?.user) { fetchProfile(session.user.id); refreshMfaLevel() }
-      else { setProfile(null); setMfaLevel(null) }
+      else { setProfile(null); setMfaLevel(null); setMfaKnown(false) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -173,7 +192,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, profile, loading, login, logout, logoutEverywhere, changePassword, requestPasswordReset, hasRole,
-      mfaLevel, refreshMfaLevel, mfaChallengePending,
+      mfaLevel, mfaKnown, refreshMfaLevel, mfaChallengePending,
       mfaRequiredSince, refreshMfaRequiredSetting, mfaEnrollmentRequired,
     }}>
       {children}

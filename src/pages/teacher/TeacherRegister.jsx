@@ -6,11 +6,11 @@ import { fmtDate } from '../../lib/dates'
 import { logAction } from '../../lib/audit'
 import { loadGroupStudents, loadPunjabiTeacherResolver, loadExtraClassEnrollments } from '../../lib/classRoster'
 import { CLASS_META, loadClassTypes } from '../../lib/classTypes'
+import { todayISO } from '../../lib/teacherAttendanceReport'
 
 const AVATARS = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ef4444','#14b8a6']
 const color = (i) => AVATARS[i % AVATARS.length]
 
-function todayISO() { return new Date().toISOString().split('T')[0] }
 
 // e.g. "13-11" - when a transfer/removal request was sent
 function fmtShortDate(ts) {
@@ -63,8 +63,9 @@ export default function TeacherRegister() {
   const [mainMarks, setMainMarks] = useState({})  // extra-class registers only: studentId -> { group, status } from their main group
   const [search, setSearch]       = useState('')
   const savingRef    = useRef(null)
-  const creatingRef  = useRef(false)
+  const creatingRef  = useRef(null)   // { key, promise } while a register is being created
   const notesRef     = useRef({})
+  const selectedGroupRef = useRef(null)
   // Latest group/date asked for. A slow answer for a group or date the
   // teacher has already switched away from must be ignored - otherwise the
   // screen could keep the previous group's register while showing this
@@ -73,14 +74,15 @@ export default function TeacherRegister() {
   const latestStudentsReq = useRef(null)
 
   useEffect(() => { notesRef.current = notes }, [notes])
-  useEffect(() => { if (profile?.id) loadMyGroups() }, [profile])
+  useEffect(() => { selectedGroupRef.current = selectedGroupId }, [selectedGroupId])
+  useEffect(() => { if (profile?.id) loadMyGroups() }, [profile?.id])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadAllGroups() }, [])
   useEffect(() => { loadClassTypes().then(extra => setClassTypesMeta({ ...CLASS_META, ...extra })) }, [])
   useEffect(() => { loadPunjabiTeacherResolver().then(fn => setResolvePunjabiTeacher(() => fn)) }, [])
   useEffect(() => { loadExtraClassEnrollments().then(setExtraClasses) }, [])
-  useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])
+  useEffect(() => { if (selectedGroupId) loadStudents() }, [selectedGroupId])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedGroupId) loadPendingRequests() }, [selectedGroupId])   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])
+  useEffect(() => { if (selectedGroupId) loadSession()  }, [selectedGroupId, date])   // eslint-disable-line react-hooks/exhaustive-deps
   // Re-evaluates the 9:30pm cutoff live, without needing a page refresh right
   // at the boundary - a 30s tick is frequent enough for this, no need for
   // anything faster.
@@ -159,7 +161,9 @@ export default function TeacherRegister() {
         // default the same predictable way instead of trusting that field
         // (matches TeacherStudents.jsx); the teacher can still switch groups
         // explicitly using the selector below if this isn't the one they want.
-        const defaultGrp = grps[0]
+        // Keep the group the teacher already has open if they still teach it
+        // (a reload must never silently switch them to another register)
+        const defaultGrp = grps.find(g => g.id === selectedGroupRef.current) || grps[0]
         setSelectedGroupId(defaultGrp.id)
         setGroupName(defaultGrp.name)
       } else {
@@ -282,19 +286,41 @@ export default function TeacherRegister() {
     }
   }
 
+  // Creates today's register the first time a child is marked. Taps that
+  // arrive while it's still being created WAIT for the same request instead
+  // of giving up - previously the second quick tap returned null, the child
+  // showed as marked on screen but was never saved, and the 21:30 job then
+  // marked them Absent (health check 27-11-2026). Keyed by group+date so a
+  // request for another group/date is never reused.
   async function ensureSession() {
     if (sessionId) return sessionId
-    if (creatingRef.current) return null
-    creatingRef.current = true
-    try {
+    const key = `${selectedGroupId}|${date}`
+    if (creatingRef.current?.key === key) return creatingRef.current.promise
+    const groupId = selectedGroupId, sessionDate = date
+    const promise = (async () => {
       const { data, error } = await supabase
         .from('attendance_sessions')
-        .insert({ group_id: selectedGroupId, session_date: date, teacher_id: profile.id })
+        .insert({ group_id: groupId, session_date: sessionDate, teacher_id: profile.id })
         .select('id').single()
-      if (error) throw error
-      setSessionId(data.id)
-      return data.id
-    } finally { creatingRef.current = false }
+      if (!error) return data.id
+      // Another teacher of this group created it a moment ago - use theirs
+      if (error.code === '23505') {
+        const { data: existing, error: e2 } = await supabase.from('attendance_sessions')
+          .select('id').eq('group_id', groupId).eq('session_date', sessionDate).single()
+        if (e2) throw e2
+        return existing.id
+      }
+      throw error
+    })()
+    creatingRef.current = { key, promise }
+    try {
+      const id = await promise
+      // Only remember it if the teacher is still on this group/date
+      if (latestSessionReq.current === key) setSessionId(id)
+      return id
+    } finally {
+      if (creatingRef.current?.promise === promise) creatingRef.current = null
+    }
   }
 
   // A mark copied from an extra class (GCSE Punjabi, Gatka...) locks the row
@@ -329,7 +355,7 @@ export default function TeacherRegister() {
         }
       } else {
         const sid = await ensureSession()
-        if (!sid) return
+        if (!sid) throw new Error('the register could not be created')
         const { error } = await supabase.from('attendance_records').upsert({
           session_id:   sid,
           student_id:   studentId,
@@ -349,7 +375,15 @@ export default function TeacherRegister() {
     } catch (err) {
       logAction(profile, 'Marked attendance', `${studentName}: ${err.message}`, false).catch(() => {})
       setSaveState('error')
-      alert('Could not save: ' + err.message)
+      // Put the row back how it was, so the screen never shows a mark that
+      // isn't actually saved
+      setAttendance(prev => {
+        const next = { ...prev }
+        if (current) next[studentId] = current
+        else delete next[studentId]
+        return next
+      })
+      alert(`Not saved for ${studentName}: ${err.message}\n\nPlease tap again. If it keeps failing, check the wifi.`)
     }
   }
 
@@ -358,7 +392,11 @@ export default function TeacherRegister() {
     if (isLockedFromExtraClass(studentId)) return  // locked - this record belongs to their extra class
     const currentStatus = attendance[studentId]
     if (!currentStatus) return
-    const sid = sessionId || await ensureSession()
+    let sid
+    try { sid = sessionId || await ensureSession() } catch (err) {
+      alert('Note not saved: ' + err.message + '\n\nPlease try again.')
+      return
+    }
     if (!sid) return
     const { error } = await supabase.from('attendance_records').upsert({
       session_id:   sid,
@@ -371,6 +409,7 @@ export default function TeacherRegister() {
     const student     = students.find(s => s.id === studentId)
     const studentName = student ? [student.first_name, student.last_name].filter(Boolean).join(' ') : studentId
     logAction(profile, 'Added attendance note', `${studentName}: ${text || '(cleared)'}`, !error).catch(() => {})
+    if (error) alert(`Note for ${studentName} not saved: ${error.message}\n\nPlease try again.`)
   }
 
   function toggleTransfer(studentId) {
