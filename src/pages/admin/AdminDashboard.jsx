@@ -7,7 +7,6 @@ import { CLASS_META, isAnyClassDay, loadClassTypes } from '../../lib/classTypes'
 import { getVerificationStatus } from '../../lib/verification'
 import AdminRegisterStatus from './AdminRegisterStatus'
 import AdminVerificationStatus from './AdminVerificationStatus'
-import html2canvas from 'html2canvas'
 import { todayISO, localISO } from '../../lib/teacherAttendanceReport'
 import { fetchAll } from '../../lib/fetchAll'
 
@@ -532,6 +531,8 @@ export default function AdminDashboard({ setTab }) {
     let cancelled = false
     ;(async () => {
       try {
+        // Loaded only when a report image is saved - keeps it out of the main download
+        const { default: html2canvas } = await import('html2canvas')
         const canvas = await html2canvas(reportRef.current, { scale: 2, backgroundColor: '#ffffff' })
         if (cancelled) return
         const url = canvas.toDataURL('image/png')

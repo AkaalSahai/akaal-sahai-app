@@ -51,6 +51,8 @@ export default function TeacherRegister() {
   const [transferBusy, setTransferBusy] = useState(null)
   const [removeOpen, setRemoveOpen]     = useState({})
   const [removeBusy, setRemoveBusy]     = useState(null)
+  const [moreOpen, setMoreOpen]         = useState({})     // studentId -> true when the row's ⋯ menu (Transfer/Remove) is open
+  const [bulkBusy, setBulkBusy]         = useState(false)
   // Transfer/removal requests waiting for an admin, for students in this
   // group: studentId -> { request_type, to_group_name, requested_by, requested_at }.
   // Shown as a label and hides the Transfer/Remove buttons so nobody sends a
@@ -270,6 +272,12 @@ export default function TeacherRegister() {
   }
 
   async function submitRegister() {
+    // Unmarked children are auto-marked Absent at 9:30pm - make sure that's
+    // what the teacher means before submitting (Batch C, 27-11-2026)
+    const unmarked = students.filter(st => !attendance[st.id]).length
+    if (unmarked > 0 && !confirm(
+      `${unmarked} ${unmarked === 1 ? 'child is' : 'children are'} unmarked. ` +
+      `They'll be marked Absent at 9:30pm.\n\nSubmit anyway?`)) return
     const sid = sessionId || await ensureSession()
     if (!sid) return
     setSubmitBusy(true)
@@ -384,6 +392,63 @@ export default function TeacherRegister() {
         return next
       })
       alert(`Not saved for ${studentName}: ${err.message}\n\nPlease tap again. If it keeps failing, check the wifi.`)
+    }
+  }
+
+  // "Mark all unmarked Present": one tap for the usual case, then the teacher
+  // only taps the exceptions. Saved as ONE request, so it's quick on poor
+  // wifi; if it fails, every row goes back to unmarked and the teacher is
+  // told - same rule as mark(): a tick on screen always means it's saved.
+  // Skips rows locked from an extra class, and (on extra-class registers)
+  // children already marked in their main group today.
+  function bulkTargets() {
+    return students.filter(st =>
+      !attendance[st.id] &&
+      !isLockedFromExtraClass(st.id) &&
+      !(!isPunjabiGroup && ['present', 'late'].includes(mainMarks[st.id]?.status)))
+  }
+
+  async function markAllPresent() {
+    if (isReadOnly || bulkBusy) return
+    const targets = bulkTargets()
+    if (!targets.length) return
+    if (!confirm(`Mark ${targets.length} unmarked ${targets.length === 1 ? 'child' : 'children'} as Present?\n\nYou can then tap anyone who is Late, Absent or on Holiday.`)) return
+    const ids = targets.map(st => st.id)
+    setBulkBusy(true)
+    setAttendance(prev => {
+      const next = { ...prev }
+      ids.forEach(id => { next[id] = 'present' })
+      return next
+    })
+    setSaveState('saving')
+    clearTimeout(savingRef.current)
+    try {
+      const sid = await ensureSession()
+      if (!sid) throw new Error('the register could not be created')
+      const { error } = await supabase.from('attendance_records').upsert(ids.map(id => ({
+        session_id:   sid,
+        student_id:   id,
+        group_id:     selectedGroupId,
+        session_date: date,
+        status:       'present',
+        notes:        notesRef.current[id] || null,
+        synced_from_class_type: null,
+      })), { onConflict: 'session_id,student_id' })
+      if (error) throw error
+      logAction(profile, 'Marked all unmarked present', `${groupName || selectedGroupId}: ${ids.length} students (${date})`).catch(() => {})
+      setSaveState('saved')
+      savingRef.current = setTimeout(() => setSaveState('idle'), 2000)
+    } catch (err) {
+      logAction(profile, 'Marked all unmarked present', `${groupName || selectedGroupId}: ${err.message}`, false).catch(() => {})
+      setSaveState('error')
+      setAttendance(prev => {
+        const next = { ...prev }
+        ids.forEach(id => { if (next[id] === 'present') delete next[id] })
+        return next
+      })
+      alert(`Not saved: ${err.message}\n\nNobody was marked. Please try again. If it keeps failing, check the wifi.`)
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -519,6 +584,8 @@ export default function TeacherRegister() {
   const late    = Object.values(attendance).filter(v => v === 'late').length
   const absent  = Object.values(attendance).filter(v => v === 'absent').length
   const holiday = Object.values(attendance).filter(v => v === 'holiday').length
+  const markedCount   = students.filter(st => attendance[st.id]).length
+  const bulkCount     = !isReadOnly && !loading ? bulkTargets().length : 0
 
   const saveLabel = saveState === 'saving' ? '⏳ Saving…'
                   : saveState === 'saved'   ? '✓ Saved'
@@ -586,6 +653,10 @@ export default function TeacherRegister() {
                 <>Register in progress — changes save automatically. Submit once you're done marking everyone (you can still edit until 9:30pm).</>
               )}
             </span>
+            <span style={{ fontSize: '.8rem', fontWeight: 700,
+              color: markedCount < students.length ? '#b45309' : 'var(--success)' }}>
+              {markedCount} of {students.length} marked
+            </span>
             <button className="btn btn-sm" disabled={submitBusy}
               onClick={submitRegister}
               style={{ background: submittedAt ? 'white' : 'var(--success)',
@@ -599,6 +670,14 @@ export default function TeacherRegister() {
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search by name, age, or date of birth…"
           style={{ marginBottom: 14, width: '100%', boxSizing: 'border-box' }} />
+
+        {bulkCount > 0 && (
+          <button className="btn" disabled={bulkBusy} onClick={markAllPresent}
+            style={{ width: '100%', minHeight: 44, marginBottom: 14, fontWeight: 700,
+              background: 'var(--success)', color: 'white', border: 'none' }}>
+            {bulkBusy ? 'Saving…' : `✓ Mark all ${bulkCount} unmarked as Present`}
+          </button>
+        )}
 
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           {[['present','#16a34a'], ['late','#d97706'], ['absent','#dc2626'], ['holiday','#0284c7']].map(([s,c]) => (
@@ -705,7 +784,7 @@ export default function TeacherRegister() {
                       {[['present','Present'],['late','Late'],['absent','Absent'],['holiday','Holiday']].map(([st, lbl]) => (
                         <button key={st}
                           className={`att-btn att-${st}${status === st ? ' active' : ''}`}
-                          style={{ padding: '4px 10px', fontSize: '.76rem', opacity: locked ? .6 : 1 }}
+                          style={{ padding: '8px 12px', minHeight: 44, minWidth: 44, fontSize: '.8rem', opacity: locked ? .6 : 1 }}
                           onClick={() => mark(s.id, st)}
                           disabled={isReadOnly || locked}>
                           {lbl}
@@ -725,8 +804,18 @@ export default function TeacherRegister() {
                       onBlur={e => saveNote(s.id, e.target.value)}
                     />
 
+                    {/* Transfer/Remove sit behind ⋯ so they can't be hit by
+                        mistake while marking (Batch C, 27-11-2026) */}
                     {!isReadOnly && isPunjabiGroup && !pending && (
-                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
+                        <button aria-label={`More options for ${fullName}`} aria-expanded={!!moreOpen[s.id]}
+                          onClick={() => setMoreOpen(prev => ({ ...prev, [s.id]: !prev[s.id] }))}
+                          style={{ minHeight: 44, minWidth: 44, fontSize: '1.1rem', borderRadius: 8,
+                            border: '1px solid #cbd5e1', background: moreOpen[s.id] ? '#f1f5f9' : 'white',
+                            color: '#475569', cursor: 'pointer', lineHeight: 1 }}>
+                          ⋯
+                        </button>
+                        {(moreOpen[s.id] || transferOpen[s.id] !== undefined || removeOpen[s.id] !== undefined) && (<>
                         <button onClick={() => toggleTransfer(s.id)}
                           style={{ padding: '4px 10px', fontSize: '.76rem', borderRadius: 8,
                             border: '1px solid #94a3b8',
@@ -741,6 +830,7 @@ export default function TeacherRegister() {
                             color: '#dc2626', cursor: 'pointer' }}>
                           Remove
                         </button>
+                        </>)}
                       </div>
                     )}
                   </div>
